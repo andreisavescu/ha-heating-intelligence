@@ -53,7 +53,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         now = dt_util.utcnow()
         local_date = dt_util.now().date().isoformat()
         previous_update = dt_util.parse_datetime(self._history.get("last_update"))
-        elapsed = max(0.0, min((now - previous_update).total_seconds(), 90)) if previous_update else 0.0
+        elapsed = (now - previous_update).total_seconds() if previous_update else 0.0
+        if elapsed < 0 or elapsed > 90:
+            elapsed = 0.0
         self._history["last_update"] = now.isoformat()
         daily = self._history.setdefault("daily", {})
         if daily.get("date") != local_date:
@@ -182,8 +184,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "daily_energy_kwh": round(float(history.get("daily_energy_kwh", 0)), 4),
             }
 
-        if changed or True:
-            await self._store.async_save(self._history)
+        await self._store.async_save(self._history)
 
         result["sync"] = {
             "status": self._history.get("last_sync_result", "unknown"),

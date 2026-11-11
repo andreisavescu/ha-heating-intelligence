@@ -1,10 +1,11 @@
 """Coordinator for read-only room state snapshots."""
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
@@ -15,6 +16,8 @@ from .const import (
     DOMAIN,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 
 class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
     """Collect current room entity states."""
@@ -23,16 +26,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         self.entry = entry
         super().__init__(
             hass,
-            logger=__import__("logging").getLogger(__name__),
+            logger=_LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=30),
         )
 
     async def _async_update_data(self):
         """Return a snapshot of configured room states."""
-        rooms = self.entry.options.get(CONF_ROOMS, [])
         result = {}
-        for room in rooms:
+        for room in self.entry.options.get(CONF_ROOMS, []):
             room_id = room["id"]
             demand = self.hass.states.get(room[CONF_DEMAND_ENTITY])
             temperature = self.hass.states.get(room[CONF_TEMPERATURE_ENTITY])

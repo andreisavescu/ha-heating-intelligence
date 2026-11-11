@@ -39,6 +39,20 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
     def is_on(self):
         return self.coordinator.data.get(self.room_id, {}).get("demand", False)
 
+    @property
+    def available(self):
+        room = self.coordinator.data.get(self.room_id, {})
+        return super().available and room.get("demand_state") is not None
+
+    @property
+    def extra_state_attributes(self):
+        room = self.coordinator.data.get(self.room_id, {})
+        return {
+            "source_entity": room.get("demand_entity"),
+            "source_state": room.get("demand_state"),
+            "interpretation": "on = heat requested; off/unavailable/unknown = no active request",
+        }
+
 
 class RoomWindowSensor(CoordinatorEntity, BinarySensorEntity):
     """Window contact state for a room."""

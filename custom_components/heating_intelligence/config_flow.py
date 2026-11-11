@@ -35,14 +35,12 @@ class HeatingIntelligenceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
-        return HeatingIntelligenceOptionsFlow(config_entry)
+        """Return the room options flow."""
+        return HeatingIntelligenceOptionsFlow()
 
 
 class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     """Manage rooms."""
-
-    def __init__(self, config_entry):
-        self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(

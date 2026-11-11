@@ -12,6 +12,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_FLOOR,
     CONF_PUMPS,
     CONF_ROOMS,
     CONF_TEMPERATURE_ENTITY,
@@ -200,6 +201,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "pump_cycles": sum(p.get("daily_cycle_count", 0) for p in result["pumps"].values()),
         }
 
+        floor_analysis = {
+            "ground_floor": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("ground_floor", {}).get("running")), "pump_power_w": result["pumps"].get("ground_floor", {}).get("power")},
+            "upstairs": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("upstairs", {}).get("running")), "pump_power_w": result["pumps"].get("upstairs", {}).get("power")},
+            "unassigned": {"active_rooms": 0},
+        }
         for room in self.entry.options.get(CONF_ROOMS, []):
             room_id = room["id"]
             demand = self.hass.states.get(room[CONF_DEMAND_ENTITY])
@@ -207,7 +213,17 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             window_id = room.get(CONF_WINDOW_ENTITY)
             window = self.hass.states.get(window_id) if window_id else None
             demand_state = demand.state if demand else None
+            floor = room.get(CONF_FLOOR, "unassigned")
+            floor_data = floor_analysis.setdefault(floor, {"active_rooms": 0})
+            daily_key = "room_demand_" + room_id
+            demand_seconds = float(daily.get(daily_key, 0.0))
+            if demand_state == "on":
+                floor_data["active_rooms"] = int(floor_data.get("active_rooms", 0)) + 1
+                demand_seconds += elapsed
+                daily[daily_key] = demand_seconds
             result["rooms"][room_id] = {
+                "floor": floor,
+                "floor_label": {"ground_floor": "Downstairs", "upstairs": "Upstairs", "unassigned": "Unassigned"}.get(floor, floor),
                 "id": room_id,
                 "name": room["name"],
                 "demand_entity": room[CONF_DEMAND_ENTITY],
@@ -218,7 +234,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "window_entity": window_id,
                 "window_state": window.state if window else None,
                 "window_open": bool(window and window.state == "on"),
+                "daily_demand_seconds": round(demand_seconds),
             }
+        for floor_id in ("ground_floor", "upstairs"):
+            floor_data = floor_analysis[floor_id]
+            floor_data["demand_hours_today"] = round(sum(float(daily.get("room_demand_" + room["id"], 0.0)) for room in self.entry.options.get(CONF_ROOMS, []) if room.get(CONF_FLOOR, "unassigned") == floor_id) / 3600, 2)
+            floor_data["demand_pump_state"] = ("demand_without_pump" if floor_data["active_rooms"] > 0 and not floor_data["pump_running"] else "pump_without_demand" if floor_data["active_rooms"] == 0 and floor_data["pump_running"] else "demand_and_pump" if floor_data["active_rooms"] > 0 and floor_data["pump_running"] else "idle")
+        result["floor_analysis"] = floor_analysis
         return result
 
 

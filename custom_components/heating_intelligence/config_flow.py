@@ -11,6 +11,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_FLOOR,
     CONF_NAME,
     CONF_PUMPS,
     CONF_PUMP_ENERGY_ENTITY,
@@ -47,7 +48,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_room", "remove_room", "global_settings", "pump_settings"],
+            menu_options=["add_room", "edit_room", "remove_room", "global_settings", "pump_settings"],
         )
 
     async def async_step_global_settings(self, user_input=None):
@@ -116,6 +117,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             rooms.append({
                 "id": slug,
                 CONF_NAME: user_input[CONF_NAME].strip(),
+                CONF_FLOOR: user_input[CONF_FLOOR],
                 CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY],
                 CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY],
                 CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
@@ -126,11 +128,32 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema({
             vol.Required(CONF_NAME): str,
+            vol.Required(CONF_FLOOR): vol.In({"ground_floor": "Downstairs", "upstairs": "Upstairs"}),
             vol.Required(CONF_DEMAND_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig()),
             vol.Required(CONF_TEMPERATURE_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_WINDOW_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),
         })
         return self.async_show_form(step_id="add_room", data_schema=schema)
+
+    async def async_step_edit_room(self, user_input=None):
+        """Assign or change a room floor for pump-demand correlation."""
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        if not rooms:
+            return self.async_abort(reason="no_rooms")
+        if user_input is not None:
+            room_id = user_input["room"]
+            data = dict(self.config_entry.options)
+            data[CONF_ROOMS] = [
+                {**room, CONF_FLOOR: user_input[CONF_FLOOR]} if room["id"] == room_id else room
+                for room in rooms
+            ]
+            return self.async_create_entry(title="", data=data)
+        options = {room["id"]: room[CONF_NAME] for room in rooms}
+        schema = vol.Schema({
+            vol.Required("room"): vol.In(options),
+            vol.Required(CONF_FLOOR, default="ground_floor"): vol.In({"ground_floor": "Downstairs", "upstairs": "Upstairs"}),
+        })
+        return self.async_show_form(step_id="edit_room", data_schema=schema)
 
     async def async_step_remove_room(self, user_input=None):
         rooms = list(self.config_entry.options.get(CONF_ROOMS, []))

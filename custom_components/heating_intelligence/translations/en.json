@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Heating Intelligence",
-        "description": "Set up read-only heating analysis. Add your rooms after setup."
+        "description": "Set up read-only heating analysis. Configure rooms and global sensors after setup."
       }
     },
     "abort": {
@@ -13,11 +13,16 @@
   "options": {
     "step": {
       "init": {
-        "title": "Room configuration",
+        "title": "Heating Intelligence settings",
         "menu_options": {
           "add_room": "Add a room",
-          "remove_room": "Remove a room"
+          "remove_room": "Remove a room",
+          "global_settings": "Global settings"
         }
+      },
+      "global_settings": {
+        "title": "Global settings",
+        "description": "Select the underfloor-heating input/supply water temperature sensor."
       },
       "add_room": {
         "title": "Add a room",

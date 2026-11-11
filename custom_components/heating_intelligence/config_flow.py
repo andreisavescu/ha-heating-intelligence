@@ -14,6 +14,7 @@ from .const import (
     CONF_NAME,
     CONF_ROOMS,
     CONF_TEMPERATURE_ENTITY,
+    CONF_WATER_TEMPERATURE_ENTITY,
     CONF_WINDOW_ENTITY,
     DOMAIN,
 )
@@ -35,18 +36,40 @@ class HeatingIntelligenceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
-        """Return the room options flow."""
+        """Return the options flow."""
         return HeatingIntelligenceOptionsFlow()
 
 
 class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
-    """Manage rooms."""
+    """Manage room and system configuration."""
 
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_room", "remove_room"],
+            menu_options=["add_room", "remove_room", "global_settings"],
         )
+
+    async def async_step_global_settings(self, user_input=None):
+        """Configure the underfloor-heating supply water temperature."""
+        if user_input is not None:
+            data = dict(self.config_entry.options)
+            entity_id = user_input.get(CONF_WATER_TEMPERATURE_ENTITY)
+            if entity_id:
+                data[CONF_WATER_TEMPERATURE_ENTITY] = entity_id
+            else:
+                data.pop(CONF_WATER_TEMPERATURE_ENTITY, None)
+            return self.async_create_entry(title="", data=data)
+
+        current = self.config_entry.options.get(CONF_WATER_TEMPERATURE_ENTITY)
+        schema = vol.Schema({
+            vol.Optional(
+                CONF_WATER_TEMPERATURE_ENTITY,
+                default=current,
+            ): selector.EntitySelector(selector.EntitySelectorConfig(
+                domain="sensor",
+            ))
+        })
+        return self.async_show_form(step_id="global_settings", data_schema=schema)
 
     async def async_step_add_room(self, user_input=None):
         if user_input is not None:
@@ -67,7 +90,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY],
                 CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
             })
-            return self.async_create_entry(title="", data={CONF_ROOMS: rooms})
+            data = dict(self.config_entry.options)
+            data[CONF_ROOMS] = rooms
+            return self.async_create_entry(title="", data=data)
 
         schema = vol.Schema({
             vol.Required(CONF_NAME): str,
@@ -75,10 +100,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 selector.EntitySelectorConfig()
             ),
             vol.Required(CONF_TEMPERATURE_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig()
+                selector.EntitySelectorConfig(domain="sensor")
             ),
             vol.Optional(CONF_WINDOW_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig()
+                selector.EntitySelectorConfig(domain="binary_sensor")
             ),
         })
         return self.async_show_form(step_id="add_room", data_schema=schema)
@@ -89,8 +114,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             return self.async_abort(reason="no_rooms")
         if user_input is not None:
             remove_id = user_input["room"]
-            rooms = [room for room in rooms if room["id"] != remove_id]
-            return self.async_create_entry(title="", data={CONF_ROOMS: rooms})
+            data = dict(self.config_entry.options)
+            data[CONF_ROOMS] = [room for room in rooms if room["id"] != remove_id]
+            return self.async_create_entry(title="", data=data)
         options = {room["id"]: room[CONF_NAME] for room in rooms}
         schema = vol.Schema({vol.Required("room"): vol.In(options)})
         return self.async_show_form(step_id="remove_room", data_schema=schema)

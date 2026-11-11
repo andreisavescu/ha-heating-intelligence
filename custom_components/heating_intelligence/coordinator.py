@@ -64,10 +64,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["water_temperature"] = _as_float(state.state) if state else None
 
         configured_pumps = self.entry.options.get(CONF_PUMPS, [])
-        previous_running = {
-            pump_id: bool(item.get("running", False))
-            for pump_id, item in self._history.get("pumps", {}).items()
-        }
         changed = False
 
         for pump in configured_pumps:
@@ -76,7 +72,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             energy_state = self.hass.states.get(pump["energy_entity"])
             power = _as_float(power_state.state) if power_state else None
             energy = _as_float(energy_state.state) if energy_state else None
-            running = power is not None and power > RUNNING_THRESHOLD_W
+            observed_running = None if power is None else power > RUNNING_THRESHOLD_W
             history = self._history.setdefault("pumps", {}).setdefault(pump_id, {
                 "running": False,
                 "cycle_count": 0,
@@ -87,7 +83,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             })
             was_running = bool(history.get("running", False))
 
-            if running and not was_running:
+            if observed_running is True and not was_running:
                 history["running"] = True
                 history["cycle_start"] = now.isoformat()
                 history["last_cycle_start"] = now.isoformat()
@@ -118,7 +114,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                     self._history["last_sync_delta_seconds"] = None
                     changed = True
 
-            elif not running and was_running:
+            elif observed_running is False and was_running:
                 started = dt_util.parse_datetime(history.get("cycle_start") or "")
                 duration = max(0.0, (now - started).total_seconds()) if started else 0.0
                 history["running"] = False
@@ -127,12 +123,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 history["cycle_start"] = None
                 changed = True
 
-            elif running and was_running and not history.get("cycle_start"):
+            elif observed_running is True and was_running and not history.get("cycle_start"):
                 # Recover gracefully if an older stored record lacks an active start time.
                 history["cycle_start"] = now.isoformat()
                 changed = True
 
             cycle_start = dt_util.parse_datetime(history.get("cycle_start") or "")
+            running = bool(history.get("running", False))
             current_duration = max(0.0, (now - cycle_start).total_seconds()) if running and cycle_start else 0.0
             result["pumps"][pump_id] = {
                 "id": pump_id,

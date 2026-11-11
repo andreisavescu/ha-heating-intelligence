@@ -37,16 +37,16 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self):
-        return self.coordinator.data.get(self.room_id, {}).get("demand", False)
+        return self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("demand", False)
 
     @property
     def available(self):
-        room = self.coordinator.data.get(self.room_id, {})
-        return super().available and room.get("demand_state") is not None
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        return super().available and room.get("demand_state") not in (None, "unavailable", "unknown")
 
     @property
     def extra_state_attributes(self):
-        room = self.coordinator.data.get(self.room_id, {})
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
         return {
             "source_entity": room.get("demand_entity"),
             "source_state": room.get("demand_state"),
@@ -68,11 +68,9 @@ class RoomWindowSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self):
-        return self.coordinator.data.get(self.room_id, {}).get("window_open", False)
+        return self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("window_open", False)
 
     @property
     def available(self):
-        return (
-            super().available
-            and self.coordinator.data.get(self.room_id, {}).get("window_state") is not None
-        )
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        return super().available and room.get("window_state") not in (None, "unavailable", "unknown")

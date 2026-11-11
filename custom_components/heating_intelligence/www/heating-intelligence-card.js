@@ -5,9 +5,15 @@ class HeatingIntelligenceCard extends HTMLElement {
     this._render();
   }
   set hass(hass) { this._hass = hass; this._render(); }
-  getCardSize() { return 6; }
+  getCardSize() { return 7; }
   _fmt(value, unit = "°C", digits = 1) {
     return value === null || value === undefined || value === "" ? "—" : `${Number(value).toFixed(digits)} ${unit}`;
+  }
+  _duration(seconds) {
+    if (seconds === null || seconds === undefined) return "—";
+    const mins = Math.round(Number(seconds) / 60);
+    const hours = Math.floor(mins / 60);
+    return hours ? `${hours}h ${mins % 60}m` : `${mins}m`;
   }
   _esc(value) {
     return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
@@ -27,8 +33,15 @@ class HeatingIntelligenceCard extends HTMLElement {
         <div class="pump-values">
           <div><span>Power</span><strong>${this._fmt(p.power, "W")}</strong></div>
           <div><span>Energy total</span><strong>${this._fmt(p.energy, "kWh", 2)}</strong></div>
+          <div><span>Cycles</span><strong>${p.cycle_count ?? 0}</strong></div>
+          <div><span>Total runtime</span><strong>${this._fmt((p.total_runtime_seconds ?? 0) / 3600, "h", 2)}</strong></div>
+          <div><span>Current cycle</span><strong>${p.running ? this._duration(p.current_cycle_seconds) : "—"}</strong></div>
+          <div><span>Last cycle</span><strong>${this._duration(p.last_cycle_duration_seconds)}</strong></div>
         </div>
       </div>`).join("");
+    const sync = attrs.pump_synchronization || {};
+    const syncLabel = ({ synchronised:"Synchronised", out_of_sync:"Out of sync", single_pump_cycle:"Single-pump cycle (OK)", unknown:"No comparison yet" })[sync.status] || sync.status || "—";
+    const syncClass = sync.status === "out_of_sync" ? "warning" : sync.status === "synchronised" || sync.status === "single_pump_cycle" ? "active" : "";
     const roomOptions = entries.map((r) => `<option value="${this._esc(r.id)}" ${selected?.id === r.id ? "selected" : ""}>${this._esc(r.name)}</option>`).join("");
     const roomDetail = selected ? `
       <div class="detail-grid">
@@ -48,7 +61,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         .active{color:var(--success-color,#2e9d62)} .warning{color:var(--warning-color,#d97706)}
         .section{margin-top:18px}.section-title{font-size:.9rem;font-weight:600;margin:0 0 9px}
         .pumps{display:grid;grid-template-columns:1fr;gap:8px}.pump-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:12px}
-        .pump-values{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+        .pump-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
         select{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:10px;border:1px solid var(--divider-color);color:var(--primary-text-color);background:var(--card-background-color);font:inherit}
         .subtle{color:var(--secondary-text-color);font-size:.78rem;margin:10px 2px 0}
       </style>
@@ -62,6 +75,11 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="metric"><span>Total pump power</span><strong>${this._fmt(attrs.total_pump_power, "W")}</strong></div>
           <div class="metric"><span>Combined energy total</span><strong>${this._fmt(attrs.total_pump_energy, "kWh", 2)}</strong></div>
         </div>
+        <div class="section"><div class="section-title">Pump synchronisation</div>
+          <div class="metric"><span>Latest result</span><strong class="${syncClass}">${this._esc(syncLabel)}</strong>
+            <div class="subtle">Mismatches: ${sync.mismatch_count ?? 0} · Allowed start difference: ${sync.tolerance_seconds ?? 60}s</div>
+          </div>
+        </div>
         <div class="section"><div class="section-title">Manifold pumps</div><div class="pumps">${pumpCards || '<p class="subtle">Configure pump sensors in integration settings.</p>'}</div></div>
         <div class="section"><div class="section-title">Room details</div>
           ${entries.length ? `<select aria-label="Select room">${roomOptions}</select>${roomDetail}` : roomDetail}
@@ -74,4 +92,4 @@ class HeatingIntelligenceCard extends HTMLElement {
 }
 if (!customElements.get("heating-intelligence-card")) customElements.define("heating-intelligence-card", HeatingIntelligenceCard);
 window.customCards = window.customCards || [];
-window.customCards.push({ type:"heating-intelligence-card", name:"Heating Intelligence", description:"Heating and pump overview with room details.", preview:true });
+window.customCards.push({ type:"heating-intelligence-card", name:"Heating Intelligence", description:"Heating, pump cycles and synchronisation with room details.", preview:true });

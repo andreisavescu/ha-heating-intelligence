@@ -25,10 +25,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             StaticPathConfig(static_url, str(static_file), False)
         ])
     except RuntimeError:
-        # Static paths survive config-entry reloads; already registered is expected.
         pass
 
     coordinator = HeatingIntelligenceCoordinator(hass, entry)
+    await coordinator.async_load_history()
     await coordinator.async_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

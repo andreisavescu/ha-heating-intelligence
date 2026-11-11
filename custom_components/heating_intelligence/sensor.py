@@ -20,7 +20,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.extend([
             PumpPowerSensor(coordinator, pump["id"], pump["name"]),
             PumpEnergySensor(coordinator, pump["id"], pump["name"]),
+            PumpCycleCountSensor(coordinator, pump["id"], pump["name"]),
+            PumpRuntimeSensor(coordinator, pump["id"], pump["name"]),
         ])
+    if len(entry.options.get(CONF_PUMPS, [])) == 2:
+        entities.append(PumpSynchronizationSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -57,12 +61,11 @@ class HeatingOverviewSensor(CoordinatorEntity, SensorEntity):
             "running_pumps": sum(1 for pump in pumps.values() if pump.get("running")),
             "total_pump_power": round(sum(p["power"] for p in pumps.values() if p.get("power") is not None), 1),
             "total_pump_energy": round(sum(p["energy"] for p in pumps.values() if p.get("energy") is not None), 3),
+            "pump_synchronization": data.get("sync", {}),
         }
 
 
 class WaterTemperatureSensor(CoordinatorEntity, SensorEntity):
-    """Configured underfloor-heating supply water temperature."""
-
     _attr_native_unit_of_measurement = "°C"
     _attr_should_poll = False
     _attr_icon = "mdi:thermometer-water"
@@ -82,8 +85,6 @@ class WaterTemperatureSensor(CoordinatorEntity, SensorEntity):
 
 
 class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
-    """Expose a configured room temperature."""
-
     _attr_native_unit_of_measurement = "°C"
     _attr_should_poll = False
 
@@ -103,8 +104,6 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
 
 
 class PumpPowerSensor(CoordinatorEntity, SensorEntity):
-    """Current electrical power drawn by a manifold pump."""
-
     _attr_native_unit_of_measurement = "W"
     _attr_should_poll = False
     _attr_device_class = "power"
@@ -126,8 +125,6 @@ class PumpPowerSensor(CoordinatorEntity, SensorEntity):
 
 
 class PumpEnergySensor(CoordinatorEntity, SensorEntity):
-    """Cumulative electrical energy consumed by a manifold pump."""
-
     _attr_native_unit_of_measurement = "kWh"
     _attr_should_poll = False
     _attr_device_class = "energy"
@@ -146,3 +143,62 @@ class PumpEnergySensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self):
         return super().available and self.native_value is not None
+
+
+class PumpCycleCountSensor(CoordinatorEntity, SensorEntity):
+    """Number of on/off cycles observed for one pump."""
+
+    _attr_native_unit_of_measurement = "cycles"
+    _attr_should_poll = False
+    _attr_state_class = "total_increasing"
+    _attr_icon = "mdi:counter"
+
+    def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
+        super().__init__(coordinator)
+        self.pump_id = pump_id
+        self._attr_name = f"{pump_name} Pump Cycle Count"
+        self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_cycle_count"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("cycle_count", 0)
+
+
+class PumpRuntimeSensor(CoordinatorEntity, SensorEntity):
+    """Accumulated pump runtime in hours."""
+
+    _attr_native_unit_of_measurement = "h"
+    _attr_should_poll = False
+    _attr_state_class = "total_increasing"
+    _attr_icon = "mdi:timer-outline"
+
+    def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
+        super().__init__(coordinator)
+        self.pump_id = pump_id
+        self._attr_name = f"{pump_name} Pump Runtime"
+        self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_runtime"
+
+    @property
+    def native_value(self):
+        seconds = self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("total_runtime_seconds", 0)
+        return round(seconds / 3600, 2)
+
+
+class PumpSynchronizationSensor(CoordinatorEntity, SensorEntity):
+    """Latest comparison of overlapping pump cycle starts."""
+
+    _attr_should_poll = False
+    _attr_icon = "mdi:sync"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Pump Synchronization"
+        self._attr_unique_id = f"{DOMAIN}_pump_synchronization"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("sync", {}).get("status", "unknown")
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("sync", {})

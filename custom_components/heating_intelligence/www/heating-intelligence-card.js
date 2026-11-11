@@ -37,6 +37,9 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div><span>Total runtime</span><strong>${this._fmt((p.total_runtime_seconds ?? 0) / 3600, "h", 2)}</strong></div>
           <div><span>Current cycle</span><strong>${p.running ? this._duration(p.current_cycle_seconds) : "—"}</strong></div>
           <div><span>Last cycle</span><strong>${this._duration(p.last_cycle_duration_seconds)}</strong></div>
+          <div><span>Energy today</span><strong>${this._fmt(p.daily_energy_kwh, "kWh", 3)}</strong></div>
+          <div><span>Runtime today</span><strong>${this._fmt((p.daily_runtime_seconds ?? 0) / 3600, "h", 2)}</strong></div>
+          <div><span>Cycles today</span><strong>${p.daily_cycle_count ?? 0}</strong></div>
         </div>
       </div>`).join("");
     const sync = attrs.pump_synchronization || {};
@@ -74,6 +77,14 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="metric"><span>Pumps running</span><strong>${attrs.running_pumps ?? pumps.filter(p=>p.running).length} / ${pumps.length}</strong></div>
           <div class="metric"><span>Total pump power</span><strong>${this._fmt(attrs.total_pump_power, "W")}</strong></div>
           <div class="metric"><span>Combined energy total</span><strong>${this._fmt(attrs.total_pump_energy, "kWh", 2)}</strong></div>
+        </div>
+        <div class="section"><div class="section-title">Today's heating activity</div>
+          <div class="overview">
+            <div class="metric"><span>Pump energy today</span><strong>${this._fmt(attrs.daily_heating?.pump_energy_kwh, "kWh", 3)}</strong></div>
+            <div class="metric"><span>Pump runtime today</span><strong>${this._fmt((attrs.daily_heating?.pump_runtime_seconds ?? 0) / 3600, "h", 2)}</strong></div>
+            <div class="metric"><span>Pump cycles today</span><strong>${attrs.daily_heating?.pump_cycles ?? 0}</strong></div>
+          </div>
+          <div class="subtle">Daily totals reset at local midnight. Runtime is accumulated from valid running-state observations.</div>
         </div>
         <div class="section"><div class="section-title">Pump synchronisation</div>
           <div class="metric"><span>Latest result</span><strong class="${syncClass}">${this._esc(syncLabel)}</strong>

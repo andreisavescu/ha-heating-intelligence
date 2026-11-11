@@ -51,6 +51,18 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         """Return a snapshot and update pump cycle accounting on state transitions."""
         now = dt_util.utcnow()
+        local_date = dt_util.now().date().isoformat()
+        previous_update = dt_util.parse_datetime(self._history.get("last_update"))
+        elapsed = max(0.0, min((now - previous_update).total_seconds(), 90)) if previous_update else 0.0
+        self._history["last_update"] = now.isoformat()
+        daily = self._history.setdefault("daily", {})
+        if daily.get("date") != local_date:
+            daily.clear()
+            daily.update({"date": local_date})
+            for item in self._history.setdefault("pumps", {}).values():
+                item["daily_runtime_seconds"] = 0.0
+                item["daily_cycle_count"] = 0
+                item["daily_energy_kwh"] = 0.0
         result = {
             "rooms": {},
             "pumps": {},
@@ -80,7 +92,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "cycle_start": None,
                 "last_cycle_start": None,
                 "last_cycle_duration_seconds": None,
+                "daily_runtime_seconds": 0.0,
+                "daily_cycle_count": 0,
+                "daily_energy_kwh": 0.0,
+                "last_energy_reading": None,
             })
+            for key, default in (("daily_runtime_seconds", 0.0), ("daily_cycle_count", 0), ("daily_energy_kwh", 0.0), ("last_energy_reading", None)):
+                history.setdefault(key, default)
             was_running = bool(history.get("running", False))
 
             if observed_running is True and not was_running:
@@ -88,6 +106,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 history["cycle_start"] = now.isoformat()
                 history["last_cycle_start"] = now.isoformat()
                 history["cycle_count"] = int(history.get("cycle_count", 0)) + 1
+                history["daily_cycle_count"] = int(history.get("daily_cycle_count", 0)) + 1
                 changed = True
 
                 other_ids = [p["id"] for p in configured_pumps if p["id"] != pump_id]
@@ -128,6 +147,18 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 history["cycle_start"] = now.isoformat()
                 changed = True
 
+            # Account runtime only across two consecutive valid running observations.
+            if observed_running is True and was_running and elapsed:
+                history["daily_runtime_seconds"] = float(history.get("daily_runtime_seconds", 0)) + elapsed
+
+            # Convert the cumulative energy meter into a daily delta. A meter reset
+            # establishes a fresh baseline and never creates negative consumption.
+            previous_energy = _as_float(history.get("last_energy_reading"))
+            if energy is not None:
+                if previous_energy is not None and energy >= previous_energy:
+                    history["daily_energy_kwh"] = float(history.get("daily_energy_kwh", 0)) + energy - previous_energy
+                history["last_energy_reading"] = energy
+
             cycle_start = dt_util.parse_datetime(history.get("cycle_start") or "")
             running = bool(history.get("running", False))
             current_duration = max(0.0, (now - cycle_start).total_seconds()) if running and cycle_start else 0.0
@@ -146,9 +177,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "current_cycle_seconds": round(current_duration),
                 "last_cycle_start": history.get("last_cycle_start"),
                 "last_cycle_duration_seconds": history.get("last_cycle_duration_seconds"),
+                "daily_runtime_seconds": round(float(history.get("daily_runtime_seconds", 0))),
+                "daily_cycle_count": int(history.get("daily_cycle_count", 0)),
+                "daily_energy_kwh": round(float(history.get("daily_energy_kwh", 0)), 4),
             }
 
-        if changed:
+        if changed or True:
             await self._store.async_save(self._history)
 
         result["sync"] = {
@@ -156,6 +190,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "mismatch_count": int(self._history.get("sync_mismatch_count", 0)),
             "start_delta_seconds": self._history.get("last_sync_delta_seconds"),
             "tolerance_seconds": SYNC_TOLERANCE_SECONDS,
+        }
+
+        result["daily"] = {
+            "date": local_date,
+            "pump_runtime_seconds": sum(p.get("daily_runtime_seconds", 0) for p in result["pumps"].values()),
+            "pump_energy_kwh": round(sum(p.get("daily_energy_kwh", 0) for p in result["pumps"].values()), 4),
+            "pump_cycles": sum(p.get("daily_cycle_count", 0) for p in result["pumps"].values()),
         }
 
         for room in self.entry.options.get(CONF_ROOMS, []):

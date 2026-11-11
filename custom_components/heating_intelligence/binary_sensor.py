@@ -1,15 +1,12 @@
-"""Room heating-demand and window entities."""
+"""Room demand and manifold pump state entities."""
 from __future__ import annotations
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorEntity,
-    BinarySensorDeviceClass,
-)
+from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_ROOMS, DOMAIN
+from .const import CONF_PUMPS, CONF_ROOMS, DOMAIN
 from .coordinator import HeatingIntelligenceCoordinator
 
 
@@ -20,12 +17,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(RoomDemandSensor(coordinator, room["id"], room["name"]))
         if room.get("window_entity"):
             entities.append(RoomWindowSensor(coordinator, room["id"], room["name"]))
+    for pump in entry.options.get(CONF_PUMPS, []):
+        entities.append(PumpRunningSensor(coordinator, pump["id"], pump["name"]))
     async_add_entities(entities)
 
 
 class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
-    """Whether a room is currently requesting heat."""
-
     _attr_device_class = BinarySensorDeviceClass.HEAT
     _attr_should_poll = False
 
@@ -37,23 +34,12 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self):
-        """Only an explicit 'on' from the relay means heat is requested."""
         return self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("demand", False)
 
     @property
     def available(self):
-        """Treat this installation's unavailable relay state as no demand.
-
-        The source state remains exposed as an attribute so the UI still makes
-        it clear that the relay itself is unavailable. A missing/unknown
-        source state remains unavailable rather than being silently treated
-        as a normal idle state.
-        """
         room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
-        return (
-            super().available
-            and room.get("demand_state") not in (None, "unknown")
-        )
+        return super().available and room.get("demand_state") not in (None, "unknown")
 
     @property
     def extra_state_attributes(self):
@@ -66,8 +52,6 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
 
 
 class RoomWindowSensor(CoordinatorEntity, BinarySensorEntity):
-    """Window contact state for a room."""
-
     _attr_device_class = BinarySensorDeviceClass.WINDOW
     _attr_should_poll = False
 
@@ -85,3 +69,34 @@ class RoomWindowSensor(CoordinatorEntity, BinarySensorEntity):
     def available(self):
         room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
         return super().available and room.get("window_state") not in (None, "unavailable", "unknown")
+
+
+class PumpRunningSensor(CoordinatorEntity, BinarySensorEntity):
+    """Pump is considered running above a small power threshold."""
+
+    _attr_device_class = BinarySensorDeviceClass.RUNNING
+    _attr_should_poll = False
+
+    def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
+        super().__init__(coordinator)
+        self.pump_id = pump_id
+        self._attr_name = f"{pump_name} Pump Running"
+        self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_running"
+
+    @property
+    def is_on(self):
+        return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("running", False)
+
+    @property
+    def available(self):
+        pump = self.coordinator.data.get("pumps", {}).get(self.pump_id, {})
+        return super().available and pump.get("power") is not None
+
+    @property
+    def extra_state_attributes(self):
+        pump = self.coordinator.data.get("pumps", {}).get(self.pump_id, {})
+        return {
+            "power": pump.get("power"),
+            "power_entity": pump.get("power_entity"),
+            "running_threshold_w": 5,
+        }

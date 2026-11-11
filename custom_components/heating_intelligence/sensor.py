@@ -6,7 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_ROOMS, DOMAIN
+from .const import CONF_PUMPS, CONF_ROOMS, DOMAIN
 from .coordinator import HeatingIntelligenceCoordinator
 
 
@@ -15,10 +15,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities = [HeatingOverviewSensor(coordinator)]
     if entry.options.get("water_temperature_entity"):
         entities.append(WaterTemperatureSensor(coordinator))
-    entities.extend(
-        RoomTemperatureSensor(coordinator, room["id"], room["name"])
-        for room in entry.options.get(CONF_ROOMS, [])
-    )
+    entities.extend(RoomTemperatureSensor(coordinator, room["id"], room["name"]) for room in entry.options.get(CONF_ROOMS, []))
+    for pump in entry.options.get(CONF_PUMPS, []):
+        entities.extend([
+            PumpPowerSensor(coordinator, pump["id"], pump["name"]),
+            PumpEnergySensor(coordinator, pump["id"], pump["name"]),
+        ])
     async_add_entities(entities)
 
 
@@ -43,6 +45,7 @@ class HeatingOverviewSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
         rooms = data.get("rooms", {})
         valid_temps = [r["temperature"] for r in rooms.values() if r.get("temperature") is not None]
+        pumps = data.get("pumps", {})
         return {
             "rooms": rooms,
             "room_count": len(rooms),
@@ -50,6 +53,10 @@ class HeatingOverviewSensor(CoordinatorEntity, SensorEntity):
             "average_room_temperature": round(sum(valid_temps) / len(valid_temps), 1) if valid_temps else None,
             "water_temperature": data.get("water_temperature"),
             "water_temperature_entity": data.get("water_temperature_entity"),
+            "pumps": pumps,
+            "running_pumps": sum(1 for pump in pumps.values() if pump.get("running")),
+            "total_pump_power": round(sum(p["power"] for p in pumps.values() if p.get("power") is not None), 1),
+            "total_pump_energy": round(sum(p["energy"] for p in pumps.values() if p.get("energy") is not None), 3),
         }
 
 
@@ -93,3 +100,49 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self):
         return super().available and self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("temperature") is not None
+
+
+class PumpPowerSensor(CoordinatorEntity, SensorEntity):
+    """Current electrical power drawn by a manifold pump."""
+
+    _attr_native_unit_of_measurement = "W"
+    _attr_should_poll = False
+    _attr_device_class = "power"
+    _attr_state_class = "measurement"
+
+    def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
+        super().__init__(coordinator)
+        self.pump_id = pump_id
+        self._attr_name = f"{pump_name} Pump Power"
+        self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_power"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("power")
+
+    @property
+    def available(self):
+        return super().available and self.native_value is not None
+
+
+class PumpEnergySensor(CoordinatorEntity, SensorEntity):
+    """Cumulative electrical energy consumed by a manifold pump."""
+
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_should_poll = False
+    _attr_device_class = "energy"
+    _attr_state_class = "total_increasing"
+
+    def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
+        super().__init__(coordinator)
+        self.pump_id = pump_id
+        self._attr_name = f"{pump_name} Pump Energy"
+        self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_energy"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("energy")
+
+    @property
+    def available(self):
+        return super().available and self.native_value is not None

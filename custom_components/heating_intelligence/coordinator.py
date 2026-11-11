@@ -10,6 +10,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_PUMPS,
     CONF_ROOMS,
     CONF_TEMPERATURE_ENTITY,
     CONF_WATER_TEMPERATURE_ENTITY,
@@ -21,7 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
-    """Collect current room and heating-water states."""
+    """Collect current room, pump and heating-water states."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.entry = entry
@@ -33,13 +34,35 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         )
 
     async def _async_update_data(self):
-        """Return a snapshot of configured room and global states."""
-        result = {"rooms": {}, "water_temperature": None, "water_temperature_entity": None}
+        """Return a snapshot of configured room, pump and global states."""
+        result = {
+            "rooms": {},
+            "pumps": {},
+            "water_temperature": None,
+            "water_temperature_entity": None,
+        }
         water_entity = self.entry.options.get(CONF_WATER_TEMPERATURE_ENTITY)
         if water_entity:
             state = self.hass.states.get(water_entity)
             result["water_temperature_entity"] = water_entity
             result["water_temperature"] = _as_float(state.state) if state else None
+
+        for pump in self.entry.options.get(CONF_PUMPS, []):
+            power_state = self.hass.states.get(pump["power_entity"])
+            energy_state = self.hass.states.get(pump["energy_entity"])
+            power = _as_float(power_state.state) if power_state else None
+            energy = _as_float(energy_state.state) if energy_state else None
+            result["pumps"][pump["id"]] = {
+                "id": pump["id"],
+                "name": pump["name"],
+                "power_entity": pump["power_entity"],
+                "power": power,
+                "energy_entity": pump["energy_entity"],
+                "energy": energy,
+                "running": power is not None and power > 5,
+                "power_source_state": power_state.state if power_state else "missing",
+                "energy_source_state": energy_state.state if energy_state else "missing",
+            }
 
         for room in self.entry.options.get(CONF_ROOMS, []):
             room_id = room["id"]

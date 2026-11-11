@@ -17,7 +17,8 @@
         "menu_options": {
           "add_room": "Add a room",
           "remove_room": "Remove a room",
-          "global_settings": "Global settings"
+          "global_settings": "Global settings",
+          "pump_settings": "Pump settings"
         }
       },
       "global_settings": {
@@ -30,6 +31,10 @@
       },
       "remove_room": {
         "title": "Remove a room"
+      },
+      "pump_settings": {
+        "title": "Pump settings",
+        "description": "Select instantaneous power (W) and cumulative energy (kWh) sensors for each manifold pump. Leave both fields empty to omit a pump."
       }
     },
     "abort": {

@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Heating Intelligence",
+        "description": "Set up read-only heating analysis. Add your rooms after setup."
+      }
+    },
+    "abort": {
+      "already_configured": "Heating Intelligence is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Room configuration",
+        "menu_options": {
+          "add_room": "Add a room",
+          "remove_room": "Remove a room"
+        }
+      },
+      "add_room": {
+        "title": "Add a room",
+        "description": "Select the room's thermostat demand relay and temperature sensor. The window contact is optional."
+      },
+      "remove_room": {
+        "title": "Remove a room"
+      }
+    },
+    "abort": {
+      "no_rooms": "There are no rooms to remove."
+    }
+  }
+}

@@ -37,12 +37,23 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self):
+        """Only an explicit 'on' from the relay means heat is requested."""
         return self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("demand", False)
 
     @property
     def available(self):
+        """Treat this installation's unavailable relay state as no demand.
+
+        The source state remains exposed as an attribute so the UI still makes
+        it clear that the relay itself is unavailable. A missing/unknown
+        source state remains unavailable rather than being silently treated
+        as a normal idle state.
+        """
         room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
-        return super().available and room.get("demand_state") not in (None, "unavailable", "unknown")
+        return (
+            super().available
+            and room.get("demand_state") not in (None, "unknown")
+        )
 
     @property
     def extra_state_attributes(self):
@@ -50,7 +61,7 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
         return {
             "source_entity": room.get("demand_entity"),
             "source_state": room.get("demand_state"),
-            "interpretation": "on = heat requested; off/unavailable/unknown = no active request",
+            "interpretation": "on = heat requested; unavailable/off = no active request",
         }
 
 

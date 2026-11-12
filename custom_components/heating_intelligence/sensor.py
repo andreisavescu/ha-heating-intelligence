@@ -79,7 +79,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(EfficiencySensor(coordinator, "electricity_energy_today_kwh"))
     if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "gas_kwh_per_degree_day"))
-    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_DELTA_T_ENTITY):
+    if (entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) or entry.options.get(CONF_AC_ENERGY_ENTITY)) and entry.options.get(CONF_DELTA_T_ENTITY):
         entities.extend(EfficiencySensor(coordinator, metric) for metric in (
             "estimated_delivered_heat_today_kwh", "heat_loss_coefficient_w_k",
             "heat_loss_u_value_daily", "heat_loss_u_value_7d", "heat_loss_u_value_30d"))

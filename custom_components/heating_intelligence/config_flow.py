@@ -25,6 +25,8 @@ from .const import (
     CONF_ELECTRICITY_BOILER_POWER_ENTITY,
     CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
     CONF_GAS_ENERGY_FACTOR,
+    CONF_BOILER_EFFICIENCY,
+    CONF_ENVELOPE_AREA,
     CONF_NAME,
     CONF_PUMPS,
     CONF_PUMP_ENERGY_ENTITY,
@@ -94,9 +96,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 else:
                     data.pop(key, None)
             data[CONF_COMFORT_TARGET_C] = float(user_input.get(CONF_COMFORT_TARGET_C) or 21.0)
-            data[CONF_GAS_ENERGY_FACTOR] = float(
-                user_input.get(CONF_GAS_ENERGY_FACTOR) or 10.55
-            )
+            data[CONF_GAS_ENERGY_FACTOR] = float(user_input.get(CONF_GAS_ENERGY_FACTOR) or 10.55)
+            data[CONF_BOILER_EFFICIENCY] = float(user_input.get(CONF_BOILER_EFFICIENCY) or 0.90)
+            data[CONF_ENVELOPE_AREA] = float(user_input.get(CONF_ENVELOPE_AREA) or 361.26)
             return self.async_create_entry(title="", data=data)
 
         current = self.config_entry.options
@@ -124,6 +126,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 selector.NumberSelector(selector.NumberSelectorConfig(min=16, max=25, step=0.5, unit_of_measurement="°C", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional(CONF_GAS_ENERGY_FACTOR, default=current.get(CONF_GAS_ENERGY_FACTOR, 10.55)):
                 selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=20, step=0.01, mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional(CONF_BOILER_EFFICIENCY, default=current.get(CONF_BOILER_EFFICIENCY, 0.90)):
+                selector.NumberSelector(selector.NumberSelectorConfig(min=0.5, max=1.0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional(CONF_ENVELOPE_AREA, default=current.get(CONF_ENVELOPE_AREA, 361.26)):
+                selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=2000, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
         })
         return self.async_show_form(step_id="global_settings", data_schema=schema)
 

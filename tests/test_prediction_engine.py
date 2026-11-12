@@ -84,3 +84,12 @@ def test_energy_forecast_handles_missing_one_meter():
     assert result["status"] == "available"
     assert result["gas_kwh"] == 8
     assert result["electricity_kwh"] is None
+
+
+def test_configured_comfort_target_is_used_in_room_forecast():
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+    rising = samples(now - timedelta(hours=2), slope=0.2)
+    room = {"temperature": 20.0, "demand": True, "temperature_samples": rising}
+    result = MODULE.room_forecast(room, now, comfort_target_c=22.0)
+    assert result["comfort_target_c"] == 22.0
+    assert result["time_to_comfort_minutes"] == 600

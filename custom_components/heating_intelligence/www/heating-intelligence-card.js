@@ -237,7 +237,28 @@ class HeatingIntelligenceCard extends HTMLElement {
             }).join("")}
           </div>
         </div>
-        <div class="section"><div class="section-title">Energy history</div>${this._energyChart(attrs.energy_history)}</div>\n        <div class="section"><div class="section-title">Forecasts</div>
+        <div class="section"><div class="section-title">Floor thermal performance</div>
+          <div class="subtle">Area-weighted room observations. Only rooms with configured surface area and valid readings contribute to each weighted metric.</div>
+          <div class="overview">
+            ${["ground_floor","upstairs"].map((id) => {
+              const f = attrs.floor_performance?.[id] || {};
+              const label = id === "ground_floor" ? "Downstairs" : "Upstairs";
+              return '<div class="metric"><span>' + label + ' · ' + (f.room_count ?? 0) + ' rooms</span><strong>' + this._fmt(f.configured_area_m2, "m²", 1) + ' · ' + (f.area_coverage_percent ?? 0) + '% area coverage</strong><div class="subtle">Area-weighted temperature: ' + this._fmt(f.area_weighted_temperature_c) + ' · cooling: ' + this._fmt(f.area_weighted_cooling_c_per_hour, "°C/h", 2) + ' · heating response: ' + this._fmt(f.area_weighted_heating_response_minutes, "min", 0) + ' · demand: ' + this._fmt(f.area_weighted_demand_hours_today, "h", 1) + '</div></div>';
+            }).join("")}
+          </div>
+        </div>
+        <div class="section"><div class="section-title">Energy history</div>${this._energyChart(attrs.energy_history)}</div>\n        <div class="section"><div class="section-title">Weather-normalised efficiency</div>
+          <div class="overview">
+            <div class="metric"><span>Model status</span><strong>${this._esc(attrs.efficiency?.weather_normalised?.status || "collecting data")}</strong></div>
+            <div class="metric"><span>Completed days used</span><strong>${attrs.efficiency?.weather_normalised?.days_used ?? 0} / ${attrs.efficiency?.weather_normalised?.minimum_days ?? 21}</strong></div>
+            <div class="metric"><span>Reference gas use</span><strong>${this._fmt(attrs.efficiency?.weather_normalised?.reference_expected_gas_kwh, "kWh", 1)}</strong></div>
+          </div>
+          <div class="subtle">${this._esc(attrs.efficiency?.weather_normalised?.note || "Collecting weather and energy history.")}</div>
+          <div class="pumps">
+            ${(attrs.efficiency?.weather_normalised?.recent_days || []).slice(-7).map((d) => '<div class="metric"><span>' + this._esc(d.date) + '</span><strong>Actual ' + this._fmt(d.actual_gas_kwh, "kWh", 1) + ' · normalised ' + this._fmt(d.weather_normalised_gas_kwh, "kWh", 1) + '</strong><div class="subtle">Weather model expected ' + this._fmt(d.weather_expected_gas_kwh, "kWh", 1) + ' · deviation ' + this._fmt(d.weather_effect_percent, "%", 1) + '</div></div>').join("") || '<p class="subtle">At least 21 complete days with gas, outdoor temperature, ΔT and solar data are required.</p>'}
+          </div>
+        </div>
+        <div class="section"><div class="section-title">Forecasts</div>
           <div class="subtle">Explainable short-term projections · confidence reflects sample coverage and trend consistency.</div>
           <div class="overview">
             <div class="metric"><span>Rooms with forecasts</span><strong>${attrs.predictions?.rooms_with_forecasts ?? 0} / ${entries.length}</strong></div>

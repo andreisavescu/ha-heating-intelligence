@@ -31,6 +31,9 @@ from .const import (
     CONF_GAS_ENERGY_FACTOR,
     CONF_BOILER_EFFICIENCY,
     CONF_ENVELOPE_AREA,
+    CONF_AC_POWER_ENTITY,
+    CONF_AC_ENERGY_ENTITY,
+    CONF_AC_HEATING_COP,
     CONF_FLOOR,
     CONF_PUMPS,
     CONF_ROOMS,
@@ -371,8 +374,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                     read_sensor(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY)
                     or read_sensor(CONF_ELECTRICITY_BOILER_ENTITY)
                 ),
+                "ac": read_sensor(CONF_AC_ENERGY_ENTITY),
             },
             "boiler_power": read_sensor(CONF_ELECTRICITY_BOILER_POWER_ENTITY),
+            "ac_power": read_sensor(CONF_AC_POWER_ENTITY),
+            "ac_energy": read_sensor(CONF_AC_ENERGY_ENTITY),
             "indoor_temperature": {
                 "value": sum(indoor_values) / len(indoor_values),
                 "unit": "°C",
@@ -390,7 +396,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         from .thermal_performance import thermal_performance_statistics
         result["efficiency"].update(thermal_performance_statistics(self._history, now_local,
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
-            float(self.entry.options.get(CONF_ENVELOPE_AREA, 361.26))))
+            float(self.entry.options.get(CONF_ENVELOPE_AREA, 361.26)),
+            float(self.entry.options.get(CONF_AC_HEATING_COP, 3.0))))
         weather_model = weather_normalised_efficiency(
             self._history.get("efficiency_daily", {}),
             local_date,
@@ -417,6 +424,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             elif boiler_power_unit == "mw":
                 boiler_power_w /= 1000
         result["efficiency"]["boiler_power_w"] = boiler_power_w
+        ac_power = readings.get("ac_power")
+        ac_power_w = ac_power.get("value") if ac_power else None
+        ac_power_unit = (ac_power.get("unit") or "").lower() if ac_power else ""
+        if ac_power_w is not None:
+            if ac_power_unit == "kw":
+                ac_power_w *= 1000
+            elif ac_power_unit == "mw":
+                ac_power_w /= 1000
+        result["efficiency"]["ac_power_w"] = ac_power_w
         result["efficiency"]["sources"] = {
             key: value.get("entity_id") if value else None
             for key, value in readings.items() if key != "electricity_meters"

@@ -10,6 +10,8 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .room_analytics import demand_is_active, room_statistics, update_room_history
+
 from .const import (
     CONF_DEMAND_ENTITY,
     CONF_FLOOR,
@@ -76,6 +78,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         elapsed = (now - previous_update).total_seconds() if previous_update else 0.0
         if elapsed < 0 or elapsed > 90:
             elapsed = 0.0
+        now_local = dt_util.now()
+        interval_start_local = (
+            dt_util.as_local(previous_update)
+            if previous_update is not None and elapsed > 0
+            else now_local
+        )
         self._history["last_update"] = now.isoformat()
         daily = self._history.setdefault("daily", {})
         if daily.get("date") != local_date:
@@ -204,8 +212,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "daily_energy_kwh": round(float(history.get("daily_energy_kwh", 0)), 4),
             }
 
-        await self._store.async_save(self._history)
-
         result["sync"] = {
             "status": self._history.get("last_sync_result", "unknown"),
             "mismatch_count": int(self._history.get("sync_mismatch_count", 0)),
@@ -232,14 +238,23 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             window_id = room.get(CONF_WINDOW_ENTITY)
             window = self.hass.states.get(window_id) if window_id else None
             demand_state = demand.state if demand else None
+            demand_active = demand_is_active(demand_state)
+            room_history = update_room_history(
+                self._history,
+                room_id,
+                demand_active,
+                dt_util.as_local(demand.last_changed) if demand else None,
+                interval_start_local,
+                now_local,
+            )
+            stats = room_statistics(room_history, now_local)
             floor = room.get(CONF_FLOOR, "unassigned")
             floor_data = floor_analysis.setdefault(floor, {"active_rooms": 0})
             daily_key = "room_demand_" + room_id
-            demand_seconds = float(daily.get(daily_key, 0.0))
-            if demand_state == "on":
+            demand_seconds = stats["demand_seconds_today"]
+            daily[daily_key] = demand_seconds
+            if demand_active:
                 floor_data["active_rooms"] = int(floor_data.get("active_rooms", 0)) + 1
-                demand_seconds += elapsed
-                daily[daily_key] = demand_seconds
             result["rooms"][room_id] = {
                 "floor": floor,
                 "floor_label": {"ground_floor": "Downstairs", "upstairs": "Upstairs", "unassigned": "Unassigned"}.get(floor, floor),
@@ -247,7 +262,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "name": room["name"],
                 "demand_entity": room[CONF_DEMAND_ENTITY],
                 "demand_state": demand_state,
-                "demand": demand_state == "on",
+                "demand": demand_active,
+                **stats,
                 "temperature_entity": room[CONF_TEMPERATURE_ENTITY],
                 "temperature": _as_float(temperature.state) if temperature else None,
                 "window_entity": window_id,
@@ -260,6 +276,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             floor_data["demand_hours_today"] = round(sum(float(daily.get("room_demand_" + room["id"], 0.0)) for room in self.entry.options.get(CONF_ROOMS, []) if room.get(CONF_FLOOR, "unassigned") == floor_id) / 3600, 2)
             floor_data["demand_pump_state"] = ("demand_without_pump" if floor_data["active_rooms"] > 0 and not floor_data["pump_running"] else "pump_without_demand" if floor_data["active_rooms"] == 0 and floor_data["pump_running"] else "demand_and_pump" if floor_data["active_rooms"] > 0 and floor_data["pump_running"] else "idle")
         result["floor_analysis"] = floor_analysis
+        await self._store.async_save(self._history)
         return result
 
 

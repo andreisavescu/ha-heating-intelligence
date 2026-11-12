@@ -36,6 +36,16 @@ Version 0.6.0 also removes the two retired legacy daily pump-electricity entitie
 
 Room Heating Demand binary sensors now remain available whenever the integration coordinator is healthy. The configured source entity's availability is interpreted only as the demand signal: any present state (`on`, `off`, or `unknown`) means demand; `unavailable` or a missing source means no demand (`off`). A source becoming unavailable no longer makes the Heating Intelligence entity itself unavailable.
 
+## 0.7.0 — advanced diagnostics
+
+- Room efficiency score (0–100) with visible component contributions. Scores are withheld until at least 12 temperature samples and two valid metrics are available.
+- Observed heat-loss indicator based on closed-window, no-demand cooling rate (°C/h), plus the existing heat-retention estimate. This is not a physical heat-loss coefficient in W/K; room area and measured delivered heat are not available.
+- Boiler consumption analysis combines gas energy, gas per heating-degree-day, and heating-system electricity. The gas/electricity ratio is a consumption proxy, not boiler combustion efficiency. Combustion efficiency requires measured useful heat output.
+- Historical anomaly prompts compare daily gas/electricity consumption with at least three prior recorded days and flag unusually high cooling or slow heating response. Weather, occupancy and incomplete current-day readings can affect comparisons.
+- The Lovelace card adds per-room scores, score components, cooling indicators, boiler consumption proxies and historical anomaly prompts.
+
+All diagnostics are read-only and heuristic. Missing or insufficient data is shown as collecting/unavailable rather than assigned a misleading score.
+
 ## Install
 
 1. Add this repository to HACS as a custom repository, category **Integration**.

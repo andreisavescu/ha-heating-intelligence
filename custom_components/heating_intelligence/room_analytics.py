@@ -34,7 +34,7 @@ def _add_interval_to_daily(
     end: datetime,
 ) -> None:
     """Split an aware interval at local midnights and add seconds per date."""
-    if end <= start:
+    if end.astimezone(timezone.utc) <= start.astimezone(timezone.utc):
         return
     cursor = start
     while cursor.date() < end.date():
@@ -83,7 +83,11 @@ def update_room_history(
     if active and previous is not True:
         # On first observation, start counting now; do not backfill time from
         # before the integration was configured or Home Assistant restarted.
-        cycle_start = max(transition, interval_start)
+        cycle_start = (
+            transition
+            if transition.astimezone(timezone.utc) >= interval_start.astimezone(timezone.utc)
+            else interval_start
+        )
         room["cycle_start"] = cycle_start.isoformat()
         room["total_cycles"] = int(room.get("total_cycles", 0)) + 1
         bucket = room["daily"].setdefault(cycle_start.date().isoformat(), {})
@@ -96,9 +100,13 @@ def update_room_history(
         _add_interval_to_daily(room["daily"], start, now)
     elif previous is True:
         # Include the final active interval up to the source transition time.
-        end = min(now, transition)
+        end = (
+            now
+            if now.astimezone(timezone.utc) <= transition.astimezone(timezone.utc)
+            else transition
+        )
         _add_interval_to_daily(room["daily"], interval_start, end)
-        if cycle_start is not None and end >= cycle_start:
+        if cycle_start is not None and end.astimezone(timezone.utc) >= cycle_start.astimezone(timezone.utc):
             duration = (end.astimezone(timezone.utc) - cycle_start.astimezone(timezone.utc)).total_seconds()
             room["cycles"].append(
                 {

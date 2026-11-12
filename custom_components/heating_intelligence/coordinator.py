@@ -18,6 +18,7 @@ from .prediction_engine import build_predictions
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_COMFORT_TARGET_C,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
     CONF_DELTA_T_ENTITY,
@@ -385,7 +386,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         for room_id, metrics in advanced["room_diagnostics"].items():
             result["rooms"][room_id].update(metrics)
         result["advanced_diagnostics"] = advanced
-        result["predictions"] = build_predictions(prediction_rooms, result["efficiency"], now_local)
+        result["predictions"] = build_predictions(prediction_rooms, result["efficiency"], now_local, float(self.entry.options.get(CONF_COMFORT_TARGET_C, 21.0)))
         await self._store.async_save(self._history)
         return result
 

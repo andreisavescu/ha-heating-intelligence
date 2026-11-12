@@ -17,6 +17,9 @@ from .const import (
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
     CONF_ELECTRICITY_CONSUMPTION_ENTITY,
+    CONF_ELECTRICITY_GROUND_FLOOR_ENTITY,
+    CONF_ELECTRICITY_UPSTAIRS_ENTITY,
+    CONF_ELECTRICITY_BOILER_ENTITY,
     CONF_GAS_ENERGY_FACTOR,
     CONF_NAME,
     CONF_PUMPS,
@@ -66,6 +69,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_DELTA_T_ENTITY,
             CONF_GAS_CONSUMPTION_ENTITY,
             CONF_ELECTRICITY_CONSUMPTION_ENTITY,
+            CONF_ELECTRICITY_GROUND_FLOOR_ENTITY,
+            CONF_ELECTRICITY_UPSTAIRS_ENTITY,
+            CONF_ELECTRICITY_BOILER_ENTITY,
         )
         if user_input is not None:
             data = dict(self.config_entry.options)
@@ -93,6 +99,12 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(CONF_GAS_CONSUMPTION_ENTITY, default=current.get(CONF_GAS_CONSUMPTION_ENTITY)):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_ELECTRICITY_CONSUMPTION_ENTITY, default=current.get(CONF_ELECTRICITY_CONSUMPTION_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_ELECTRICITY_GROUND_FLOOR_ENTITY, default=current.get(CONF_ELECTRICITY_GROUND_FLOOR_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_ELECTRICITY_UPSTAIRS_ENTITY, default=current.get(CONF_ELECTRICITY_UPSTAIRS_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_ELECTRICITY_BOILER_ENTITY, default=current.get(CONF_ELECTRICITY_BOILER_ENTITY)):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_GAS_ENERGY_FACTOR, default=current.get(CONF_GAS_ENERGY_FACTOR, 10.55)):
                 selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=20, step=0.01, mode=selector.NumberSelectorMode.BOX)),

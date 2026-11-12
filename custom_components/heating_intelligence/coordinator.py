@@ -15,6 +15,7 @@ from .thermal_analytics import record_temperature_sample, thermal_statistics
 from .efficiency_analytics import update_efficiency_history, efficiency_statistics
 from .advanced_diagnostics import build_advanced_diagnostics
 from .prediction_engine import build_predictions
+from .floor_efficiency import build_floor_performance, weather_normalised_efficiency
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -321,6 +322,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             floor_data["demand_hours_today"] = round(sum(float(daily.get("room_demand_" + room["id"], 0.0)) for room in self.entry.options.get(CONF_ROOMS, []) if room.get(CONF_FLOOR, "unassigned") == floor_id) / 3600, 2)
             floor_data["demand_pump_state"] = ("demand_without_pump" if floor_data["active_rooms"] > 0 and not floor_data["pump_running"] else "pump_without_demand" if floor_data["active_rooms"] == 0 and floor_data["pump_running"] else "demand_and_pump" if floor_data["active_rooms"] > 0 and floor_data["pump_running"] else "idle")
         result["floor_analysis"] = floor_analysis
+        result["floor_performance"] = build_floor_performance(
+            result["rooms"],
+            float(self.entry.options.get(CONF_COMFORT_TARGET_C, 21.0)),
+        )
 
         def read_sensor(option_key):
             entity_id = self.entry.options.get(option_key)
@@ -370,10 +375,22 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
         )
         result["efficiency"] = efficiency_statistics(self._history, now_local)
+        weather_model = weather_normalised_efficiency(
+            self._history.get("efficiency_daily", {}),
+            local_date,
+        )
+        result["efficiency"]["weather_normalised"] = weather_model
+        normalised_by_date = {
+            item["date"]: item for item in weather_model.get("recent_days", [])
+        }
         result["energy_history"] = [
-            {"date": date_key, "gas_kwh": round(day.get("gas_kwh", 0.0), 3),
-             "electricity_kwh": round(day.get("electricity_kwh", 0.0), 3)}
-            for date_key, day in sorted(self._history.get("efficiency_daily", {}).items())[-14:]
+            {
+                "date": date_key,
+                "gas_kwh": round(day.get("gas_kwh", 0.0), 3),
+                "electricity_kwh": round(day.get("electricity_kwh", 0.0), 3),
+                "weather_normalised_gas_kwh": normalised_by_date.get(date_key, {}).get("weather_normalised_gas_kwh"),
+            }
+            for date_key, day in sorted(self._history.get("efficiency_daily", {}).items())[-30:]
         ]
         boiler_power = readings.get("boiler_power")
         boiler_power_w = boiler_power.get("value") if boiler_power else None

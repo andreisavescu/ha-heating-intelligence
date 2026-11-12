@@ -9,6 +9,7 @@ from homeassistant.components.http import StaticPathConfig
 
 from .const import CARD_FILENAME, CARD_URL, DOMAIN, PLATFORMS
 from .coordinator import HeatingIntelligenceCoordinator
+from .devices import async_repair_entity_device_associations
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -32,6 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    async_repair_entity_device_associations(hass, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     return True
 

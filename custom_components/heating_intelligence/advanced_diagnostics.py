@@ -18,6 +18,7 @@ def build_advanced_diagnostics(
     """
     room_results: dict[str, dict[str, Any]] = {}
     anomalies: list[dict[str, str]] = []
+    floor_groups: dict[str, list[tuple[float, float]]] = {}
 
     for room_id, room in rooms.items():
         response = room.get("heating_response_minutes")
@@ -38,7 +39,13 @@ def build_advanced_diagnostics(
             components.append(("window_use", max(0.0, 100 - min(100.0, window_seconds / 3600 * 40))))
 
         score = round(mean(value for _, value in components)) if len(components) >= 2 and samples >= 12 else None
+        area = room.get("area_m2")
+        area = float(area) if area not in (None, "") and float(area) > 0 else None
+        if area is not None and cooling is not None:
+            floor_groups.setdefault(str(room.get("floor", "unassigned")), []).append((area, float(cooling)))
         room_results[room_id] = {
+            "area_m2": area,
+            "cooling_rate_area_weighted_contribution": round(area * float(cooling), 3) if area is not None and cooling is not None else None,
             "score": score,
             "score_status": "available" if score is not None else "collecting_data",
             "score_components": {key: round(value) for key, value in components},
@@ -60,6 +67,15 @@ def build_advanced_diagnostics(
                 "title": f"{room.get('name', room_id)}: slower heating response",
                 "detail": f"Average observed 0.5 °C response is {float(response):.0f} minutes across {response_samples} samples.",
             })
+
+    floor_results = {}
+    for floor, values in floor_groups.items():
+        total_area = sum(area for area, _ in values)
+        floor_results[floor] = {
+            "configured_area_m2": round(total_area, 2),
+            "area_weighted_observed_cooling_c_per_hour": round(sum(area * rate for area, rate in values) / total_area, 3),
+            "rooms_with_area_and_cooling_data": len(values),
+        }
 
     daily = history.get("efficiency_daily", {})
     dated = sorted(
@@ -96,6 +112,7 @@ def build_advanced_diagnostics(
     }
     return {
         "room_diagnostics": room_results,
+        "floor_area_analysis": floor_results,
         "boiler_analysis": boiler,
         "anomalies": anomalies,
         "diagnostic_data_days": len(dated),

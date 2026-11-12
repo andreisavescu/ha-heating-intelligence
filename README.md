@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.5.2)
+## Current scope (0.6.0)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -25,6 +25,12 @@ A read-only Home Assistant custom integration for analysing underfloor-heating b
 - Optionally collect outdoor temperature, solar radiation, indoor–outdoor ΔT, cumulative gas consumption, and three independent cumulative electricity counters for the downstairs manifold pump, upstairs manifold pump, and boiler pump.
 - Calculate daily heating degree days (18 °C base), daily gas and per-pump/combined electricity energy, each pump's percentage share, and gas kWh per degree day; calculate exploratory correlations between daily gas/electricity use, degree days, ΔT, and solar radiation.
 - Retain sparse raw room-temperature, environmental, and cumulative meter observations for up to 400 days so derived thermal and efficiency metrics can be recalculated.
+
+## Stage 4: operational intelligence
+
+The overview card now includes explainable, rule-based operational insights derived from room, floor, pump, and thermal observations. These include a floor requesting heat while its pump is stopped, sustained window-open time during demand, frequent daily room heating cycles, slow observed heating response (only with at least three response samples), and elevated observed cooling rates. These are conservative diagnostic prompts, not fault declarations or proof of causation. The integration remains read-only.
+
+Version 0.6.0 also removes the two retired legacy daily pump-electricity entities from the entity registry by their exact historical entity IDs. Current pump power, cumulative energy, and whole-house electricity calculations are unchanged.
 
 ## Install
 

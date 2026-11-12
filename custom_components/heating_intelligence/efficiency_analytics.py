@@ -152,7 +152,7 @@ def efficiency_statistics(history: dict[str, Any], now: datetime, base_temperatu
         "electricity_upstairs_share_percent": round(100 * electricity_by_pump["upstairs"] / electricity_total, 1) if electricity_total else None,
         "electricity_boiler_share_percent": round(100 * electricity_by_pump["boiler"] / electricity_total, 1) if electricity_total else None,
         "gas_kwh_per_degree_day": round(gas / hdd, 3) if hdd and hdd > 0 else None,
-        "electricity_kwh_per_degree_day": round(electricity / hdd, 3) if hdd and hdd > 0 else None,
+        "electricity_kwh_per_degree_day": round(electricity_total / hdd, 3) if hdd and hdd > 0 else None,
         "days_with_data": len(completed),
         "gas_hdd_correlation": _correlation(gas_hdd),
         "gas_delta_t_correlation": _correlation(gas_delta),

@@ -32,6 +32,7 @@ def test_cumulative_gas_and_electricity_deltas_and_degree_days():
     assert stats["electricity_energy_today_kwh"] == 2.0
     assert stats["heating_degree_days"] == 10.0
     assert stats["gas_kwh_per_degree_day"] == 1.055
+    assert len(history["meter_samples"]) >= 4
 
 
 def test_meter_reset_does_not_create_negative_energy():
@@ -40,3 +41,21 @@ def test_meter_reset_does_not_create_negative_energy():
     MODULE.update_efficiency_history(history, {"gas": {"value": 50, "unit": "m³"}}, now, 0, False)
     MODULE.update_efficiency_history(history, {"gas": {"value": 1, "unit": "m³"}}, now + timedelta(minutes=1), 60, False)
     assert history["efficiency_daily"]["2026-11-12"]["gas_kwh"] == 0
+
+
+def test_correlations_are_calculated_for_gas_and_electricity():
+    history = {"efficiency_daily": {}}
+    for index, (outdoor, gas, electricity) in enumerate(((17, 1, 2), (16, 2, 4), (15, 3, 6)), start=10):
+        history["efficiency_daily"][f"2026-11-{index}"] = {
+            "outdoor_sum": outdoor, "outdoor_count": 1,
+            "delta_t_sum": 20 - outdoor, "delta_t_count": 1,
+            "solar_sum": 100 * index, "solar_count": 1,
+            "gas_kwh": gas, "electricity_kwh": electricity,
+        }
+    stats = MODULE.efficiency_statistics(
+        history, datetime(2026, 11, 12, tzinfo=timezone.utc)
+    )
+    assert stats["gas_hdd_correlation"] == 1.0
+    assert stats["electricity_hdd_correlation"] == 1.0
+    assert stats["gas_delta_t_correlation"] == -1.0
+    assert stats["electricity_delta_t_correlation"] == -1.0

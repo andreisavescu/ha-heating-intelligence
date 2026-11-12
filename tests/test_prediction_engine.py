@@ -50,3 +50,37 @@ def test_energy_forecast_requires_two_hours_and_projects_run_rate():
     assert result["electricity_kwh"] == 2.4
     early = MODULE.energy_forecast({"gas_energy_today_kwh": 1}, now.replace(hour=1))
     assert early["status"] == "insufficient_data"
+
+
+def test_room_forecast_estimates_time_until_below_comfort_when_cooling():
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+    cooling = samples(now - timedelta(hours=2), slope=-0.2)
+    room = {"temperature": 22.0, "demand": False, "temperature_samples": cooling}
+    result = MODULE.room_forecast(room, now)
+    assert result["status"] == "available"
+    assert result["time_below_comfort_minutes"] == 300
+
+
+def test_flat_temperature_trend_does_not_claim_a_comfort_crossing():
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+    flat = samples(now - timedelta(hours=2), slope=0)
+    room = {"temperature": 20.0, "demand": True, "temperature_samples": flat}
+    result = MODULE.room_forecast(room, now)
+    assert result["status"] == "available"
+    assert result["time_to_comfort_minutes"] is None
+
+
+def test_stale_samples_are_rejected():
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+    old = samples(now - timedelta(hours=4))
+    room = {"temperature": 20.0, "demand": True, "temperature_samples": old}
+    result = MODULE.room_forecast(room, now)
+    assert result["status"] == "insufficient_data"
+
+
+def test_energy_forecast_handles_missing_one_meter():
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+    result = MODULE.energy_forecast({"gas_energy_today_kwh": 4, "electricity_energy_today_kwh": None}, now)
+    assert result["status"] == "available"
+    assert result["gas_kwh"] == 8
+    assert result["electricity_kwh"] is None

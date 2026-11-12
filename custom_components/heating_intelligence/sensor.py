@@ -13,6 +13,7 @@ from .const import (
     CONF_DELTA_T_ENTITY, CONF_GAS_CONSUMPTION_ENTITY,
     CONF_ELECTRICITY_BOILER_POWER_ENTITY,
     CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
+    CONF_ELECTRICITY_BOILER_ENTITY,
 )
 from .coordinator import HeatingIntelligenceCoordinator
 from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin

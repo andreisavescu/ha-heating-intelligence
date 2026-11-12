@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.8.2)
+## Current scope (0.9.1)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -68,6 +68,18 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - Preserve the existing resource entry rather than requiring users to edit its URL on every release.
 - YAML-managed Lovelace resources remain user-managed; update their URL query version manually when upgrading.
 
+## 0.9.1 — floor thermal performance, weather normalisation and area-input fixes
+
+- Add downstairs/upstairs comparisons using area-weighted room temperature, observed closed-window cooling rate, heating response time and daily demand hours.
+- Show the number and percentage of rooms with configured surface areas so incomplete area coverage is visible.
+- Reuse the existing optional room-area settings; no room reconfiguration is required.
+- Fix the missing room-area input in the Set room floor area options form when no value was previously configured.
+- Allow room areas to be entered to 0.01 m² precision (for example, 10.92 m²), both when adding a room and when editing its area.
+- Add a conservative daily gas-use regression using completed days with heating degree days, indoor–outdoor ΔT and solar radiation.
+- Report actual gas use, model-expected gas use and a weather-normalised comparison index at median observed weather conditions.
+- Require at least 21 complete days with gas, outdoor temperature, ΔT and solar data before presenting the model.
+- Keep all calculations descriptive and read-only; no physical heat-loss coefficient or boiler efficiency is inferred.
+
 ## Install
 
 1. Add this repository to HACS as a custom repository, category **Integration**.
@@ -85,7 +97,7 @@ The integration serves its card JavaScript from:
 
 `/heating_intelligence/heating-intelligence-card.js`
 
-When Lovelace resources are managed through the Home Assistant UI (the default), Heating Intelligence automatically creates or updates the card resource on integration setup. The resource URL receives the installed integration version as a query parameter (for example, `?v=0.8.2`), so each integration update automatically changes the URL and bypasses stale browser/app caches. You no longer need to edit the resource URL manually.
+When Lovelace resources are managed through the Home Assistant UI (the default), Heating Intelligence automatically creates or updates the card resource on integration setup. The resource URL receives the installed integration version as a query parameter (for example, `?v=0.9.1`), so each integration update automatically changes the URL and bypasses stale browser/app caches. You no longer need to edit the resource URL manually.
 
 If Lovelace resources are configured in YAML (`lovelace: resource_mode: yaml`), Home Assistant does not allow integrations to modify that list. In that case, keep the resource as a JavaScript module and update its URL query version manually when upgrading.
 

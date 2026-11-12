@@ -29,13 +29,16 @@
         "data": {
           "electricity_boiler_power_entity": "Boiler electrical power (W)",
           "electricity_boiler_energy_entity": "Boiler electrical energy (kWh)",
-          "comfort_target_c": "Comfort temperature target (°C)"
+          "comfort_target_c": "Comfort temperature target (°C)",
+          "return_water_temperature_entity": "Heating water return temperature sensor (°C)"
         }
       },
       "add_room": {
         "title": "Add a room",
         "description": "Select the room's floor, thermostat demand relay and temperature sensor. Floor area is optional. The window contact is optional.",
-        "data": { "area_m2": "Room floor area (m²)" }
+        "data": {
+          "area_m2": "Room floor area (m²)"
+        }
       },
       "room_area": {
         "title": "Select room",
@@ -44,7 +47,9 @@
       "set_room_area": {
         "title": "Room floor area",
         "description": "Set the floor area for {room_name}. Leave empty if unknown.",
-        "data": { "area_m2": "Room floor area (m²)" }
+        "data": {
+          "area_m2": "Room floor area (m²)"
+        }
       },
       "remove_room": {
         "title": "Remove a room"

@@ -78,26 +78,26 @@ class HeatingIntelligenceCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         :host{display:block;color:var(--primary-text-color);--hi-blue:#3989d6;--hi-green:#249c70;--hi-amber:#d89127;--hi-red:#d45c52}
-        ha-card{padding:18px;overflow:hidden}
+        ha-card{padding:14px;overflow:hidden}
         .hero{position:relative;margin:-18px -18px 16px;padding:22px 20px 19px;background:linear-gradient(120deg,rgba(41,112,184,.22),rgba(36,156,112,.12));border-bottom:1px solid var(--divider-color)}
         .hero h2{font-size:1.28rem;font-weight:750;letter-spacing:-.02em;margin:0 0 5px}
         .hero p{margin:0;color:var(--secondary-text-color);font-size:.82rem}
         .hero-line{display:flex;align-items:center;justify-content:space-between;gap:12px}
         .live-pill{white-space:nowrap;border-radius:999px;padding:5px 10px;background:rgba(36,156,112,.15);color:var(--hi-green);font-size:.72rem;font-weight:700}
-        .overview,.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-        .metric,.pump{min-width:0;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:14px;padding:12px}
+        .overview,.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+        .metric,.pump{min-width:0;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:11px;padding:9px}
         .metric{position:relative;overflow:hidden}
         .metric:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 4px 4px 0;background:var(--hi-blue);opacity:.8}
-        .metric span,.pump-values span{display:block;color:var(--secondary-text-color);font-size:.75rem;margin-bottom:7px}
+        .metric span,.pump-values span{display:block;color:var(--secondary-text-color);font-size:.72rem;margin-bottom:4px}
         .metric strong,.pump strong{font-size:1.03rem;font-weight:700;overflow-wrap:anywhere;line-height:1.3}
         .active{color:var(--hi-green)} .warning{color:var(--hi-amber)} .danger{color:var(--hi-red)}
-        .section{margin-top:20px}.section-title{display:flex;align-items:center;gap:8px;font-size:.94rem;font-weight:750;margin:0 0 10px}
+        .section{margin-top:8px;border:1px solid var(--divider-color);border-radius:12px;overflow:hidden}.section-title{display:flex;align-items:center;gap:8px;font-size:.88rem;font-weight:750;margin:0;padding:11px 12px;cursor:pointer;list-style:none}.section-title::-webkit-details-marker{display:none}.section-title:after{content:"＋";margin-left:auto;color:var(--secondary-text-color);font-weight:500}details[open]>.section-title:after{content:"−"}.section-content{padding:0 10px 10px}
         .section-title:before{content:"";width:4px;height:16px;border-radius:4px;background:var(--hi-blue)}
-        .pumps{display:grid;grid-template-columns:1fr;gap:9px}.pump{background:linear-gradient(135deg,var(--secondary-background-color),var(--card-background-color))}
+        .pumps{display:grid;grid-template-columns:1fr;gap:7px}.pump{background:linear-gradient(135deg,var(--secondary-background-color),var(--card-background-color))}
         .pump-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
         .pump-head strong{font-size:1rem}.pump-head span{font-size:.72rem;font-weight:750;padding:5px 9px;border-radius:999px;background:var(--secondary-background-color);color:var(--secondary-text-color)}
         .pump-head span.active{background:rgba(36,156,112,.14);color:var(--hi-green)}
-        .pump-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+        .pump-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
         select{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:11px;border:1px solid var(--divider-color);color:var(--primary-text-color);background:var(--card-background-color);font:inherit;margin-bottom:10px}
         .subtle{color:var(--secondary-text-color);font-size:.76rem;margin:10px 2px 0;line-height:1.45}
         .insights{display:grid;gap:8px}
@@ -208,6 +208,24 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="subtle">Scores are comparative heuristics, not building energy ratings. Cooling rate is an observed °C/h indicator, not a physical heat-loss coefficient. Boiler combustion efficiency requires measured heat output.</div>
         </div>
       </ha-card>`;
+    // Convert long analytical sections into compact, accessible disclosure panels.
+    this.shadowRoot.querySelectorAll(".section").forEach((section) => {
+      const heading = section.querySelector(".section-title");
+      if (!heading) return;
+      const disclosure = document.createElement("details");
+      disclosure.className = "section";
+      const summary = document.createElement("summary");
+      summary.className = "section-title";
+      summary.textContent = heading.textContent;
+      const content = document.createElement("div");
+      content.className = "section-content";
+      [...section.children].forEach((child) => {
+        if (child !== heading) content.appendChild(child);
+      });
+      disclosure.append(summary, content);
+      section.replaceWith(disclosure);
+      if (summary.textContent === "Forecasts" || summary.textContent === "Room details") disclosure.open = true;
+    });
     const select = this.shadowRoot.querySelector("select");
     if (select) select.addEventListener("change", (event) => { this._selectedRoom = event.target.value; this._render(); });
   }

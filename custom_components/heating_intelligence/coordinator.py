@@ -16,6 +16,7 @@ from .efficiency_analytics import update_efficiency_history, efficiency_statisti
 from .advanced_diagnostics import build_advanced_diagnostics
 from .prediction_engine import build_predictions
 from .floor_efficiency import build_floor_performance, weather_normalised_efficiency
+from .advanced_heating import update_advanced_history
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -33,6 +34,7 @@ from .const import (
     CONF_ROOMS,
     CONF_TEMPERATURE_ENTITY,
     CONF_WATER_TEMPERATURE_ENTITY,
+    CONF_RETURN_WATER_TEMPERATURE_ENTITY,
     CONF_WINDOW_ENTITY,
     DOMAIN,
 )
@@ -61,6 +63,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "pumps": {},
             "water_temperature": None,
             "water_temperature_entity": None,
+            "water_return_temperature": None,
+            "water_return_temperature_entity": None,
             "sync": {"status": "unknown", "mismatch_count": 0},
             "daily": {},
             "floor_analysis": {},
@@ -121,6 +125,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             state = self.hass.states.get(water_entity)
             result["water_temperature_entity"] = water_entity
             result["water_temperature"] = _as_float(state.state) if state else None
+        return_entity = self.entry.options.get(CONF_RETURN_WATER_TEMPERATURE_ENTITY)
+        if return_entity:
+            return_state = self.hass.states.get(return_entity)
+            result["water_return_temperature_entity"] = return_entity
+            result["water_return_temperature"] = _as_float(return_state.state) if return_state else None
 
         configured_pumps = self.entry.options.get(CONF_PUMPS, [])
         changed = False
@@ -415,6 +424,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["rooms"][room_id].update(metrics)
         result["advanced_diagnostics"] = advanced
         result["predictions"] = build_predictions(prediction_rooms, result["efficiency"], now_local, float(self.entry.options.get(CONF_COMFORT_TARGET_C, 21.0)))
+        result["advanced_heating"] = update_advanced_history(
+            self._history,
+            result.get("water_temperature"),
+            result.get("water_return_temperature"),
+            result["rooms"],
+            result["predictions"],
+            now_local,
+        )
+        result["predictions"]["validation"] = result["advanced_heating"]["forecast_validation"]
         await self._store.async_save(self._history)
         return result
 

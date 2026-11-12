@@ -56,3 +56,17 @@ def test_anomaly_detection_requires_a_historical_baseline():
     }}
     result = MODULE.build_advanced_diagnostics({}, {}, history)
     assert any(item["id"] == "gas_kwh_above_baseline" for item in result["anomalies"])
+
+
+def test_room_area_is_exposed_and_used_for_floor_weighting():
+    rooms = {
+        "small": {"name": "Small", "floor": "upstairs", "area_m2": 10, "cooling_rate_c_per_hour": 0.2, "temperature_sample_count": 20},
+        "large": {"name": "Large", "floor": "upstairs", "area_m2": 30, "cooling_rate_c_per_hour": 0.6, "temperature_sample_count": 20},
+        "unknown": {"name": "Unknown", "floor": "upstairs", "area_m2": None, "cooling_rate_c_per_hour": 1.0, "temperature_sample_count": 20},
+    }
+    result = MODULE.build_advanced_diagnostics(rooms, {}, {})
+    floor = result["floor_area_analysis"]["upstairs"]
+    assert floor["configured_area_m2"] == 40
+    assert floor["area_weighted_observed_cooling_c_per_hour"] == 0.5
+    assert floor["rooms_with_area_and_cooling_data"] == 2
+    assert result["room_diagnostics"]["small"]["area_m2"] == 10

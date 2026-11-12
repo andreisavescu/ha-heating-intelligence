@@ -23,8 +23,8 @@ A read-only Home Assistant custom integration for analysing underfloor-heating b
 - Analyse room thermal behaviour: temperature changes over 1, 6 and 24 hours, average heating response time to a 0.5 °C rise, cooling rate while there is no demand and windows are closed, and estimated hours per 1 °C of heat retention.
 - Measure how long windows remain open while a room is requesting heat.
 - Optionally collect outdoor temperature, solar radiation, indoor–outdoor ΔT, cumulative gas consumption, and cumulative electricity consumption.
-- Calculate daily heating degree days (18 °C base), daily gas/electricity energy, and gas kWh per degree day; calculate exploratory correlations between daily gas use, degree days, ΔT, and solar radiation.
-- Retain sparse raw room-temperature and environmental observations for up to 400 days so derived thermal and efficiency metrics can be recalculated.
+- Calculate daily heating degree days (18 °C base), daily gas/electricity energy, and gas kWh per degree day; calculate exploratory correlations between daily gas/electricity use, degree days, ΔT, and solar radiation.
+- Retain sparse raw room-temperature, environmental, and cumulative meter observations for up to 400 days so derived thermal and efficiency metrics can be recalculated.
 
 ## Install
 

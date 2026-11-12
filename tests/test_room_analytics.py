@@ -61,7 +61,7 @@ def test_week_and_month_aggregate_daily_buckets():
     history = {}
     first = dt("2026-11-09T08:00:00")
     second = dt("2026-11-10T08:00:00")
-    now = dt("2026-11-12T09:00:00")
+    now = dt("2026-11-10T09:00:00")
     update_room_history(history, "office", True, first, first, first)
     update_room_history(history, "office", True, first, first, second)
     room = update_room_history(history, "office", True, first, second, now)

@@ -28,3 +28,5 @@ CONF_ELECTRICITY_UPSTAIRS_ENTITY = "electricity_upstairs_entity"
 CONF_ELECTRICITY_BOILER_ENTITY = "electricity_boiler_entity"  # Legacy energy-meter option
 CONF_ELECTRICITY_BOILER_POWER_ENTITY = "electricity_boiler_power_entity"
 CONF_ELECTRICITY_BOILER_ENERGY_ENTITY = "electricity_boiler_energy_entity"
+
+CONF_COMFORT_TARGET_C = "comfort_target_c"

@@ -99,7 +99,8 @@ def update_advanced_history(
     daily = history.get("efficiency_daily", {})
     monthly: dict[str, dict[str, float]] = {}
     solar_pairs = []
-    water_day = [x for x in history["water_samples"] if x.get("delta_t_c") is not None]
+    water_cutoff = stamp - timedelta(hours=24)
+    water_day = [x for x in history["water_samples"] if x.get("delta_t_c") is not None and datetime.fromisoformat(x["time"]).astimezone(timezone.utc) >= water_cutoff]
     for date, day in sorted(daily.items()):
         month = date[:7]
         item = monthly.setdefault(month, {"gas_kwh": 0.0, "electricity_kwh": 0.0, "hdd": 0.0, "solar_sum": 0.0, "solar_count": 0, "days": 0})
@@ -159,5 +160,5 @@ def update_advanced_history(
         "water": water_stats,
         "solar": solar,
         "forecast_validation": validation,
-        "seasonal": {"months": {k: {**v, "gas_kwh": round(v["gas_kwh"], 2), "electricity_kwh": round(v["electricity_kwh"], 2), "hdd": round(v["hdd"], 2)} for k,v in monthly.items()}, "seasons": seasons},
+        "anomalies": anomalies,\n        "seasonal": {"months": {k: {**v, "gas_kwh": round(v["gas_kwh"], 2), "electricity_kwh": round(v["electricity_kwh"], 2), "hdd": round(v["hdd"], 2)} for k,v in monthly.items()}, "seasons": seasons},
     }

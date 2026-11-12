@@ -21,6 +21,9 @@ from .const import (
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
     CONF_ELECTRICITY_CONSUMPTION_ENTITY,
+    CONF_ELECTRICITY_GROUND_FLOOR_ENTITY,
+    CONF_ELECTRICITY_UPSTAIRS_ENTITY,
+    CONF_ELECTRICITY_BOILER_ENTITY,
     CONF_GAS_ENERGY_FACTOR,
     CONF_FLOOR,
     CONF_PUMPS,
@@ -323,6 +326,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "delta_t": read_sensor(CONF_DELTA_T_ENTITY),
             "gas": read_sensor(CONF_GAS_CONSUMPTION_ENTITY),
             "electricity": read_sensor(CONF_ELECTRICITY_CONSUMPTION_ENTITY),
+            "electricity_meters": {
+                "ground_floor": read_sensor(CONF_ELECTRICITY_GROUND_FLOOR_ENTITY),
+                "upstairs": read_sensor(CONF_ELECTRICITY_UPSTAIRS_ENTITY),
+                "boiler": read_sensor(CONF_ELECTRICITY_BOILER_ENTITY),
+            },
             "indoor_temperature": {
                 "value": sum(indoor_values) / len(indoor_values),
                 "unit": "°C",
@@ -339,7 +347,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         result["efficiency"] = efficiency_statistics(self._history, now_local)
         result["efficiency"]["sources"] = {
             key: value.get("entity_id") if value else None
-            for key, value in readings.items()
+            for key, value in readings.items() if key != "electricity_meters"
+        }
+        result["efficiency"]["electricity_meter_sources"] = {
+            key: value.get("entity_id") if value else None
+            for key, value in readings["electricity_meters"].items()
         }
         await self._store.async_save(self._history)
         return result

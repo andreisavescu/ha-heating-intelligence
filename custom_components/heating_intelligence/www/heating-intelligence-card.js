@@ -68,6 +68,9 @@ class HeatingIntelligenceCard extends HTMLElement {
         <div class="metric"><span>Heating response · +0.5°C</span><strong>${selected.heating_response_minutes == null ? "—" : this._fmt(selected.heating_response_minutes, "min")}</strong></div>
         <div class="metric"><span>Cooling rate · windows closed</span><strong>${this._fmt(selected.cooling_rate_c_per_hour, "°C/h", 2)}</strong></div>
         <div class="metric"><span>Heat retention · per 1°C</span><strong>${this._fmt(selected.heat_retention_hours_per_degree, "h/°C", 1)}</strong></div>
+        <div class="metric"><span>Room efficiency score</span><strong class="${selected.score == null ? "" : selected.score >= 70 ? "active" : selected.score < 45 ? "warning" : ""}">${selected.score == null ? "Collecting data" : selected.score + " / 100"}</strong></div>
+        <div class="metric"><span>Observed heat-loss indicator</span><strong>${this._fmt(selected.observed_heat_loss_c_per_hour, "°C/h", 2)}</strong></div>
+        <div class="metric"><span>Temperature samples</span><strong>${selected.temperature_samples ?? selected.temperature_sample_count ?? 0}</strong></div>
         <div class="metric"><span>Window open during demand today</span><strong>${this._fmt((selected.window_open_demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>
       </div><div class="subtle">Demand source: ${this._esc(selected.demand_state ?? "Unavailable")}. Any available state counts as demand; unavailable means no demand.</div>` :
       `<p class="subtle">No rooms configured yet.</p>`;
@@ -170,6 +173,21 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="pumps">
             ${thermalRanking.length ? thermalRanking.map((r) => `<div class="metric"><span>${this._esc(r.name)}</span><strong>${this._fmt(r.heat_retention_hours_per_degree, "h/°C", 1)} · cooling ${this._fmt(r.cooling_rate_c_per_hour, "°C/h", 2)}</strong></div>`).join("") : '<p class="subtle">Waiting for enough closed-window cooling observations.</p>'}
           </div>
+        </div>
+        <div class="section"><div class="section-title">Advanced diagnostics</div>
+          <div class="overview">
+            ${entries.map((r) => `<div class="metric"><span>${this._esc(r.name)} · efficiency</span><strong>${r.score == null ? "Collecting data" : r.score + " / 100"}</strong><div class="subtle">${r.score_status === "available" ? Object.entries(r.score_components || {}).map(([k,v]) => `${this._esc(k.replaceAll("_"," "))}: ${v}`).join(" · ") : "At least two valid metrics and 12 temperature samples are required."}</div></div>`).join("")}
+          </div>
+          <div class="overview" style="margin-top:9px">
+            <div class="metric"><span>Gas per degree day</span><strong>${this._fmt(attrs.advanced_diagnostics?.boiler_analysis?.gas_kwh_per_degree_day, "kWh/°C·d", 2)}</strong></div>
+            <div class="metric"><span>Gas / electricity ratio</span><strong>${this._fmt(attrs.advanced_diagnostics?.boiler_analysis?.gas_to_electricity_ratio, "ratio", 2)}</strong></div>
+            <div class="metric"><span>Historical days sampled</span><strong>${attrs.advanced_diagnostics?.diagnostic_data_days ?? 0}</strong></div>
+          </div>
+          <div class="subtle">${this._esc(attrs.advanced_diagnostics?.boiler_analysis?.note || "Boiler analysis unavailable.")}</div>
+          <div class="insights" style="margin-top:9px">
+            ${(attrs.advanced_diagnostics?.anomalies || []).length ? attrs.advanced_diagnostics.anomalies.map((item) => `<article class="insight ${item.severity === "warning" ? "insight-warning" : "insight-info"}"><div class="insight-top"><strong>${this._esc(item.title)}</strong><span class="severity">${this._esc(item.severity)}</span></div><p>${this._esc(item.detail)}</p></article>`).join("") : '<div class="empty-insights">No historical anomalies detected with the available baseline.</div>'}
+          </div>
+          <div class="subtle">Scores are comparative heuristics, not building energy ratings. Cooling rate is an observed °C/h indicator, not a physical heat-loss coefficient. Boiler combustion efficiency requires measured heat output.</div>
         </div>
       </ha-card>`;
     const select = this.shadowRoot.querySelector("select");

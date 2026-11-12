@@ -68,17 +68,22 @@ def thermal_statistics(room: dict[str, Any], now: datetime) -> dict[str, Any]:
     # Heating response: time from the first sampled demand observation to a
     # 0.5 C rise, using the preceding sample as the cycle's baseline.
     responses: list[float] = []
-    for index, item in enumerate(samples):
-        if not item["demand"] or (index and samples[index - 1]["demand"]):
-            continue
-        baseline = samples[index - 1] if index else item
-        target = baseline["_temp"] + 0.5
-        for later in samples[index + 1:]:
-            if not later["demand"]:
-                break
-            if later["_temp"] >= target:
-                responses.append((later["_dt"] - item["_dt"]).total_seconds() / 60)
-                break
+    index = 0
+    while index < len(samples):
+        item = samples[index]
+        if item["demand"] and (index == 0 or not samples[index - 1]["demand"]):
+            baseline = samples[index - 1] if index else item
+            target = baseline["_temp"] + 0.5
+            cursor = index + 1
+            while cursor < len(samples) and samples[cursor]["demand"]:
+                later = samples[cursor]
+                if later["_temp"] >= target:
+                    responses.append((later["_dt"] - item["_dt"]).total_seconds() / 60)
+                    break
+                cursor += 1
+            index = cursor
+        else:
+            index += 1
     response = round(sum(responses[-20:]) / len(responses[-20:]), 1) if responses else None
 
     # Cooling rate uses the most recent continuous period with neither heat

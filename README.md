@@ -83,11 +83,11 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 ## 0.13.0 — thermal performance and delivered heat
 
 - Use the heating-only cumulative gas meter for heating analysis; domestic hot water gas is excluded. Changing the selected meter establishes a fresh baseline, and annual resets do not create negative consumption.
-- Estimate useful delivered heat from gas energy multiplied by the configurable seasonal boiler-efficiency assumption (default 90%). This is an assumption, not measured boiler output.
+- Estimate useful delivered heat from gas energy multiplied by the configurable seasonal boiler-efficiency assumption (default 90%), plus AC electricity multiplied by a configurable heating COP (default 3.0). These are assumptions, not measured heat output.
 - Integrate indoor–outdoor ΔT over time to calculate daily degree-hours, then estimate whole-house heat-loss coefficient (W/K) and normalized W/m²K.
 - Add daily and rolling 7-day/30-day W/m²K estimates with minimum data thresholds.
 - Expose estimated delivered heat today, daily W/K, and daily/7-day/30-day W/m²K as diagnostic Home Assistant sensors.
-- Configure boiler efficiency and total external envelope area (default 361.26 m²). Solar/internal gains and thermal storage affect the estimate; it is not a certified U-value measurement.
+- Configure boiler efficiency, AC electrical power and cumulative energy sensors, AC heating COP (default 3.0), and total external envelope area (default 361.26 m²). AC energy is treated as heating-season consumption; do not use a counter that includes summer cooling. Solar/internal gains and thermal storage affect the estimate; it is not a certified U-value measurement.
 
 ## 0.12.0 — advanced heating intelligence
 
@@ -104,7 +104,7 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 1. Add this repository to HACS as a custom repository, category **Integration**.
 2. Install **Heating Intelligence** and restart Home Assistant.
 3. Go to **Settings → Devices & services → Add integration** and select **Heating Intelligence**.
-4. Open the integration's **Configure** page to add rooms, assign floors, select global sensors, and configure pump power and energy sensors. In **Global settings**, optionally select outdoor temperature, solar radiation, ΔT, cumulative gas, and the three cumulative pump electricity counters.
+4. Open the integration's **Configure** page to add rooms, assign floors, select global sensors, and configure pump power and energy sensors. In **Global settings**, optionally select outdoor temperature, solar radiation, ΔT, heating-only cumulative gas, boiler power/energy, and AC power/energy. Configure manifold pump power and energy separately in Pump settings. Set AC heating COP in Global settings.
 
 ## Home Assistant devices and entities
 

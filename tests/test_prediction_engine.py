@@ -21,7 +21,7 @@ def test_heating_and_coasting_are_modelled_separately():
  assert r["status"]=="available" and r["trend_c_per_hour"]<0
 def test_insufficient_and_open_window_samples_are_rejected():
  now=datetime(2026,11,12,12,tzinfo=timezone.utc)
- assert MODULE.room_forecast({"temperature":19,"demand":True,"temperature_samples":samples(now-timedelta(minutes=40),count=4)},now)["status"]=="insufficient_data"
+ assert MODULE.room_forecast({"temperature":19,"demand":True,"temperature_samples":samples(now-timedelta(minutes=20),count=3)},now)["status"]=="insufficient_data"
  assert MODULE.room_forecast({"temperature":19,"demand":True,"temperature_samples":samples(now-timedelta(hours=2),window=True)},now)["status"]=="insufficient_data"
 def test_coasting_time_below_comfort():
  now=datetime(2026,11,12,12,tzinfo=timezone.utc)

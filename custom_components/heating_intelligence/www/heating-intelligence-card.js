@@ -18,6 +18,57 @@ class HeatingIntelligenceCard extends HTMLElement {
   _esc(value) {
     return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
   }
+  _temperatureChart(room, prediction, comfortTarget) {
+    const samples = (room.temperature_history || []).filter((item) =>
+      item && Number.isFinite(Number(item.temperature)) && Number.isFinite(Date.parse(item.time))
+    ).slice(-145);
+    if (samples.length < 2) return '<div class="chart-empty">Temperature history is building up. At least two readings are needed.</div>';
+    const now = Date.now();
+    const start = now - 24 * 3600000;
+    const end = now + 6 * 3600000;
+    const actual = samples.filter((p) => Date.parse(p.time) >= start).map((p) => ({x: Date.parse(p.time), y: Number(p.temperature)}));
+    if (actual.length < 2) return '<div class="chart-empty">Not enough readings from the last 24 hours yet.</div>';
+    const future = [];
+    if (prediction?.status === "available") {
+      const latest = actual[actual.length - 1];
+      future.push(latest);
+      for (const hours of [1, 3, 6]) {
+        const value = prediction[`temperature_${hours}h`];
+        if (Number.isFinite(Number(value))) future.push({x: now + hours * 3600000, y: Number(value)});
+      }
+    }
+    const all = [...actual, ...future];
+    const minY = Math.min(...all.map(p => p.y), Number(comfortTarget) - 0.8) - 0.35;
+    const maxY = Math.max(...all.map(p => p.y), Number(comfortTarget) + 0.8) + 0.35;
+    const x = t => 36 + (t - start) / (end - start) * 344;
+    const y = v => 116 - (v - minY) / Math.max(0.1, maxY - minY) * 94;
+    const line = points => points.map(p => `${x(p.x).toFixed(1)},${y(p.y).toFixed(1)}`).join(" ");
+    const targetY = y(Number(comfortTarget));
+    const actualLine = line(actual);
+    const forecastLine = future.length > 1 ? line(future) : "";
+    return `<div class="chart-wrap"><div class="chart-heading"><strong>Room temperature · last 24h + forecast</strong><span>°C</span></div>
+      <svg viewBox="0 0 400 146" role="img" aria-label="Room temperature history and forecast">
+        <line x1="36" y1="22" x2="380" y2="22" class="chart-grid"/><line x1="36" y1="69" x2="380" y2="69" class="chart-grid"/><line x1="36" y1="116" x2="380" y2="116" class="chart-grid"/>
+        <line x1="36" y1="${targetY.toFixed(1)}" x2="380" y2="${targetY.toFixed(1)}" class="chart-target"/>
+        <polyline points="${actualLine}" class="chart-actual"/>
+        ${forecastLine ? `<polyline points="${forecastLine}" class="chart-forecast"/>` : ""}
+        <text x="3" y="25" class="chart-label">${maxY.toFixed(1)}</text><text x="3" y="72" class="chart-label">${((maxY+minY)/2).toFixed(1)}</text><text x="3" y="119" class="chart-label">${minY.toFixed(1)}</text>
+        <text x="36" y="138" class="chart-label">−24h</text><text x="208" y="138" text-anchor="middle" class="chart-label">Now</text><text x="380" y="138" text-anchor="end" class="chart-label">+6h</text>
+      </svg><div class="chart-legend"><span><i class="legend-actual"></i>Measured</span><span><i class="legend-forecast"></i>Forecast</span><span><i class="legend-target"></i>Target ${Number(comfortTarget).toFixed(1)}°C</span></div></div>`;
+  }
+  _energyChart(days) {
+    const rows = (days || []).filter(d => Number.isFinite(Number(d.gas_kwh)) || Number.isFinite(Number(d.electricity_kwh)));
+    if (rows.length < 2) return '<div class="chart-empty">Daily meter history is building up. At least two days are needed.</div>';
+    const max = Math.max(1, ...rows.flatMap(d => [Number(d.gas_kwh) || 0, Number(d.electricity_kwh) || 0]));
+    const width = 360 / rows.length;
+    const bars = rows.map((d, i) => {
+      const gx = 36 + i * width + width * .12, ex = gx + width * .34;
+      const gh = (Number(d.gas_kwh) || 0) / max * 78, eh = (Number(d.electricity_kwh) || 0) / max * 78;
+      const label = String(d.date || "").slice(5);
+      return `<rect x="${gx.toFixed(1)}" y="${(98-gh).toFixed(1)}" width="${Math.max(2,width*.27).toFixed(1)}" height="${gh.toFixed(1)}" rx="2" class="bar-gas"><title>${this._esc(label)} gas: ${(Number(d.gas_kwh)||0).toFixed(2)} kWh</title></rect><rect x="${ex.toFixed(1)}" y="${(98-eh).toFixed(1)}" width="${Math.max(2,width*.27).toFixed(1)}" height="${eh.toFixed(1)}" rx="2" class="bar-electric"><title>${this._esc(label)} electricity: ${(Number(d.electricity_kwh)||0).toFixed(2)} kWh</title></rect>${i % Math.max(1,Math.ceil(rows.length/7)) === 0 ? `<text x="${(gx+width*.25).toFixed(1)}" y="116" text-anchor="middle" class="chart-label">${this._esc(label)}</text>` : ""}`;
+    }).join("");
+    return `<div class="chart-wrap"><div class="chart-heading"><strong>Daily energy · last ${rows.length} days</strong><span>kWh</span></div><svg viewBox="0 0 400 128" role="img" aria-label="Daily gas and electricity consumption"><line x1="34" y1="20" x2="394" y2="20" class="chart-grid"/><line x1="34" y1="59" x2="394" y2="59" class="chart-grid"/><line x1="34" y1="98" x2="394" y2="98" class="chart-grid"/>${bars}</svg><div class="chart-legend"><span><i class="legend-gas"></i>Gas</span><span><i class="legend-electric"></i>Electricity</span></div></div>`;
+  }
   _render() {
     if (!this.shadowRoot || !this._hass || !this._config) return;
     const state = this._hass.states[this._config.entity];
@@ -73,7 +124,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         <div class="metric"><span>Observed heat-loss indicator</span><strong>${this._fmt(selected.observed_heat_loss_c_per_hour, "°C/h", 2)}</strong></div>
         <div class="metric"><span>Temperature samples</span><strong>${selected.temperature_samples ?? selected.temperature_sample_count ?? 0}</strong></div>
         <div class="metric"><span>Window open during demand today</span><strong>${this._fmt((selected.window_open_demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>
-      </div><div class="subtle">Demand source: ${this._esc(selected.demand_state ?? "Unavailable")}. Any available state counts as demand; unavailable means no demand.</div>` :
+      </div>${this._temperatureChart(selected, attrs.predictions?.rooms?.[selected.id], attrs.predictions?.comfort_target_c ?? 21)}<div class="subtle">Demand source: ${this._esc(selected.demand_state ?? "Unavailable")}. Any available state counts as demand; unavailable means no demand.</div>` :
       `<p class="subtle">No rooms configured yet.</p>`;
     const openSections = new Set(
       [...this.shadowRoot.querySelectorAll("details[open] > summary")]
@@ -103,6 +154,20 @@ class HeatingIntelligenceCard extends HTMLElement {
         .pump-head span.active{background:rgba(36,156,112,.14);color:var(--hi-green)}
         .pump-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
         select{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:11px;border:1px solid var(--divider-color);color:var(--primary-text-color);background:var(--card-background-color);font:inherit;margin-bottom:10px}
+
+        .chart-wrap{margin:10px 0 4px;padding:10px;border:1px solid var(--divider-color);border-radius:12px;background:var(--secondary-background-color)}
+        .chart-heading{display:flex;justify-content:space-between;gap:8px;font-size:.78rem;margin-bottom:4px}.chart-heading span{color:var(--secondary-text-color)}
+        .chart-wrap svg{display:block;width:100%;height:auto;overflow:visible}
+        .chart-grid{stroke:var(--divider-color);stroke-width:1;stroke-dasharray:3 4}
+        .chart-target{stroke:var(--hi-amber);stroke-width:1.5;stroke-dasharray:5 4}
+        .chart-actual{fill:none;stroke:var(--hi-blue);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+        .chart-forecast{fill:none;stroke:var(--hi-green);stroke-width:2.6;stroke-dasharray:5 4;stroke-linecap:round;stroke-linejoin:round}
+        .chart-label{font-size:9px;fill:var(--secondary-text-color)}
+        .chart-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.68rem;color:var(--secondary-text-color);margin-top:3px}
+        .chart-legend span{display:flex;align-items:center;gap:5px}.chart-legend i{display:inline-block;width:13px;height:3px;border-radius:2px}
+        .legend-actual{background:var(--hi-blue)}.legend-forecast{background:var(--hi-green)}.legend-target{background:var(--hi-amber)}.legend-gas{background:#d89127}.legend-electric{background:#3989d6}
+        .bar-gas{fill:#d89127}.bar-electric{fill:#3989d6}
+        .chart-empty{padding:14px 8px;color:var(--secondary-text-color);font-size:.76rem;border:1px dashed var(--divider-color);border-radius:10px;margin:10px 0}
         .subtle{color:var(--secondary-text-color);font-size:.76rem;margin:10px 2px 0;line-height:1.45}
         .insights{display:grid;gap:8px}
         .insight{border-radius:13px;padding:12px 13px;border:1px solid var(--divider-color);background:var(--secondary-background-color)}
@@ -171,7 +236,7 @@ class HeatingIntelligenceCard extends HTMLElement {
             }).join("")}
           </div>
         </div>
-        <div class="section"><div class="section-title">Forecasts</div>
+        <div class="section"><div class="section-title">Energy history</div>${this._energyChart(attrs.energy_history)}</div>\n        <div class="section"><div class="section-title">Forecasts</div>
           <div class="subtle">Explainable short-term projections · confidence reflects sample coverage and trend consistency.</div>
           <div class="overview">
             <div class="metric"><span>Rooms with forecasts</span><strong>${attrs.predictions?.rooms_with_forecasts ?? 0} / ${entries.length}</strong></div>

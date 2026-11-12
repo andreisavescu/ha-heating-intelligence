@@ -51,6 +51,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         ])
     if len(entry.options.get(CONF_PUMPS, [])) == 2:
         entities.append(PumpSynchronizationSensor(coordinator))
+    has_individual_electricity_meters = any(entry.options.get(option) for option in (
+        CONF_ELECTRICITY_GROUND_FLOOR_ENTITY,
+        CONF_ELECTRICITY_UPSTAIRS_ENTITY,
+        CONF_ELECTRICITY_BOILER_ENTITY,
+    ))
     for option, metric in (
         (CONF_OUTDOOR_TEMPERATURE_ENTITY, "outdoor_temperature"),
         (CONF_SOLAR_RADIATION_ENTITY, "solar_radiation_average"),
@@ -61,7 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         (CONF_ELECTRICITY_UPSTAIRS_ENTITY, "electricity_upstairs_today_kwh"),
         (CONF_ELECTRICITY_BOILER_ENTITY, "electricity_boiler_today_kwh"),
     ):
-        if entry.options.get(option):
+        if entry.options.get(option) and not (option == CONF_ELECTRICITY_CONSUMPTION_ENTITY and has_individual_electricity_meters):
             entities.append(EfficiencySensor(coordinator, metric))
     if entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "heating_degree_days"))

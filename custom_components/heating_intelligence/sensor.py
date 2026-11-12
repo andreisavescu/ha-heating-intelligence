@@ -137,6 +137,8 @@ class RoomAnalyticsSensor(CoordinatorEntity, SensorEntity):
         self.metric = metric
         label, unit, divisor, icon = ROOM_ANALYTICS_METRICS[metric]
         self.divisor = divisor
+        if metric == "total_cycles":
+            self._attr_state_class = "total_increasing"
         self._attr_name = f"{room_name} {label}"
         self._attr_native_unit_of_measurement = unit
         self._attr_icon = icon

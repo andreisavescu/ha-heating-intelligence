@@ -28,9 +28,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             RoomAnalyticsSensor(coordinator, room["id"], room["name"], metric)
             for metric in ROOM_ANALYTICS_METRICS
         )
+        thermal_metrics = [
+            metric for metric in ROOM_THERMAL_METRICS
+            if metric != "window_open_demand_seconds_today" or room.get("window_entity")
+        ]
         entities.extend(
             RoomThermalAnalyticsSensor(coordinator, room["id"], room["name"], metric)
-            for metric in ROOM_THERMAL_METRICS
+            for metric in thermal_metrics
         )
     for pump in entry.options.get(CONF_PUMPS, []):
         entities.extend([
@@ -53,8 +57,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     ):
         if entry.options.get(option):
             entities.append(EfficiencySensor(coordinator, metric))
-    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
+    if entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "heating_degree_days"))
+    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "gas_kwh_per_degree_day"))
     async_add_entities(entities)
 

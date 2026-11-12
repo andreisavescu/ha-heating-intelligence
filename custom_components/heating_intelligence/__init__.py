@@ -71,7 +71,7 @@ async def _async_register_card_resource(hass: HomeAssistant) -> None:
     await resources.async_get_info()
 
     resource_path = f"{CARD_URL}/{CARD_FILENAME}"
-    versioned_url = f"{resource_path}?v={entry.version}"
+    versioned_url = f"{resource_path}?v={version}"
     existing = [
         item for item in resources.async_items()
         if urlsplit(item.get("url", "")).path == resource_path
@@ -86,7 +86,7 @@ async def _async_register_card_resource(hass: HomeAssistant) -> None:
             )
             _LOGGER.info(
                 "Updated Heating Intelligence Lovelace resource to version %s",
-                entry.version,
+                version,
             )
         for duplicate in existing[1:]:
             await resources.async_delete_item(duplicate["id"])
@@ -101,7 +101,7 @@ async def _async_register_card_resource(hass: HomeAssistant) -> None:
     )
     _LOGGER.info(
         "Registered Heating Intelligence Lovelace resource version %s",
-        entry.version,
+        version,
     )
 
 

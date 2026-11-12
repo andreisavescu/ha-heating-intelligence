@@ -59,3 +59,44 @@ def test_correlations_are_calculated_for_gas_and_electricity():
     assert stats["electricity_hdd_correlation"] == 1.0
     assert stats["gas_delta_t_correlation"] == 1.0
     assert stats["electricity_delta_t_correlation"] == 1.0
+
+
+def test_three_pump_counters_are_summed_and_shares_calculated():
+    history = {}
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+    first = {
+        "electricity_meters": {
+            "ground_floor": {"value": 100.0, "unit": "kWh"},
+            "upstairs": {"value": 200.0, "unit": "kWh"},
+            "boiler": {"value": 50.0, "unit": "kWh"},
+        }
+    }
+    MODULE.update_efficiency_history(history, first, now, 0, False)
+    second = {
+        "electricity_meters": {
+            "ground_floor": {"value": 101.0, "unit": "kWh"},
+            "upstairs": {"value": 202.0, "unit": "kWh"},
+            "boiler": {"value": 50.5, "unit": "kWh"},
+        }
+    }
+    MODULE.update_efficiency_history(history, second, now + timedelta(hours=1), 3600, False)
+    stats = MODULE.efficiency_statistics(history, now + timedelta(hours=1))
+    assert stats["electricity_energy_today_kwh"] == 3.5
+    assert stats["electricity_ground_floor_today_kwh"] == 1.0
+    assert stats["electricity_upstairs_today_kwh"] == 2.0
+    assert stats["electricity_boiler_today_kwh"] == 0.5
+    assert stats["electricity_ground_floor_share_percent"] == 28.6
+    assert stats["electricity_upstairs_share_percent"] == 57.1
+    assert stats["electricity_boiler_share_percent"] == 14.3
+
+
+def test_three_pump_meter_reset_does_not_create_negative_energy():
+    history = {}
+    now = datetime(2026, 11, 12, tzinfo=timezone.utc)
+    MODULE.update_efficiency_history(history, {
+        "electricity_meters": {"boiler": {"value": 50, "unit": "kWh"}}
+    }, now, 0, False)
+    MODULE.update_efficiency_history(history, {
+        "electricity_meters": {"boiler": {"value": 1, "unit": "kWh"}}
+    }, now + timedelta(minutes=1), 60, False)
+    assert history["efficiency_daily"]["2026-11-12"]["electricity_boiler_kwh"] == 0

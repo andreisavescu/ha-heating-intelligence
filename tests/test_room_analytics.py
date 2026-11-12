@@ -1,12 +1,21 @@
 """Tests for persistent room heating analytics."""
 from datetime import datetime
+import importlib.util
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from custom_components.heating_intelligence.room_analytics import (
-    demand_is_active,
-    room_statistics,
-    update_room_history,
+MODULE_PATH = (
+    Path(__file__).parents[1]
+    / "custom_components"
+    / "heating_intelligence"
+    / "room_analytics.py"
 )
+SPEC = importlib.util.spec_from_file_location("room_analytics", MODULE_PATH)
+ROOM_ANALYTICS = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(ROOM_ANALYTICS)
+demand_is_active = ROOM_ANALYTICS.demand_is_active
+room_statistics = ROOM_ANALYTICS.room_statistics
+update_room_history = ROOM_ANALYTICS.update_room_history
 
 
 TZ = ZoneInfo("Europe/Bucharest")

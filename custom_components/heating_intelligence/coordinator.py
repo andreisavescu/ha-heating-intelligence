@@ -316,6 +316,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "window_state": window.state if window else None,
                 "window_open": window_open,
                 "daily_demand_seconds": round(demand_seconds),
+                "demand_history": [{"start": item.get("start"), "end": item.get("end"), "duration_seconds": item.get("duration_seconds")} for item in room_history.get("cycles", []) if item.get("start") and item.get("end")][-500:] + ([{"start": room_history.get("cycle_start"), "end": now_local.isoformat(), "duration_seconds": max(0, (now_local - dt_util.parse_datetime(room_history["cycle_start"])).total_seconds()), "active": True}] if room_history.get("last_demand") is True and room_history.get("cycle_start") else []),
             }
         for floor_id in ("ground_floor", "upstairs"):
             floor_data = floor_analysis[floor_id]

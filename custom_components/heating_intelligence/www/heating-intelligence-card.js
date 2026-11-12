@@ -243,7 +243,7 @@ class HeatingIntelligenceCard extends HTMLElement {
             ${["ground_floor","upstairs"].map((id) => {
               const f = attrs.floor_performance?.[id] || {};
               const label = id === "ground_floor" ? "Downstairs" : "Upstairs";
-              return '<div class="metric"><span>' + label + ' · ' + (f.room_count ?? 0) + ' rooms</span><strong>' + this._fmt(f.configured_area_m2, "m²", 1) + ' · ' + (f.area_coverage_percent ?? 0) + '% area coverage</strong><div class="subtle">Area-weighted temperature: ' + this._fmt(f.area_weighted_temperature_c) + ' · cooling: ' + this._fmt(f.area_weighted_cooling_c_per_hour, "°C/h", 2) + ' · heating response: ' + this._fmt(f.area_weighted_heating_response_minutes, "min", 0) + ' · demand: ' + this._fmt(f.area_weighted_demand_hours_today, "h", 1) + '</div></div>';
+              return '<div class="metric"><span>' + label + ' · ' + (f.room_count ?? 0) + ' rooms</span><strong>' + this._fmt(f.configured_area_m2, "m²", 1) + ' · ' + (f.rooms_with_area_percent ?? 0) + '% rooms with area</strong><div class="subtle">Area-weighted temperature: ' + this._fmt(f.area_weighted_temperature_c) + ' · cooling: ' + this._fmt(f.area_weighted_cooling_c_per_hour, "°C/h", 2) + ' · heating response: ' + this._fmt(f.area_weighted_heating_response_minutes, "min", 0) + ' · demand: ' + this._fmt(f.area_weighted_demand_hours_today, "h", 1) + '</div></div>';
             }).join("")}
           </div>
         </div>

@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.12.0)
+## Current scope (0.13.0)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -79,6 +79,15 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - Report actual gas use, model-expected gas use and a weather-normalised comparison index at median observed weather conditions.
 - Require at least 21 complete days with gas, outdoor temperature, ΔT and solar data before presenting the model.
 - Keep all calculations descriptive and read-only; no physical heat-loss coefficient or boiler efficiency is inferred.
+
+## 0.13.0 — thermal performance and delivered heat
+
+- Use the heating-only cumulative gas meter for heating analysis; domestic hot water gas is excluded. Changing the selected meter establishes a fresh baseline, and annual resets do not create negative consumption.
+- Estimate useful delivered heat from gas energy multiplied by the configurable seasonal boiler-efficiency assumption (default 90%). This is an assumption, not measured boiler output.
+- Integrate indoor–outdoor ΔT over time to calculate daily degree-hours, then estimate whole-house heat-loss coefficient (W/K) and normalized W/m²K.
+- Add daily and rolling 7-day/30-day W/m²K estimates with minimum data thresholds.
+- Expose estimated delivered heat today, daily W/K, and daily/7-day/30-day W/m²K as diagnostic Home Assistant sensors.
+- Configure boiler efficiency and total external envelope area (default 361.26 m²). Solar/internal gains and thermal storage affect the estimate; it is not a certified U-value measurement.
 
 ## 0.12.0 — advanced heating intelligence
 

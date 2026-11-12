@@ -19,7 +19,7 @@
           "remove_room": "Remove a room",
           "global_settings": "Global settings",
           "pump_settings": "Pump settings",
-          "edit_room": "Assign room floor"
+          "edit_room": "Change a room's floor"
         }
       },
       "global_settings": {
@@ -38,8 +38,12 @@
         "description": "Select instantaneous power (W) and cumulative energy (kWh) sensors for each manifold pump. Leave both fields empty to omit a pump."
       },
       "edit_room": {
-        "title": "Assign room floor",
-        "description": "Choose a room and assign it to the downstairs or upstairs manifold for demand correlation."
+        "title": "Select room",
+        "description": "Choose the room whose floor assignment you want to change."
+      },
+      "edit_room_floor": {
+        "title": "Change room floor",
+        "description": "Set the floor for {room_name}. The currently saved floor is selected by default."
       }
     },
     "abort": {

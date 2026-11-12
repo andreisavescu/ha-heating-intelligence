@@ -136,24 +136,49 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(step_id="add_room", data_schema=schema)
 
     async def async_step_edit_room(self, user_input=None):
-        """Assign or change a room floor for pump-demand correlation."""
+        """Select a room whose floor assignment should be changed."""
         rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
         if not rooms:
             return self.async_abort(reason="no_rooms")
         if user_input is not None:
-            room_id = user_input["room"]
-            data = dict(self.config_entry.options)
-            data[CONF_ROOMS] = [
-                {**room, CONF_FLOOR: user_input[CONF_FLOOR]} if room["id"] == room_id else room
-                for room in rooms
-            ]
-            return self.async_create_entry(title="", data=data)
+            self._editing_room_id = user_input["room"]
+            return await self.async_step_edit_room_floor()
+
         options = {room["id"]: room[CONF_NAME] for room in rooms}
         schema = vol.Schema({
             vol.Required("room"): vol.In(options),
-            vol.Required(CONF_FLOOR, default="ground_floor"): vol.In({"ground_floor": "Downstairs", "upstairs": "Upstairs"}),
         })
         return self.async_show_form(step_id="edit_room", data_schema=schema)
+
+    async def async_step_edit_room_floor(self, user_input=None):
+        """Change the selected room's floor, defaulting to its saved value."""
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        room = next(
+            (item for item in rooms if item["id"] == self._editing_room_id),
+            None,
+        )
+        if room is None:
+            return self.async_abort(reason="no_rooms")
+
+        if user_input is not None:
+            data = dict(self.config_entry.options)
+            data[CONF_ROOMS] = [
+                {**item, CONF_FLOOR: user_input[CONF_FLOOR]}
+                if item["id"] == self._editing_room_id else item
+                for item in rooms
+            ]
+            return self.async_create_entry(title="", data=data)
+
+        current_floor = room.get(CONF_FLOOR, "ground_floor")
+        schema = vol.Schema({
+            vol.Required(CONF_FLOOR, default=current_floor):
+                vol.In({"ground_floor": "Downstairs", "upstairs": "Upstairs"}),
+        })
+        return self.async_show_form(
+            step_id="edit_room_floor",
+            data_schema=schema,
+            description_placeholders={"room_name": room[CONF_NAME]},
+        )
 
     async def async_step_remove_room(self, user_input=None):
         rooms = list(self.config_entry.options.get(CONF_ROOMS, []))

@@ -7,7 +7,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_PUMPS, CONF_ROOMS, DOMAIN
+from .const import (
+    CONF_PUMPS, CONF_ROOMS, DOMAIN,
+    CONF_OUTDOOR_TEMPERATURE_ENTITY, CONF_SOLAR_RADIATION_ENTITY,
+    CONF_DELTA_T_ENTITY, CONF_GAS_CONSUMPTION_ENTITY,
+    CONF_ELECTRICITY_CONSUMPTION_ENTITY,
+)
 from .coordinator import HeatingIntelligenceCoordinator
 from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
 
@@ -23,6 +28,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             RoomAnalyticsSensor(coordinator, room["id"], room["name"], metric)
             for metric in ROOM_ANALYTICS_METRICS
         )
+        entities.extend(
+            RoomThermalAnalyticsSensor(coordinator, room["id"], room["name"], metric)
+            for metric in ROOM_THERMAL_METRICS
+        )
     for pump in entry.options.get(CONF_PUMPS, []):
         entities.extend([
             PumpPowerSensor(coordinator, pump["id"], pump["name"]),
@@ -35,6 +44,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         ])
     if len(entry.options.get(CONF_PUMPS, [])) == 2:
         entities.append(PumpSynchronizationSensor(coordinator))
+    for option, metric in (
+        (CONF_OUTDOOR_TEMPERATURE_ENTITY, "outdoor_temperature"),
+        (CONF_SOLAR_RADIATION_ENTITY, "solar_radiation_average"),
+        (CONF_DELTA_T_ENTITY, "delta_t_average"),
+        (CONF_GAS_CONSUMPTION_ENTITY, "gas_energy_today_kwh"),
+        (CONF_ELECTRICITY_CONSUMPTION_ENTITY, "electricity_energy_today_kwh"),
+    ):
+        if entry.options.get(option):
+            entities.append(EfficiencySensor(coordinator, metric))
+    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
+        entities.append(EfficiencySensor(coordinator, "heating_degree_days"))
+        entities.append(EfficiencySensor(coordinator, "gas_kwh_per_degree_day"))
     async_add_entities(entities)
 
 
@@ -74,6 +95,7 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "pump_synchronization": data.get("sync", {}),
             "daily_heating": data.get("daily", {}),
             "floor_analysis": data.get("floor_analysis", {}),
+            "efficiency": data.get("efficiency", {}),
         }
 
 
@@ -169,6 +191,75 @@ class RoomAnalyticsSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
             "source_state": room.get("demand_state"),
         }
 
+
+
+ROOM_THERMAL_METRICS = {
+    "temperature_change_1h": ("Temperature Change 1h", "°C", 1, "mdi:thermometer-chevron-up"),
+    "temperature_change_6h": ("Temperature Change 6h", "°C", 1, "mdi:thermometer"),
+    "temperature_change_24h": ("Temperature Change 24h", "°C", 1, "mdi:thermometer"),
+    "heating_response_minutes": ("Heating Response", "min", 1, "mdi:timer-play-outline"),
+    "cooling_rate_c_per_hour": ("Cooling Rate", "°C/h", 1, "mdi:snowflake-thermometer"),
+    "heat_retention_hours_per_degree": ("Heat Retention", "h/°C", 1, "mdi:home-thermometer"),
+    "window_open_demand_seconds_today": ("Window Open During Demand Today", "h", 3600, "mdi:window-open"),
+}
+
+
+class RoomThermalAnalyticsSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Room thermal response and window impact metric."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = "measurement"
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.room_name = room_name
+        self.metric = metric
+        label, unit, divisor, icon = ROOM_THERMAL_METRICS[metric]
+        self.divisor = divisor
+        self._attr_name = f"{room_name} {label}"
+        self._attr_native_unit_of_measurement = unit
+        self._attr_icon = icon
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+
+    @property
+    def native_value(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        value = room.get(self.metric)
+        return round(value / self.divisor, 2) if value is not None else None
+
+
+EFFICIENCY_METRICS = {
+    "outdoor_temperature": ("Outdoor Temperature", "°C", "mdi:thermometer"),
+    "solar_radiation_average": ("Solar Radiation Average", "W/m²", "mdi:white-balance-sunny"),
+    "delta_t_average": ("Indoor–Outdoor Delta T", "°C", "mdi:thermometer-lines"),
+    "heating_degree_days": ("Heating Degree Days Today", "°C·d", "mdi:chart-bell-curve"),
+    "gas_energy_today_kwh": ("Gas Energy Today", "kWh", "mdi:fire"),
+    "electricity_energy_today_kwh": ("Electricity Energy Today", "kWh", "mdi:lightning-bolt"),
+    "gas_kwh_per_degree_day": ("Gas Energy per Degree Day", "kWh/°C·d", "mdi:chart-line"),
+}
+
+
+class EfficiencySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Whole-house energy and environmental metric."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = "measurement"
+
+    def __init__(self, coordinator, metric: str) -> None:
+        super().__init__(coordinator)
+        label, unit, icon = EFFICIENCY_METRICS[metric]
+        self.metric = metric
+        self._attr_name = label
+        self._attr_native_unit_of_measurement = unit
+        self._attr_icon = icon
+        self._attr_unique_id = f"{DOMAIN}_{metric}"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("efficiency", {}).get(self.metric)
 
 class PumpPowerSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "W"

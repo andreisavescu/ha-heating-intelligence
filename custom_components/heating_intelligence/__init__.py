@@ -9,6 +9,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.lovelace import LOVELACE_DATA, MODE_STORAGE
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.loader import async_get_loaded_integration
 
 from .const import CARD_FILENAME, CARD_URL, DOMAIN, PLATFORMS
 from .coordinator import HeatingIntelligenceCoordinator
@@ -34,7 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # The path is already registered, for example after an options reload.
         pass
 
-    await _async_register_card_resource(hass, entry)
+    await _async_register_card_resource(hass)
 
     coordinator = HeatingIntelligenceCoordinator(hass, entry)
     await coordinator.async_load_history()
@@ -46,8 +47,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def _async_register_card_resource(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Create or update the Lovelace resource with the installed card version."""
+async def _async_register_card_resource(hass: HomeAssistant) -> None:
+    """Create or update the Lovelace resource with the installed integration version."""
+    version = async_get_loaded_integration(hass, DOMAIN).version
     lovelace = hass.data.get(LOVELACE_DATA)
     if lovelace is None:
         _LOGGER.warning("Lovelace is not available; cannot update the card resource")
@@ -60,7 +62,7 @@ async def _async_register_card_resource(hass: HomeAssistant, entry: ConfigEntry)
             "resource URL to %s/%s?v=%s",
             CARD_URL,
             CARD_FILENAME,
-            entry.version,
+            version,
         )
         return
 

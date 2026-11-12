@@ -1,4 +1,4 @@
-# Heating Intelligence v0.11.0
+# Heating Intelligence v0.11.1
 
 ## Explainability
 - Add reusable, mobile-friendly information icons throughout the card.

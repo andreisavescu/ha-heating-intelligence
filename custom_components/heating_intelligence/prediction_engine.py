@@ -119,12 +119,12 @@ def energy_forecast(efficiency: dict[str, Any], now: datetime) -> dict[str, Any]
     return result
 
 
-def build_predictions(rooms: dict[str, dict[str, Any]], efficiency: dict[str, Any], now: datetime) -> dict[str, Any]:
+def build_predictions(rooms: dict[str, dict[str, Any]], efficiency: dict[str, Any], now: datetime, comfort_target_c: float = COMFORT_TARGET_C) -> dict[str, Any]:
     """Build all currently supported forecasts."""
-    room_results = {room_id: room_forecast(room, now) for room_id, room in rooms.items()}
+    room_results = {room_id: room_forecast(room, now, comfort_target_c) for room_id, room in rooms.items()}
     available = [item["confidence"] for item in room_results.values() if item["status"] == "available"]
     return {
-        "comfort_target_c": COMFORT_TARGET_C,
+        "comfort_target_c": comfort_target_c,
         "rooms": room_results,
         "energy": energy_forecast(efficiency, now),
         "rooms_with_forecasts": len(available),

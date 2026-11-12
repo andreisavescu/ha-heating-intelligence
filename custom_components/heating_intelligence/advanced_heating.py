@@ -160,5 +160,6 @@ def update_advanced_history(
         "water": water_stats,
         "solar": solar,
         "forecast_validation": validation,
-        "anomalies": anomalies,\n        "seasonal": {"months": {k: {**v, "gas_kwh": round(v["gas_kwh"], 2), "electricity_kwh": round(v["electricity_kwh"], 2), "hdd": round(v["hdd"], 2)} for k,v in monthly.items()}, "seasons": seasons},
+        "anomalies": anomalies,
+        "seasonal": {"months": {k: {**v, "gas_kwh": round(v["gas_kwh"], 2), "electricity_kwh": round(v["electricity_kwh"], 2), "hdd": round(v["hdd"], 2)} for k,v in monthly.items()}, "seasons": seasons},
     }

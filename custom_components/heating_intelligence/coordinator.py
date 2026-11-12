@@ -76,7 +76,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Ignoring invalid stored last_update timestamp: %r", last_update)
             previous_update = None
         elapsed = (now - previous_update).total_seconds() if previous_update else 0.0
-        if elapsed < 0 or elapsed > 90:
+        continuity_gap = previous_update is None or elapsed < 0 or elapsed > 90
+        if continuity_gap:
             elapsed = 0.0
         now_local = dt_util.now()
         interval_start_local = (
@@ -246,6 +247,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 dt_util.as_local(demand.last_changed) if demand else None,
                 interval_start_local,
                 now_local,
+                continuity_gap,
             )
             stats = room_statistics(room_history, now_local)
             floor = room.get(CONF_FLOOR, "unassigned")

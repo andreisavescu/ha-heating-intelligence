@@ -11,9 +11,17 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .room_analytics import demand_is_active, room_statistics, update_room_history
+from .thermal_analytics import record_temperature_sample, thermal_statistics
+from .efficiency_analytics import update_efficiency_history, efficiency_statistics
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_OUTDOOR_TEMPERATURE_ENTITY,
+    CONF_SOLAR_RADIATION_ENTITY,
+    CONF_DELTA_T_ENTITY,
+    CONF_GAS_CONSUMPTION_ENTITY,
+    CONF_ELECTRICITY_CONSUMPTION_ENTITY,
+    CONF_GAS_ENERGY_FACTOR,
     CONF_FLOOR,
     CONF_PUMPS,
     CONF_ROOMS,
@@ -50,6 +58,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "sync": {"status": "unknown", "mismatch_count": 0},
             "daily": {},
             "floor_analysis": {},
+            "efficiency": {},
         }
 
     async def async_load_history(self) -> None:
@@ -99,6 +108,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "pumps": {},
             "water_temperature": None,
             "water_temperature_entity": None,
+            "efficiency": {},
         }
         water_entity = self.entry.options.get(CONF_WATER_TEMPERATURE_ENTITY)
         if water_entity:
@@ -250,6 +260,19 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 continuity_gap,
             )
             stats = room_statistics(room_history, now_local)
+            window_open = bool(window and window.state == "on")
+            if room_history.get("window_open_demand_date") != local_date:
+                room_history["window_open_demand_date"] = local_date
+                room_history["window_open_demand_seconds_today"] = 0.0
+            if demand_active and window_open and elapsed > 0:
+                room_history["window_open_demand_seconds_today"] = float(
+                    room_history.get("window_open_demand_seconds_today", 0.0)
+                ) + elapsed
+            temperature_value = _as_float(temperature.state) if temperature else None
+            record_temperature_sample(
+                room_history, now_local, temperature_value, demand_active, window_open
+            )
+            thermal = thermal_statistics(room_history, now_local)
             floor = room.get(CONF_FLOOR, "unassigned")
             floor_data = floor_analysis.setdefault(floor, {"active_rooms": 0})
             daily_key = "room_demand_" + room_id
@@ -266,11 +289,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "demand_state": demand_state,
                 "demand": demand_active,
                 **stats,
+                **thermal,
+                "window_open_demand_seconds_today": round(float(room_history.get("window_open_demand_seconds_today", 0))),
                 "temperature_entity": room[CONF_TEMPERATURE_ENTITY],
-                "temperature": _as_float(temperature.state) if temperature else None,
+                "temperature": temperature_value,
                 "window_entity": window_id,
                 "window_state": window.state if window else None,
-                "window_open": bool(window and window.state == "on"),
+                "window_open": window_open,
                 "daily_demand_seconds": round(demand_seconds),
             }
         for floor_id in ("ground_floor", "upstairs"):
@@ -278,6 +303,44 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             floor_data["demand_hours_today"] = round(sum(float(daily.get("room_demand_" + room["id"], 0.0)) for room in self.entry.options.get(CONF_ROOMS, []) if room.get(CONF_FLOOR, "unassigned") == floor_id) / 3600, 2)
             floor_data["demand_pump_state"] = ("demand_without_pump" if floor_data["active_rooms"] > 0 and not floor_data["pump_running"] else "pump_without_demand" if floor_data["active_rooms"] == 0 and floor_data["pump_running"] else "demand_and_pump" if floor_data["active_rooms"] > 0 and floor_data["pump_running"] else "idle")
         result["floor_analysis"] = floor_analysis
+
+        def read_sensor(option_key):
+            entity_id = self.entry.options.get(option_key)
+            state = self.hass.states.get(entity_id) if entity_id else None
+            return {
+                "value": _as_float(state.state) if state else None,
+                "unit": state.attributes.get("unit_of_measurement") if state else None,
+                "entity_id": entity_id,
+            } if entity_id else None
+
+        indoor_values = [
+            room_data["temperature"] for room_data in result["rooms"].values()
+            if room_data.get("temperature") is not None
+        ]
+        readings = {
+            "outdoor_temperature": read_sensor(CONF_OUTDOOR_TEMPERATURE_ENTITY),
+            "solar_radiation": read_sensor(CONF_SOLAR_RADIATION_ENTITY),
+            "delta_t": read_sensor(CONF_DELTA_T_ENTITY),
+            "gas": read_sensor(CONF_GAS_CONSUMPTION_ENTITY),
+            "electricity": read_sensor(CONF_ELECTRICITY_CONSUMPTION_ENTITY),
+            "indoor_temperature": {
+                "value": sum(indoor_values) / len(indoor_values),
+                "unit": "°C",
+            } if indoor_values else None,
+        }
+        update_efficiency_history(
+            self._history,
+            readings,
+            now_local,
+            elapsed,
+            continuity_gap,
+            float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
+        )
+        result["efficiency"] = efficiency_statistics(self._history, now_local)
+        result["efficiency"]["sources"] = {
+            key: value.get("entity_id") if value else None
+            for key, value in readings.items()
+        }
         await self._store.async_save(self._history)
         return result
 

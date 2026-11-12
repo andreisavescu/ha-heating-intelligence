@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.8.2)
+## Current scope (0.9.0)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -67,6 +67,16 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - Automatically update the resource URL to match the installed integration version, forcing browsers and the Home Assistant Android app to fetch the new card after an integration update.
 - Preserve the existing resource entry rather than requiring users to edit its URL on every release.
 - YAML-managed Lovelace resources remain user-managed; update their URL query version manually when upgrading.
+
+## 0.9.0 — floor thermal performance and weather-normalised efficiency
+
+- Add downstairs/upstairs comparisons using area-weighted room temperature, observed closed-window cooling rate, heating response time and daily demand hours.
+- Show the number and percentage of rooms with configured surface areas so incomplete area coverage is visible.
+- Reuse the existing optional room-area settings; no room reconfiguration is required.
+- Add a conservative daily gas-use regression using completed days with heating degree days, indoor–outdoor ΔT and solar radiation.
+- Report actual gas use, model-expected gas use and a weather-normalised comparison index at median observed weather conditions.
+- Require at least 21 complete days with gas, outdoor temperature, ΔT and solar data before presenting the model.
+- Keep all calculations descriptive and read-only; no physical heat-loss coefficient or boiler efficiency is inferred.
 
 ## Install
 

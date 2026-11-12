@@ -26,6 +26,9 @@ def build_advanced_diagnostics(
         temp_change = room.get("temperature_change_24h")
         window_seconds = float(room.get("window_open_demand_seconds_today") or 0)
         samples = int(room.get("temperature_sample_count") or 0)
+        area = room.get("area_m2")
+        demand_seconds = float(room.get("daily_demand_seconds") or 0)
+        demand_hours_per_m2 = round(demand_seconds / 3600 / float(area), 3) if area is not None and float(area) > 0 else None
 
         components: list[tuple[str, float]] = []
         if response is not None and response_samples >= 3:
@@ -45,6 +48,9 @@ def build_advanced_diagnostics(
             "observed_heat_loss_c_per_hour": round(float(cooling), 3) if cooling is not None else None,
             "heat_loss_status": "observed_cooling_rate" if cooling is not None else "insufficient_closed_window_data",
             "temperature_samples": samples,
+            "area_m2": round(float(area), 1) if area is not None and float(area) > 0 else None,
+            "heating_demand_hours_per_m2_today": demand_hours_per_m2,
+            "area_status": "configured" if area is not None and float(area) > 0 else "not_configured",
         }
         if cooling is not None and float(cooling) >= 0.8:
             anomalies.append({
@@ -96,6 +102,7 @@ def build_advanced_diagnostics(
     }
     return {
         "room_diagnostics": room_results,
+        "configured_room_area_m2": round(sum(float(room.get("area_m2")) for room in rooms.values() if room.get("area_m2") is not None and float(room.get("area_m2")) > 0), 1),
         "boiler_analysis": boiler,
         "anomalies": anomalies,
         "diagnostic_data_days": len(dated),

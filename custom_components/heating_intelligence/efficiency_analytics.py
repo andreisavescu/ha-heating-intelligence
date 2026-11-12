@@ -59,6 +59,23 @@ def update_efficiency_history(
         "indoor_sum": 0.0, "indoor_count": 0,
         "delta_t_degree_hours": 0.0,
     })
+    # Existing installations may already have a daily record created by an
+    # earlier integration version. Backfill newly introduced fields in place
+    # so historical data is preserved and coordinator updates remain safe.
+    day_defaults = {
+        "gas_kwh": 0.0, "electricity_kwh": 0.0,
+        "electricity_ground_floor_kwh": 0.0,
+        "electricity_upstairs_kwh": 0.0,
+        "electricity_boiler_kwh": 0.0, "ac_electricity_kwh": 0.0,
+        "outdoor_sum": 0.0, "outdoor_count": 0,
+        "solar_sum": 0.0, "solar_count": 0,
+        "delta_t_sum": 0.0, "delta_t_count": 0,
+        "indoor_sum": 0.0, "indoor_count": 0,
+        "delta_t_degree_hours": 0.0,
+    }
+    for field, default in day_defaults.items():
+        day.setdefault(field, default)
+
     previous = history.setdefault("efficiency_last_readings", {})
     meter_samples = history.setdefault("meter_samples", [])
     meter_readings = [("gas", readings.get("gas"), True, "gas_kwh")]

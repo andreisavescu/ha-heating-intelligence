@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.13.0)
+## Current scope (0.13.1)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -79,6 +79,11 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - Report actual gas use, model-expected gas use and a weather-normalised comparison index at median observed weather conditions.
 - Require at least 21 complete days with gas, outdoor temperature, ΔT and solar data before presenting the model.
 - Keep all calculations descriptive and read-only; no physical heat-loss coefficient or boiler efficiency is inferred.
+
+## 0.13.1 — configuration-flow fix
+
+- Fix optional global sensor selectors so they can be left blank when configuring the integration, including the optional return-water temperature sensor.
+- Preserve the complete 0.13.0 thermal-performance and AC-heating functionality; no new sensors or settings are introduced.
 
 ## 0.13.0 — thermal performance and delivered heat
 

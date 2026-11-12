@@ -110,6 +110,15 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
             via_device=_house_identifier(coordinator),
         )
 
+    # Remove only the two retired legacy entities explicitly identified for this upgrade.
+    retired_entity_ids = {
+        "sensor.heating_intelligence_downstairs_pump_electricity_today",
+        "sensor.heating_intelligence_upstairs_pump_electricity_today",
+    }
+    for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+        if entity.platform == DOMAIN and entity.entity_id in retired_entity_ids:
+            entity_registry.async_remove(entity.entity_id)
+
     repaired = 0
     for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
         if entity.platform != DOMAIN:

@@ -47,6 +47,8 @@ class HeatingIntelligenceCard extends HTMLElement {
     const sync = attrs.pump_synchronization || {};
     const syncLabel = ({ synchronised:"Synchronised", out_of_sync:"Out of sync", single_pump_cycle:"Single-pump cycle (OK)", unknown:"No comparison yet" })[sync.status] || sync.status || "—";
     const syncClass = sync.status === "out_of_sync" ? "warning" : sync.status === "synchronised" || sync.status === "single_pump_cycle" ? "active" : "";
+    const insights = attrs.insights || [];
+    const insightCards = insights.length ? insights.map((item) => '<article class="insight ' + (item.severity === "warning" ? "insight-warning" : "insight-info") + '"><div class="insight-top"><span class="insight-dot"></span><strong>' + this._esc(item.title) + '</strong><span class="severity">' + (item.severity === "warning" ? "Review" : "Insight") + '</span></div><p>' + this._esc(item.detail) + '</p><small>' + this._esc(item.recommendation) + '</small></article>').join("") : '<div class="empty-insights">No operational issues detected from the available observations.</div>';
     const roomOptions = entries.map((r) => `<option value="${this._esc(r.id)}" ${selected?.id === r.id ? "selected" : ""}>${this._esc(r.name)}</option>`).join("");
     const roomDetail = selected ? `
       <div class="detail-grid">
@@ -71,21 +73,46 @@ class HeatingIntelligenceCard extends HTMLElement {
       `<p class="subtle">No rooms configured yet.</p>`;
     this.shadowRoot.innerHTML = `
       <style>
-        :host{display:block;color:var(--primary-text-color)} ha-card{padding:16px}
-        h2{margin:0 0 14px;font-size:1.25rem;font-weight:600}
-        .overview,.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-        .metric,.pump{min-width:0;background:var(--secondary-background-color);border-radius:12px;padding:12px}
-        .metric span,.pump-values span{display:block;color:var(--secondary-text-color);font-size:.78rem;margin-bottom:7px}
-        .metric strong,.pump strong{font-size:1.08rem;font-weight:600;overflow-wrap:anywhere}
-        .active{color:var(--success-color,#2e9d62)} .warning{color:var(--warning-color,#d97706)}
-        .section{margin-top:18px}.section-title{font-size:.9rem;font-weight:600;margin:0 0 9px}
-        .pumps{display:grid;grid-template-columns:1fr;gap:8px}.pump-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:12px}
-        .pump-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-        select{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:10px;border:1px solid var(--divider-color);color:var(--primary-text-color);background:var(--card-background-color);font:inherit}
-        .subtle{color:var(--secondary-text-color);font-size:.78rem;margin:10px 2px 0}
+        :host{display:block;color:var(--primary-text-color);--hi-blue:#3989d6;--hi-green:#249c70;--hi-amber:#d89127;--hi-red:#d45c52}
+        ha-card{padding:18px;overflow:hidden}
+        .hero{position:relative;margin:-18px -18px 16px;padding:22px 20px 19px;background:linear-gradient(120deg,rgba(41,112,184,.22),rgba(36,156,112,.12));border-bottom:1px solid var(--divider-color)}
+        .hero h2{font-size:1.28rem;font-weight:750;letter-spacing:-.02em;margin:0 0 5px}
+        .hero p{margin:0;color:var(--secondary-text-color);font-size:.82rem}
+        .hero-line{display:flex;align-items:center;justify-content:space-between;gap:12px}
+        .live-pill{white-space:nowrap;border-radius:999px;padding:5px 10px;background:rgba(36,156,112,.15);color:var(--hi-green);font-size:.72rem;font-weight:700}
+        .overview,.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+        .metric,.pump{min-width:0;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:14px;padding:12px}
+        .metric{position:relative;overflow:hidden}
+        .metric:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 4px 4px 0;background:var(--hi-blue);opacity:.8}
+        .metric span,.pump-values span{display:block;color:var(--secondary-text-color);font-size:.75rem;margin-bottom:7px}
+        .metric strong,.pump strong{font-size:1.03rem;font-weight:700;overflow-wrap:anywhere;line-height:1.3}
+        .active{color:var(--hi-green)} .warning{color:var(--hi-amber)} .danger{color:var(--hi-red)}
+        .section{margin-top:20px}.section-title{display:flex;align-items:center;gap:8px;font-size:.94rem;font-weight:750;margin:0 0 10px}
+        .section-title:before{content:"";width:4px;height:16px;border-radius:4px;background:var(--hi-blue)}
+        .pumps{display:grid;grid-template-columns:1fr;gap:9px}.pump{background:linear-gradient(135deg,var(--secondary-background-color),var(--card-background-color))}
+        .pump-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+        .pump-head strong{font-size:1rem}.pump-head span{font-size:.72rem;font-weight:750;padding:5px 9px;border-radius:999px;background:var(--secondary-background-color);color:var(--secondary-text-color)}
+        .pump-head span.active{background:rgba(36,156,112,.14);color:var(--hi-green)}
+        .pump-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+        select{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:11px;border:1px solid var(--divider-color);color:var(--primary-text-color);background:var(--card-background-color);font:inherit;margin-bottom:10px}
+        .subtle{color:var(--secondary-text-color);font-size:.76rem;margin:10px 2px 0;line-height:1.45}
+        .insights{display:grid;gap:8px}
+        .insight{border-radius:13px;padding:12px 13px;border:1px solid var(--divider-color);background:var(--secondary-background-color)}
+        .insight-warning{border-left:4px solid var(--hi-amber);background:color-mix(in srgb,var(--hi-amber) 9%,var(--card-background-color))}
+        .insight-info{border-left:4px solid var(--hi-blue)}
+        .insight-top{display:flex;align-items:center;gap:8px}
+        .insight-top strong{font-size:.86rem;flex:1;line-height:1.3}
+        .insight-dot{width:8px;height:8px;border-radius:50%;background:var(--hi-blue);flex:none}
+        .insight-warning .insight-dot{background:var(--hi-amber)}
+        .severity{font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:var(--secondary-text-color)}
+        .insight p{font-size:.78rem;line-height:1.45;margin:8px 0 5px}
+        .insight small{display:block;color:var(--secondary-text-color);font-size:.73rem;line-height:1.4}
+        .empty-insights{padding:13px;border-radius:12px;background:rgba(36,156,112,.1);color:var(--hi-green);font-size:.8rem}
+        .subhead{color:var(--secondary-text-color);font-size:.75rem;margin:-4px 0 9px}
+        @media(min-width:560px){.overview,.detail-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pumps{grid-template-columns:repeat(2,minmax(0,1fr))}}
       </style>
       <ha-card>
-        <h2>${this._esc(this._config.title)}</h2>
+        <div class="hero"><div class="hero-line"><div><h2>${this._esc(this._config.title)}</h2><p>Whole-home heating performance at a glance</p></div><span class="live-pill">● LIVE MONITORING</span></div></div>
         <div class="overview">
           <div class="metric"><span>Rooms requesting heat</span><strong>${attrs.heating_rooms ?? entries.filter(r=>r.demand).length} / ${entries.length}</strong></div>
           <div class="metric"><span>Average room temperature</span><strong>${this._fmt(attrs.average_room_temperature)}</strong></div>
@@ -118,6 +145,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="subtle">Gas correlation · HDD: ${attrs.efficiency?.gas_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.gas_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.gas_solar_correlation ?? "—"}</div>
           <div class="subtle">Electricity correlation · HDD: ${attrs.efficiency?.electricity_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.electricity_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.electricity_solar_correlation ?? "—"} · days sampled: ${attrs.efficiency?.days_with_data ?? 0}</div>
         </div>
+        <div class="section"><div class="section-title">Operational insights</div><div class="subhead">Rule-based observations · diagnostic guidance, not automatic fault detection</div><div class="insights">${insightCards}</div></div>
         <div class="section"><div class="section-title">Pump synchronisation</div>
           <div class="metric"><span>Latest result</span><strong class="${syncClass}">${this._esc(syncLabel)}</strong>
             <div class="subtle">Mismatches: ${sync.mismatch_count ?? 0} · Allowed start difference: ${sync.tolerance_seconds ?? 60}s</div>

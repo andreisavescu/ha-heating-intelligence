@@ -112,6 +112,7 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "pump_synchronization": data.get("sync", {}),
             "daily_heating": data.get("daily", {}),
             "floor_analysis": data.get("floor_analysis", {}),
+            "floor_performance": data.get("floor_performance", {}),
             "efficiency": data.get("efficiency", {}),
             "insights": build_heating_insights(data),
             "advanced_diagnostics": data.get("advanced_diagnostics", {}),

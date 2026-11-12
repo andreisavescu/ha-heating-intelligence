@@ -25,14 +25,14 @@ class HeatingIntelligenceCard extends HTMLElement {
     if (samples.length < 2) return '<div class="chart-empty">Temperature history is building up. At least two readings are needed.</div>';
     const now = Date.now();
     const start = now - 24 * 3600000;
-    const end = now + 6 * 3600000;
+    const end = now + 12 * 3600000;
     const actual = samples.filter((p) => Date.parse(p.time) >= start).map((p) => ({x: Date.parse(p.time), y: Number(p.temperature)}));
     if (actual.length < 2) return '<div class="chart-empty">Not enough readings from the last 24 hours yet.</div>';
     const future = [];
     if (prediction?.status === "available") {
       const latest = actual[actual.length - 1];
       future.push(latest);
-      for (const hours of [1, 3, 6]) {
+      for (const hours of [1, 3, 6, 12]) {
         const value = prediction[`temperature_${hours}h`];
         if (Number.isFinite(Number(value))) future.push({x: now + hours * 3600000, y: Number(value)});
       }
@@ -47,15 +47,29 @@ class HeatingIntelligenceCard extends HTMLElement {
     const demandBands = actual.map((point, index) => { const sample = samples.find(item => Date.parse(item.time) === point.x); if (!sample?.demand) return ""; const next = actual[index + 1]?.x ?? Math.min(now, point.x + 600000); const left = Math.max(start, point.x), right = Math.min(now, next); return right > left ? `<rect x="${x(left).toFixed(1)}" y="22" width="${Math.max(1, x(right)-x(left)).toFixed(1)}" height="94" class="demand-band"/>` : ""; }).join("");
     const actualLine = line(actual);
     const forecastLine = future.length > 1 ? line(future) : "";
-    return `<div class="chart-wrap"><div class="chart-heading"><strong>Room temperature · last 24h + forecast</strong><span>°C</span></div>
+    return `<div class="chart-wrap"><div class="chart-heading"><strong>Room temperature · 24h history + 12h forecast</strong><span>°C</span></div>
       <svg viewBox="0 0 400 146" role="img" aria-label="Room temperature history and forecast">
         <line x1="36" y1="22" x2="380" y2="22" class="chart-grid"/><line x1="36" y1="69" x2="380" y2="69" class="chart-grid"/><line x1="36" y1="116" x2="380" y2="116" class="chart-grid"/>
         ${demandBands}<line x1="36" y1="${targetY.toFixed(1)}" x2="380" y2="${targetY.toFixed(1)}" class="chart-target"/>
         <polyline points="${actualLine}" class="chart-actual"/>
         ${forecastLine ? `<polyline points="${forecastLine}" class="chart-forecast"/>` : ""}
         <text x="3" y="25" class="chart-label">${maxY.toFixed(1)}</text><text x="3" y="72" class="chart-label">${((maxY+minY)/2).toFixed(1)}</text><text x="3" y="119" class="chart-label">${minY.toFixed(1)}</text>
-        <text x="36" y="138" class="chart-label">−24h</text><text x="208" y="138" text-anchor="middle" class="chart-label">Now</text><text x="380" y="138" text-anchor="end" class="chart-label">+6h</text>
+        <text x="36" y="138" class="chart-label">−24h</text><text x="208" y="138" text-anchor="middle" class="chart-label">Now</text><text x="380" y="138" text-anchor="end" class="chart-label">+12h</text>
       </svg><div class="chart-legend"><span><i class="legend-actual"></i>Measured</span><span><i class="legend-forecast"></i>Forecast</span><span><i class="legend-target"></i>Target ${Number(comfortTarget).toFixed(1)}°C</span><span><i class="legend-demand"></i>Heat demand</span></div></div>`;
+  }
+  _demandTimeline(rooms, hours=24) {
+    const end=Date.now(), start=end-hours*3600000, width=720;
+    const rows=rooms.map(room=>{
+      const bars=(room.demand_history||[]).map(item=>{
+        const a=Date.parse(item.start), b=Date.parse(item.end);
+        if(!Number.isFinite(a)||!Number.isFinite(b)||b<=start||a>=end)return "";
+        const x=Math.max(0,(Math.max(a,start)-start)/(end-start)*width), right=Math.min(width,(Math.min(b,end)-start)/(end-start)*width);
+        return `<rect x="${x.toFixed(1)}" y="3" width="${Math.max(1,right-x).toFixed(1)}" height="20" rx="5" class="${item.active?"demand-active":"demand-complete"}"><title>${this._esc(new Date(a).toLocaleString())} – ${this._esc(new Date(b).toLocaleString())}</title></rect>`;
+      }).join("");
+      return `<div class="demand-row"><div class="demand-room"><strong>${this._esc(room.name)}</strong><span class="demand-status ${room.demand?"active":""}">${room.demand?"Requesting":"Idle"}</span></div><svg viewBox="0 0 ${width} 26" preserveAspectRatio="none" role="img" aria-label="Demand timeline for ${this._esc(room.name)}"><line x1="0" y1="13" x2="${width}" y2="13" class="demand-track"/>${bars}</svg></div>`;
+    }).join("");
+    const ticks=hours===24?["−24h","−18h","−12h","−6h","Now"]:["−7d","−5d","−3d","−1d","Now"];
+    return `<div class="demand-axis">${ticks.map(t=>`<span>${t}</span>`).join("")}</div>${rows||'<div class="chart-empty">No rooms configured.</div>'}`;
   }
   _energyChart(days) {
     const rows = (days || []).filter(d => Number.isFinite(Number(d.gas_kwh)) || Number.isFinite(Number(d.electricity_kwh)));
@@ -168,7 +182,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         .chart-legend span{display:flex;align-items:center;gap:5px}.chart-legend i{display:inline-block;width:13px;height:3px;border-radius:2px}
         .legend-actual{background:var(--hi-blue)}.legend-forecast{background:var(--hi-green)}.legend-target{background:var(--hi-amber)}.legend-gas{background:#d89127}.legend-electric{background:#3989d6}
         .bar-gas{fill:#d89127}.bar-electric{fill:#3989d6}.demand-band{fill:var(--hi-green);opacity:.09}.legend-demand{height:8px!important;background:var(--hi-green);opacity:.25}
-        .chart-empty{padding:8px 7px;color:var(--secondary-text-color);font-size:.76rem;border:1px dashed var(--divider-color);border-radius:10px;margin:10px 0}
+        .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:5px 0 10px}.tab{border:1px solid var(--divider-color);border-radius:9px;padding:9px 5px;background:var(--secondary-background-color);color:var(--secondary-text-color);font:inherit;font-size:.8rem;font-weight:700}.tab[aria-selected="true"]{background:rgba(57,137,214,.16);border-color:var(--hi-blue);color:var(--primary-text-color)}.demand-row{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--divider-color)}.demand-room{display:grid;gap:3px;min-width:0}.demand-room strong{font-size:.76rem;overflow-wrap:anywhere}.demand-status{font-size:.63rem;color:var(--secondary-text-color)}.demand-status.active{color:var(--hi-green);font-weight:700}.demand-row svg{width:100%;height:26px;background:var(--card-background-color);border-radius:6px}.demand-track{stroke:var(--divider-color);stroke-width:3}.demand-complete{fill:var(--hi-blue)}.demand-active{fill:var(--hi-green)}.demand-axis{display:flex;justify-content:space-between;color:var(--secondary-text-color);font-size:.64rem;margin:4px 0 7px}.demand-controls{display:flex;gap:5px;margin:7px 0}.demand-controls button{border:1px solid var(--divider-color);border-radius:8px;padding:6px 10px;background:var(--secondary-background-color);color:var(--primary-text-color)}.demand-controls button[aria-pressed="true"]{border-color:var(--hi-blue);background:rgba(57,137,214,.16)}.chart-empty{padding:8px 7px;color:var(--secondary-text-color);font-size:.76rem;border:1px dashed var(--divider-color);border-radius:10px;margin:10px 0}
         .subtle{color:var(--secondary-text-color);font-size:.72rem;margin:5px 1px 0;line-height:1.45}
         .insights{display:grid;gap:5px}
         .insight{border-radius:9px;padding:7px 9px;border:1px solid var(--divider-color);background:var(--secondary-background-color)}
@@ -258,7 +272,7 @@ class HeatingIntelligenceCard extends HTMLElement {
             ${(attrs.efficiency?.weather_normalised?.recent_days || []).slice(-7).map((d) => '<div class="metric"><span>' + this._esc(d.date) + '</span><strong>Actual ' + this._fmt(d.actual_gas_kwh, "kWh", 1) + ' · normalised ' + this._fmt(d.weather_normalised_gas_kwh, "kWh", 1) + '</strong><div class="subtle">Weather model expected ' + this._fmt(d.weather_expected_gas_kwh, "kWh", 1) + ' · deviation ' + this._fmt(d.weather_effect_percent, "%", 1) + '</div></div>').join("") || '<p class="subtle">At least 21 complete days with gas, outdoor temperature, ΔT and solar data are required.</p>'}
           </div>
         </div>
-        <div class="section"><div class="section-title">Forecasts</div>
+        <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recorded room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="24" aria-pressed="true">24 hours</button><button data-hours="168" aria-pressed="false">7 days</button></div><div class="demand-timeline">${this._demandTimeline(entries,24)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value.</div></div>\n        <div class="section"><div class="section-title">Forecasts</div>
           <div class="subtle">Explainable short-term projections · confidence reflects sample coverage and trend consistency.</div>
           <div class="overview">
             <div class="metric"><span>Rooms with forecasts</span><strong>${attrs.predictions?.rooms_with_forecasts ?? 0} / ${entries.length}</strong></div>
@@ -269,7 +283,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="pumps">
             ${entries.map((r) => {
               const p = attrs.predictions?.rooms?.[r.id] || {};
-              return `<div class="metric"><span>${this._esc(r.name)} · ${p.status === "available" ? `confidence ${p.confidence}%` : "collecting data"}</span><strong>${p.status === "available" ? `1h ${this._fmt(p.temperature_1h)} · 3h ${this._fmt(p.temperature_3h)} · 6h ${this._fmt(p.temperature_6h)}` : "Forecast unavailable"}</strong><div class="subtle">${p.time_to_comfort_minutes != null ? `Time to comfort: ${this._duration(p.time_to_comfort_minutes * 60)} · ` : ""}${p.time_below_comfort_minutes != null ? `Below comfort in: ${this._duration(p.time_below_comfort_minutes * 60)} · ` : ""}${this._esc(p.note || "")}</div></div>`;
+              return `<div class="metric"><span>${this._esc(r.name)} · ${p.status === "available" ? `confidence ${p.confidence}%` : "collecting data"}</span><strong>${p.status === "available" ? `1h ${this._fmt(p.temperature_1h)} · 3h ${this._fmt(p.temperature_3h)} · 6h ${this._fmt(p.temperature_6h)} · 12h ${this._fmt(p.temperature_12h)}` : "Forecast unavailable"}</strong><div class="subtle">${p.time_to_comfort_minutes != null ? `Time to comfort: ${this._duration(p.time_to_comfort_minutes * 60)} · ` : ""}${p.time_below_comfort_minutes != null ? `Below comfort in: ${this._duration(p.time_below_comfort_minutes * 60)} · ` : ""}${this._esc(p.note || "")}</div></div>`;
             }).join("")}
           </div>
           <div class="subtle">${this._esc(attrs.predictions?.energy?.note || "Energy forecast unavailable.")}</div>
@@ -317,6 +331,9 @@ class HeatingIntelligenceCard extends HTMLElement {
       section.replaceWith(disclosure);
       if (openSections.has(summary.textContent) || summary.textContent === "Forecasts" || summary.textContent === "Room details") disclosure.open = true;
     });
+    const applyView=(view)=>{this._activeView=view;this.shadowRoot.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===view)));this.shadowRoot.querySelectorAll("details.section").forEach(s=>{const h=s.querySelector("summary")?.textContent||"";const tab=h==="Demand timeline"?"demand":["Forecasts","Room details","Room heat-retention comparison"].includes(h)?"predict":"overview";s.hidden=tab!==view;if(tab===view)s.open=true;});};
+    this.shadowRoot.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>applyView(b.dataset.view)));applyView(this._activeView||"overview");
+    this.shadowRoot.querySelectorAll("[data-hours]").forEach(b=>b.addEventListener("click",()=>{this._demandHours=Number(b.dataset.hours);this.shadowRoot.querySelectorAll("[data-hours]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));const target=this.shadowRoot.querySelector(".demand-timeline");if(target)target.innerHTML=this._demandTimeline(entries,this._demandHours);}));
     const select = this.shadowRoot.querySelector("select");
     if (select) select.addEventListener("change", (event) => { this._selectedRoom = event.target.value; this._render(); });
   }

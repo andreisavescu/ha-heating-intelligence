@@ -32,6 +32,10 @@ The overview card now includes explainable, rule-based operational insights deri
 
 Version 0.6.0 also removes the two retired legacy daily pump-electricity entities from the entity registry by their exact historical entity IDs. Current pump power, cumulative energy, and whole-house electricity calculations are unchanged.
 
+## 0.6.1 — room demand availability
+
+Room Heating Demand binary sensors now remain available whenever the integration coordinator is healthy. The configured source entity's availability is interpreted only as the demand signal: any present state (`on`, `off`, or `unknown`) means demand; `unavailable` or a missing source means no demand (`off`). A source becoming unavailable no longer makes the Heating Intelligence entity itself unavailable.
+
 ## Install
 
 1. Add this repository to HACS as a custom repository, category **Integration**.

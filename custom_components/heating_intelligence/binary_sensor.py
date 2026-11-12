@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .devices import RoomDeviceMixin, PumpDeviceMixin
+from .room_analytics import demand_is_active
 
 from .const import CONF_PUMPS, CONF_ROOMS, DOMAIN
 from .coordinator import HeatingIntelligenceCoordinator
@@ -38,13 +39,16 @@ class RoomDemandSensor(RoomDeviceMixin, CoordinatorEntity, BinarySensorEntity):
     @property
     def is_on(self):
         room = (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {})
-        state = room.get("demand_state")
-        return state is not None and state != "unavailable"
+        # Demand is represented by source availability: every present state,
+        # including "on", "off", and "unknown", means demand. An unavailable
+        # or missing source means no demand, not an unavailable integration entity.
+        return demand_is_active(room.get("demand_state"))
 
     @property
     def available(self):
-        room = (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {})
-        return super().available and room.get("demand_state") not in (None, "unavailable")
+        # The integration entity is available whenever its coordinator is
+        # healthy. Source unavailability is the normal "no demand" signal.
+        return super().available
 
     @property
     def extra_state_attributes(self):

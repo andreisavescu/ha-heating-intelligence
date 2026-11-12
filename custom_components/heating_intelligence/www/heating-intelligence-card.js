@@ -2,6 +2,12 @@ class HeatingIntelligenceCard extends HTMLElement {
   setConfig(config) {
     this._config = { entity: "sensor.heating_intelligence_overview", title: "Heating Intelligence", ...config };
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    if (!this._focusHandlerInstalled) {
+      this.shadowRoot.addEventListener("focusout", () => queueMicrotask(() => {
+        if (this._pendingRender && !this.shadowRoot.activeElement?.matches("select, .info-button")) { this._pendingRender = false; this._render(); }
+      }));
+      this._focusHandlerInstalled = true;
+    }
     this._render();
   }
   set hass(hass) { this._hass = hass; if (this.shadowRoot?.activeElement?.matches("select, .info-button")) { this._pendingRender = true; return; } this._render(); }
@@ -361,7 +367,8 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
         </div>
         <div class="section"><div class="section-title">Historical comparisons ${this._info("Historical comparisons","Compares the latest seven completed days with the preceding seven completed days. Percentage change is descriptive and is not weather-adjusted unless the weather-normalised series is available. Only the last 30 daily records are currently retained in the overview payload.")}</div><div class="section-content"><div class="comparison-heading">Latest 7 days vs preceding 7 days</div>${this._historyComparisons(attrs.energy_history)}</div></div>
-        <div class="section"><div class="section-title">Energy history</div>${this._energyChart(attrs.energy_history)}</div>\n        <div class="section"><div class="section-title">Weather-normalised efficiency</div>
+        <div class="section"><div class="section-title">Energy history</div>${this._energyChart(attrs.energy_history)}</div>
+        <div class="section"><div class="section-title">Weather-normalised efficiency</div>
           <div class="overview">
             <div class="metric"><span>Model status</span><strong>${this._esc(attrs.efficiency?.weather_normalised?.status || "collecting data")}</strong></div>
             <div class="metric"><span>Completed days used</span><strong>${attrs.efficiency?.weather_normalised?.days_used ?? 0} / ${attrs.efficiency?.weather_normalised?.minimum_days ?? 21}</strong></div>
@@ -373,7 +380,8 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
         </div>
         <div class="section"><div class="section-title">Weekly room-demand heatmap ${this._info("Weekly room-demand heatmap","Each cell represents one hour of the day. Darker green means more minutes with a recorded heating-demand cycle during that hour. It uses stored demand-cycle start/end times; missing history is not interpreted as zero demand.")}</div><div class="section-content"><div class="subtle">Demand minutes by room, day and hour. Select a cell to inspect its time and duration.</div>${this._demandHeatmap(entries)}</div></div>
-        <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recorded room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="24" aria-pressed="true">24 hours</button><button data-hours="168" aria-pressed="false">7 days</button></div><div class="demand-timeline">${this._demandTimeline(entries,24)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value.</div></div>\n        <div class="section"><div class="section-title">Forecasts</div>
+        <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recorded room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="24" aria-pressed="true">24 hours</button><button data-hours="168" aria-pressed="false">7 days</button></div><div class="demand-timeline">${this._demandTimeline(entries,24)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value.</div></div>
+        <div class="section"><div class="section-title">Forecasts</div>
           <div class="subtle">Explainable short-term projections · confidence reflects sample coverage and trend consistency.</div>
           <div class="overview">
             <div class="metric"><span>Rooms with forecasts</span><strong>${attrs.predictions?.rooms_with_forecasts ?? 0} / ${entries.length}</strong></div>
@@ -432,7 +440,8 @@ class HeatingIntelligenceCard extends HTMLElement {
       section.replaceWith(disclosure);
       if (openSections.has(summary.textContent) || summary.textContent === "Forecasts" || summary.textContent === "Room details") disclosure.open = true;
     });
-    this.shadowRoot.querySelectorAll(".info-button").forEach(button=>button.addEventListener("click",()=>{const existing=button.nextElementSibling;if(existing?.classList.contains("info-popover")){existing.remove();button.setAttribute("aria-expanded","false");this._openInfoKey=null;return;}this.shadowRoot.querySelectorAll(".info-popover").forEach(p=>p.remove());this.shadowRoot.querySelectorAll(".info-button").forEach(b=>b.setAttribute("aria-expanded","false"));const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");this._openInfoKey=button.dataset.infoKey;}));\n    if(this._openInfoKey){const button=[...this.shadowRoot.querySelectorAll(".info-button")].find(b=>b.dataset.infoKey===this._openInfoKey);if(button){const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");}}
+    this.shadowRoot.querySelectorAll(".info-button").forEach(button=>button.addEventListener("click",()=>{const existing=button.nextElementSibling;if(existing?.classList.contains("info-popover")){existing.remove();button.setAttribute("aria-expanded","false");this._openInfoKey=null;return;}this.shadowRoot.querySelectorAll(".info-popover").forEach(p=>p.remove());this.shadowRoot.querySelectorAll(".info-button").forEach(b=>b.setAttribute("aria-expanded","false"));const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");this._openInfoKey=button.dataset.infoKey;}));
+    if(this._openInfoKey){const button=[...this.shadowRoot.querySelectorAll(".info-button")].find(b=>b.dataset.infoKey===this._openInfoKey);if(button){const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");}}
     const applyView=(view)=>{this._activeView=view;this.shadowRoot.querySelectorAll(".tab").forEach(b=>{const active=b.dataset.view===view;b.setAttribute("aria-selected",String(active));b.setAttribute("tabindex",active?"0":"-1");});this.shadowRoot.querySelectorAll("details.section").forEach(s=>{const h=s.querySelector("summary")?.textContent||"";const tab=h==="Demand timeline"?"demand":["Forecasts","Room details","Room heat-retention comparison","Advanced diagnostics"].includes(h)?"predict":"overview";s.hidden=tab!==view;if(tab===view)s.open=true;});};
     this.shadowRoot.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>applyView(b.dataset.view)));applyView(this._activeView||"overview");
     this.shadowRoot.querySelectorAll("[data-hours]").forEach(b=>b.addEventListener("click",()=>{this._demandHours=Number(b.dataset.hours);this.shadowRoot.querySelectorAll("[data-hours]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));const target=this.shadowRoot.querySelector(".demand-timeline");if(target)target.innerHTML=this._demandTimeline(entries,this._demandHours);}));

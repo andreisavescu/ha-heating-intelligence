@@ -27,6 +27,9 @@ from .const import (
     CONF_GAS_ENERGY_FACTOR,
     CONF_BOILER_EFFICIENCY,
     CONF_ENVELOPE_AREA,
+    CONF_AC_POWER_ENTITY,
+    CONF_AC_ENERGY_ENTITY,
+    CONF_AC_HEATING_COP,
     CONF_NAME,
     CONF_PUMPS,
     CONF_PUMP_ENERGY_ENTITY,
@@ -78,6 +81,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_GAS_CONSUMPTION_ENTITY,
             CONF_ELECTRICITY_BOILER_POWER_ENTITY,
             CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
+            CONF_AC_POWER_ENTITY,
+            CONF_AC_ENERGY_ENTITY,
         )
         if user_input is not None:
             data = dict(self.config_entry.options)
@@ -99,6 +104,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             data[CONF_GAS_ENERGY_FACTOR] = float(user_input.get(CONF_GAS_ENERGY_FACTOR) or 10.55)
             data[CONF_BOILER_EFFICIENCY] = float(user_input.get(CONF_BOILER_EFFICIENCY) or 0.90)
             data[CONF_ENVELOPE_AREA] = float(user_input.get(CONF_ENVELOPE_AREA) or 361.26)
+            data[CONF_AC_HEATING_COP] = float(user_input.get(CONF_AC_HEATING_COP) or 3.0)
             return self.async_create_entry(title="", data=data)
 
         current = self.config_entry.options
@@ -117,6 +123,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_ELECTRICITY_BOILER_POWER_ENTITY, default=current.get(CONF_ELECTRICITY_BOILER_POWER_ENTITY)):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_AC_POWER_ENTITY, default=current.get(CONF_AC_POWER_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_AC_ENERGY_ENTITY, default=current.get(CONF_AC_ENERGY_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(
                 CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
                 default=current.get(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY, current.get(CONF_ELECTRICITY_BOILER_ENTITY)),
@@ -130,6 +140,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 selector.NumberSelector(selector.NumberSelectorConfig(min=0.5, max=1.0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
             vol.Optional(CONF_ENVELOPE_AREA, default=current.get(CONF_ENVELOPE_AREA, 361.26)):
                 selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=2000, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional(CONF_AC_HEATING_COP, default=current.get(CONF_AC_HEATING_COP, 3.0)):
+                selector.NumberSelector(selector.NumberSelectorConfig(min=1.0, max=8.0, step=0.1, mode=selector.NumberSelectorMode.BOX)),
         })
         return self.async_show_form(step_id="global_settings", data_schema=schema)
 

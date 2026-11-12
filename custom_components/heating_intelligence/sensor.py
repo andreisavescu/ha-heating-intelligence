@@ -14,6 +14,7 @@ from .const import (
     CONF_ELECTRICITY_BOILER_POWER_ENTITY,
     CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
     CONF_ELECTRICITY_BOILER_ENTITY,
+    CONF_AC_POWER_ENTITY, CONF_AC_ENERGY_ENTITY,
 )
 from .coordinator import HeatingIntelligenceCoordinator
 from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
@@ -67,13 +68,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(EfficiencySensor(coordinator, "electricity_boiler_today_kwh"))
     if entry.options.get(CONF_ELECTRICITY_BOILER_POWER_ENTITY):
         entities.append(EfficiencySensor(coordinator, "boiler_power_w"))
+    if entry.options.get(CONF_AC_POWER_ENTITY):
+        entities.append(EfficiencySensor(coordinator, "ac_power_w"))
+    if entry.options.get(CONF_AC_ENERGY_ENTITY):
+        entities.append(EfficiencySensor(coordinator, "ac_electricity_today_kwh"))
+        entities.append(EfficiencySensor(coordinator, "estimated_ac_delivered_heat_today_kwh"))
     if entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "heating_degree_days"))
     if entry.options.get(CONF_PUMPS) or boiler_energy_configured:
         entities.append(EfficiencySensor(coordinator, "electricity_energy_today_kwh"))
     if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "gas_kwh_per_degree_day"))
-    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_DELTA_T_ENTITY):
+    if (entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) or entry.options.get(CONF_AC_ENERGY_ENTITY)) and entry.options.get(CONF_DELTA_T_ENTITY):
         entities.extend(EfficiencySensor(coordinator, metric) for metric in (
             "estimated_delivered_heat_today_kwh", "heat_loss_coefficient_w_k",
             "heat_loss_u_value_daily", "heat_loss_u_value_7d", "heat_loss_u_value_30d"))
@@ -270,6 +276,9 @@ EFFICIENCY_METRICS = {
     "electricity_upstairs_today_kwh": ("Upstairs Pump Electricity Today", "kWh", "mdi:lightning-bolt"),
     "electricity_boiler_today_kwh": ("Boiler Electricity Today", "kWh", "mdi:lightning-bolt"),
     "boiler_power_w": ("Boiler Electrical Power", "W", "mdi:lightning-bolt"),
+    "ac_power_w": ("AC Electrical Power", "W", "mdi:lightning-bolt"),
+    "ac_electricity_today_kwh": ("AC Electricity Today", "kWh", "mdi:lightning-bolt"),
+    "estimated_ac_delivered_heat_today_kwh": ("Estimated AC Heat Today", "kWh", "mdi:heat-wave"),
     "gas_kwh_per_degree_day": ("Gas Energy per Degree Day", "kWh/°C·d", "mdi:chart-line"),
     "estimated_delivered_heat_today_kwh": ("Estimated Delivered Heat Today", "kWh", "mdi:heat-wave"),
     "heat_loss_coefficient_w_k": ("Daily Heat Loss Coefficient", "W/K", "mdi:home-thermometer"),

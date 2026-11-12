@@ -6,7 +6,7 @@ entity means no demand.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 
@@ -41,11 +41,11 @@ def _add_interval_to_daily(
         next_midnight = datetime.combine(
             cursor.date() + timedelta(days=1), time.min, tzinfo=cursor.tzinfo
         )
-        seconds = max(0.0, (next_midnight - cursor).total_seconds())
+        seconds = max(0.0, (next_midnight.astimezone(timezone.utc) - cursor.astimezone(timezone.utc)).total_seconds())
         bucket = daily.setdefault(cursor.date().isoformat(), {})
         bucket["demand_seconds"] = float(bucket.get("demand_seconds", 0.0)) + seconds
         cursor = next_midnight
-    seconds = max(0.0, (end - cursor).total_seconds())
+    seconds = max(0.0, (end.astimezone(timezone.utc) - cursor.astimezone(timezone.utc)).total_seconds())
     if seconds:
         bucket = daily.setdefault(cursor.date().isoformat(), {})
         bucket["demand_seconds"] = float(bucket.get("demand_seconds", 0.0)) + seconds
@@ -98,7 +98,7 @@ def update_room_history(
         # The state change timestamp marks when demand actually ended.
         end = min(now, transition)
         if cycle_start is not None and end >= cycle_start:
-            duration = (end - cycle_start).total_seconds()
+            duration = (end.astimezone(timezone.utc) - cycle_start.astimezone(timezone.utc)).total_seconds()
             room["cycles"].append(
                 {
                     "start": cycle_start.isoformat(),
@@ -162,7 +162,7 @@ def room_statistics(room: dict[str, Any], now: datetime) -> dict[str, Any]:
     average, shortest, longest = cycle_metrics(week_start)
     active_start = _parse_datetime(room.get("cycle_start"))
     active_duration = (
-        max(0.0, (now - active_start).total_seconds())
+        max(0.0, (now.astimezone(timezone.utc) - active_start.astimezone(timezone.utc)).total_seconds())
         if room.get("last_demand") is True and active_start
         else 0.0
     )

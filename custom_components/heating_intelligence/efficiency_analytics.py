@@ -50,6 +50,9 @@ def update_efficiency_history(
     days = history.setdefault("efficiency_daily", {})
     day = days.setdefault(date_key, {
         "gas_kwh": 0.0, "electricity_kwh": 0.0,
+        "electricity_ground_floor_kwh": 0.0,
+        "electricity_upstairs_kwh": 0.0,
+        "electricity_boiler_kwh": 0.0,
         "outdoor_sum": 0.0, "outdoor_count": 0,
         "solar_sum": 0.0, "solar_count": 0,
         "delta_t_sum": 0.0, "delta_t_count": 0,
@@ -57,26 +60,26 @@ def update_efficiency_history(
     })
     previous = history.setdefault("efficiency_last_readings", {})
     meter_samples = history.setdefault("meter_samples", [])
-    for key, gas in (("gas", True), ("electricity", False)):
-        reading = readings.get(key)
+    meter_readings = [("gas", readings.get("gas"), True, "gas_kwh")]
+    electricity_meters = readings.get("electricity_meters") or {}
+    for pump_id in ("ground_floor", "upstairs", "boiler"):
+        meter_readings.append((f"electricity_{pump_id}", electricity_meters.get(pump_id), False, f"electricity_{pump_id}_kwh"))
+    # Retain compatibility with the old single counter when no individual meters are configured.
+    if not any(electricity_meters.values()):
+        meter_readings.append(("electricity", readings.get("electricity"), False, "electricity_kwh"))
+    for key, reading, gas, daily_field in meter_readings:
         value = _number(reading.get("value")) if reading else None
         if value is None:
             continue
         old = _number(previous.get(key, {}).get("value"))
         unit = reading.get("unit")
         if old is not None and value >= old:
-            delta = value - old
-            day["gas_kwh" if gas else "electricity_kwh"] += _energy_kwh(delta, unit, gas, gas_factor)
-        # Retain raw cumulative readings so energy conversions can be revisited.
+            day[daily_field] += _energy_kwh(value - old, unit, gas, gas_factor)
         if old is None or value != old or unit != previous.get(key, {}).get("unit"):
-            meter_samples.append({
-                "time": now.astimezone(timezone.utc).isoformat(),
-                "meter": key,
-                "value": value,
-                "unit": unit,
-            })
-        # A meter reset establishes a new baseline, without negative energy.
+            meter_samples.append({"time": now.astimezone(timezone.utc).isoformat(), "meter": key, "value": value, "unit": unit})
         previous[key] = {"value": value, "unit": unit}
+    if any(electricity_meters.values()):
+        day["electricity_kwh"] = sum(day.get(f"electricity_{pump_id}_kwh", 0.0) for pump_id in ("ground_floor", "upstairs", "boiler"))
 
     env = {key: _number((readings.get(key) or {}).get("value"))
            for key in ("outdoor_temperature", "solar_radiation", "delta_t", "indoor_temperature")}
@@ -119,6 +122,9 @@ def efficiency_statistics(history: dict[str, Any], now: datetime, base_temperatu
     hdd = max(0.0, base_temperature - outdoor) if outdoor is not None else None
     gas = round(today.get("gas_kwh", 0.0), 3)
     electricity = round(today.get("electricity_kwh", 0.0), 3)
+    electricity_by_pump = {pump_id: round(today.get(f"electricity_{pump_id}_kwh", 0.0), 3) for pump_id in ("ground_floor", "upstairs", "boiler")}
+    has_pump_meters = any(f"electricity_{pump_id}" in history.get("efficiency_last_readings", {}) for pump_id in ("ground_floor", "upstairs", "boiler"))
+    electricity_total = sum(electricity_by_pump.values()) if has_pump_meters else electricity
     completed = [v for k, v in sorted(days.items()) if k <= now.date().isoformat()]
     gas_hdd = [(max(0.0, base_temperature - v["outdoor_sum"] / v["outdoor_count"]), v["gas_kwh"])
                for v in completed if v.get("outdoor_count") and v.get("gas_kwh") is not None]
@@ -138,7 +144,13 @@ def efficiency_statistics(history: dict[str, Any], now: datetime, base_temperatu
         "delta_t_average": round(delta_t, 2) if delta_t is not None else None,
         "heating_degree_days": round(hdd, 3) if hdd is not None else None,
         "gas_energy_today_kwh": gas,
-        "electricity_energy_today_kwh": electricity,
+        "electricity_energy_today_kwh": round(electricity_total, 3),
+        "electricity_ground_floor_today_kwh": electricity_by_pump["ground_floor"],
+        "electricity_upstairs_today_kwh": electricity_by_pump["upstairs"],
+        "electricity_boiler_today_kwh": electricity_by_pump["boiler"],
+        "electricity_ground_floor_share_percent": round(100 * electricity_by_pump["ground_floor"] / electricity_total, 1) if electricity_total else None,
+        "electricity_upstairs_share_percent": round(100 * electricity_by_pump["upstairs"] / electricity_total, 1) if electricity_total else None,
+        "electricity_boiler_share_percent": round(100 * electricity_by_pump["boiler"] / electricity_total, 1) if electricity_total else None,
         "gas_kwh_per_degree_day": round(gas / hdd, 3) if hdd and hdd > 0 else None,
         "electricity_kwh_per_degree_day": round(electricity / hdd, 3) if hdd and hdd > 0 else None,
         "days_with_data": len(completed),

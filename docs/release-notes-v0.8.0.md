@@ -26,7 +26,7 @@
 - Short-term room forecasts assume recent conditions continue. They are not weather forecasts and may be inaccurate after changes in outdoor temperature, solar gains, occupancy, ventilation, or heating operation.
 - Initial daily energy projections are simple elapsed-day run-rate estimates. They do not yet model weather, solar gains, occupancy, or planned heating schedules.
 - Confidence is an indicator of data coverage and trend consistency, not a calibrated probability of accuracy.
-- The default comfort threshold is 21 °C in this development build. A future configuration option may allow it to be changed.
+- The comfort target is configurable in Global settings from 16–25 °C; the default is 21 °C.
 - No physical room heat-loss coefficient (W/K) or boiler combustion efficiency is claimed without measured useful heat output.
 
 ## Compatibility and migration
@@ -36,6 +36,8 @@
 
 ## Verification before publication
 - [ ] Full test suite passes on the final release commit.
+- [x] Prediction results exposed through the existing overview sensor attributes.
+- [x] Comfort target configurable in Global settings (16–25 °C, default 21 °C).
 - [ ] Home Assistant config flow and coordinator startup verified.
 - [ ] Forecast behaviour checked with realistic rising, falling, flat, stale, and window-open sample series.
 - [ ] Card checked on desktop and mobile.

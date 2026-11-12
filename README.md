@@ -68,7 +68,7 @@ The integration creates a central **Heating Intelligence** device, with each con
 
 The integration serves the card JavaScript at:
 
-`/heating_intelligence/heating-intelligence-card.js`
+`/heating_intelligence/heating-intelligence-card.js?v=0.8.0`
 
 If it is not automatically registered, add it under **Settings → Dashboards → Resources** as a **JavaScript module**, then add a Manual card:
 
@@ -90,7 +90,7 @@ Whole-house efficiency inputs are optional. Configure a cumulative gas meter and
 
 The coordinator samples every 30 seconds. HA state timestamps are used to place detected transitions accurately, but multiple state changes that occur between two samples can still be missed. Very short demand cycles may therefore be undercounted. Validate readings and statistics on your own Home Assistant installation before relying on them.
 
-## 0.8.0 — predictive intelligence (development)
+## 0.8.0 — predictive intelligence
 
 - Forecast room temperature 1, 3 and 6 hours ahead from recent measured trends, with sample-based confidence and explicit insufficient-data states.
 - Estimate time to reach the configured comfort temperature while heating, or time until temperature falls below it while cooling.
@@ -98,4 +98,6 @@ The coordinator samples every 30 seconds. HA state timestamps are used to place 
 - Project end-of-day gas and heating-electricity use from the elapsed-day meter run rate. This is a simple baseline, not a weather-aware model.
 - Expose forecasts as attributes of the existing overview sensor; no new forecast entities are created.
 - The card groups secondary analysis into collapsible sections and keeps its expanded sections open during live updates.
+- Room detail includes a 24-hour temperature chart with a distinct forecast line and comfort-target reference.
+- System analysis includes a 14-day gas/electricity consumption chart.
 - Forecasts are read-only estimates and never control heating equipment.

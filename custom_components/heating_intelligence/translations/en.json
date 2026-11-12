@@ -25,12 +25,15 @@
       },
       "global_settings": {
         "title": "Global settings",
-        "description": "Configure whole-house environmental inputs, gas consumption, and the boiler's electrical power and cumulative energy sensors.",
+        "description": "Select the heating-only cumulative gas meter (not combined hot water), environmental sensors, boiler efficiency assumption and total external envelope area.",
         "data": {
           "electricity_boiler_power_entity": "Boiler electrical power (W)",
           "electricity_boiler_energy_entity": "Boiler electrical energy (kWh)",
           "comfort_target_c": "Comfort temperature target (°C)",
-          "return_water_temperature_entity": "Heating water return temperature sensor (°C)"
+          "return_water_temperature_entity": "Heating water return temperature sensor (°C)",
+          "gas_consumption_entity": "Heating-only cumulative gas consumption (m³ or kWh)",
+          "boiler_efficiency": "Assumed seasonal boiler efficiency (0–1)",
+          "envelope_area_m2": "Total external envelope area (m²)"
         }
       },
       "add_room": {

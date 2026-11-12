@@ -95,8 +95,9 @@ def update_room_history(
             start = max(interval_start, transition)
         _add_interval_to_daily(room["daily"], start, now)
     elif previous is True:
-        # The state change timestamp marks when demand actually ended.
+        # Include the final active interval up to the source transition time.
         end = min(now, transition)
+        _add_interval_to_daily(room["daily"], interval_start, end)
         if cycle_start is not None and end >= cycle_start:
             duration = (end.astimezone(timezone.utc) - cycle_start.astimezone(timezone.utc)).total_seconds()
             room["cycles"].append(

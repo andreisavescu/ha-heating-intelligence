@@ -135,28 +135,28 @@ class HeatingIntelligenceCard extends HTMLElement {
       <style>
         :host{display:block;color:var(--primary-text-color);--hi-blue:#3989d6;--hi-green:#249c70;--hi-amber:#d89127;--hi-red:#d45c52}
         ha-card{padding:14px;overflow:hidden}
-        .hero{position:relative;margin:-18px -18px 16px;padding:22px 20px 19px;background:linear-gradient(120deg,rgba(41,112,184,.22),rgba(36,156,112,.12));border-bottom:1px solid var(--divider-color)}
+        .hero{position:relative;margin:-18px -18px 9px;padding:14px 16px 12px;background:linear-gradient(120deg,rgba(41,112,184,.22),rgba(36,156,112,.12));border-bottom:1px solid var(--divider-color)}
         .hero h2{font-size:1.28rem;font-weight:750;letter-spacing:-.02em;margin:0 0 5px}
         .hero p{margin:0;color:var(--secondary-text-color);font-size:.82rem}
         .hero-line{display:flex;align-items:center;justify-content:space-between;gap:12px}
         .live-pill{white-space:nowrap;border-radius:999px;padding:5px 10px;background:rgba(36,156,112,.15);color:var(--hi-green);font-size:.72rem;font-weight:700}
-        .overview,.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
-        .metric,.pump{min-width:0;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:11px;padding:9px}
+        .overview,.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+        .metric,.pump{min-width:0;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:8px;padding:6px 7px}
         .metric{position:relative;overflow:hidden}
         .metric:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 4px 4px 0;background:var(--hi-blue);opacity:.8}
         .metric span,.pump-values span{display:block;color:var(--secondary-text-color);font-size:.72rem;margin-bottom:4px}
         .metric strong,.pump strong{font-size:1.03rem;font-weight:700;overflow-wrap:anywhere;line-height:1.3}
         .active{color:var(--hi-green)} .warning{color:var(--hi-amber)} .danger{color:var(--hi-red)}
-        .section{margin-top:8px;border:1px solid var(--divider-color);border-radius:12px;overflow:hidden}.section-title{display:flex;align-items:center;gap:8px;font-size:.88rem;font-weight:750;margin:0;padding:11px 12px;cursor:pointer;list-style:none}.section-title::-webkit-details-marker{display:none}.section-title:after{content:"＋";margin-left:auto;color:var(--secondary-text-color);font-weight:500}details[open]>.section-title:after{content:"−"}.section-content{padding:0 10px 10px}
+        .section{margin-top:4px;border:1px solid var(--divider-color);border-radius:12px;overflow:hidden}.section-title{display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:750;margin:0;padding:7px 9px;cursor:pointer;list-style:none}.section-title::-webkit-details-marker{display:none}.section-title:after{content:"＋";margin-left:auto;color:var(--secondary-text-color);font-weight:500}details[open]>.section-title:after{content:"−"}.section-content{padding:0 7px 7px}
         .section-title:before{content:"";width:4px;height:16px;border-radius:4px;background:var(--hi-blue)}
-        .pumps{display:grid;grid-template-columns:1fr;gap:7px}.pump{background:linear-gradient(135deg,var(--secondary-background-color),var(--card-background-color))}
-        .pump-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+        .pumps{display:grid;grid-template-columns:1fr;gap:4px}.pump{background:linear-gradient(135deg,var(--secondary-background-color),var(--card-background-color))}
+        .pump-head{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px}
         .pump-head strong{font-size:1rem}.pump-head span{font-size:.72rem;font-weight:750;padding:5px 9px;border-radius:999px;background:var(--secondary-background-color);color:var(--secondary-text-color)}
         .pump-head span.active{background:rgba(36,156,112,.14);color:var(--hi-green)}
-        .pump-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
-        select{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:11px;border:1px solid var(--divider-color);color:var(--primary-text-color);background:var(--card-background-color);font:inherit;margin-bottom:10px}
+        .pump-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+        select{width:100%;box-sizing:border-box;padding:7px 9px;border-radius:11px;border:1px solid var(--divider-color);color:var(--primary-text-color);background:var(--card-background-color);font:inherit;margin-bottom:10px}
 
-        .chart-wrap{margin:10px 0 4px;padding:10px;border:1px solid var(--divider-color);border-radius:12px;background:var(--secondary-background-color)}
+        .chart-wrap{margin:5px 0 2px;padding:6px;border:1px solid var(--divider-color);border-radius:12px;background:var(--secondary-background-color)}
         .chart-heading{display:flex;justify-content:space-between;gap:8px;font-size:.78rem;margin-bottom:4px}.chart-heading span{color:var(--secondary-text-color)}
         .chart-wrap svg{display:block;width:100%;height:auto;overflow:visible}
         .chart-grid{stroke:var(--divider-color);stroke-width:1;stroke-dasharray:3 4}
@@ -164,14 +164,14 @@ class HeatingIntelligenceCard extends HTMLElement {
         .chart-actual{fill:none;stroke:var(--hi-blue);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
         .chart-forecast{fill:none;stroke:var(--hi-green);stroke-width:2.6;stroke-dasharray:5 4;stroke-linecap:round;stroke-linejoin:round}
         .chart-label{font-size:9px;fill:var(--secondary-text-color)}
-        .chart-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.68rem;color:var(--secondary-text-color);margin-top:3px}
+        .chart-legend{display:flex;flex-wrap:wrap;gap:7px;font-size:.68rem;color:var(--secondary-text-color);margin-top:3px}
         .chart-legend span{display:flex;align-items:center;gap:5px}.chart-legend i{display:inline-block;width:13px;height:3px;border-radius:2px}
         .legend-actual{background:var(--hi-blue)}.legend-forecast{background:var(--hi-green)}.legend-target{background:var(--hi-amber)}.legend-gas{background:#d89127}.legend-electric{background:#3989d6}
         .bar-gas{fill:#d89127}.bar-electric{fill:#3989d6}.demand-band{fill:var(--hi-green);opacity:.09}.legend-demand{height:8px!important;background:var(--hi-green);opacity:.25}
-        .chart-empty{padding:14px 8px;color:var(--secondary-text-color);font-size:.76rem;border:1px dashed var(--divider-color);border-radius:10px;margin:10px 0}
-        .subtle{color:var(--secondary-text-color);font-size:.76rem;margin:10px 2px 0;line-height:1.45}
-        .insights{display:grid;gap:8px}
-        .insight{border-radius:13px;padding:12px 13px;border:1px solid var(--divider-color);background:var(--secondary-background-color)}
+        .chart-empty{padding:8px 7px;color:var(--secondary-text-color);font-size:.76rem;border:1px dashed var(--divider-color);border-radius:10px;margin:10px 0}
+        .subtle{color:var(--secondary-text-color);font-size:.72rem;margin:5px 1px 0;line-height:1.45}
+        .insights{display:grid;gap:5px}
+        .insight{border-radius:9px;padding:7px 9px;border:1px solid var(--divider-color);background:var(--secondary-background-color)}
         .insight-warning{border-left:4px solid var(--hi-amber);background:color-mix(in srgb,var(--hi-amber) 9%,var(--card-background-color))}
         .insight-info{border-left:4px solid var(--hi-blue)}
         .insight-top{display:flex;align-items:center;gap:8px}
@@ -179,9 +179,9 @@ class HeatingIntelligenceCard extends HTMLElement {
         .insight-dot{width:8px;height:8px;border-radius:50%;background:var(--hi-blue);flex:none}
         .insight-warning .insight-dot{background:var(--hi-amber)}
         .severity{font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:var(--secondary-text-color)}
-        .insight p{font-size:.78rem;line-height:1.45;margin:8px 0 5px}
+        .insight p{font-size:.75rem;line-height:1.35;margin:4px 0 3px}
         .insight small{display:block;color:var(--secondary-text-color);font-size:.73rem;line-height:1.4}
-        .empty-insights{padding:13px;border-radius:12px;background:rgba(36,156,112,.1);color:var(--hi-green);font-size:.8rem}
+        .empty-insights{padding:8px;border-radius:12px;background:rgba(36,156,112,.1);color:var(--hi-green);font-size:.8rem}
         .subhead{color:var(--secondary-text-color);font-size:.75rem;margin:-4px 0 9px}
         @media(min-width:560px){.overview,.detail-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pumps{grid-template-columns:repeat(2,minmax(0,1fr))}}
       </style>

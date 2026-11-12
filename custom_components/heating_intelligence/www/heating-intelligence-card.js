@@ -18,6 +18,62 @@ class HeatingIntelligenceCard extends HTMLElement {
   _esc(value) {
     return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
   }
+  _info(label, description) {
+    return `<button type="button" class="info-button" aria-label="About ${this._esc(label)}" aria-expanded="false" data-info="${this._esc(description)}">i</button>`;
+  }
+  _metricHelp(label) {
+    const help = {
+      "Gas energy per degree day":"Daily gas energy divided by heating degree days. HDD = max(0, 18°C − daily mean outdoor temperature). Lower values can indicate less gas for comparable outdoor heating demand, but solar gains, occupancy, indoor setpoint and thermal storage also affect it. This is a daily comparison indicator, not boiler efficiency.",
+      "Whole-house efficiency":"A group of measured energy and thermal indicators, not one certified efficiency rating. It combines gas use, pump electricity, weather and temperature observations. It does not measure useful heat delivered or boiler combustion efficiency.",
+      "Heating degree days":"A weather-demand indicator calculated as max(0, 18°C − average outdoor temperature) for the day. It estimates how far outdoor conditions are below the chosen 18°C base; it is not a measurement of heat delivered.",
+      "Indoor–outdoor ΔT":"Difference between the average indoor room temperature and the configured indoor–outdoor temperature-difference sensor. Larger differences generally mean a greater temperature gradient through the building envelope.",
+      "Solar radiation average":"Average of the configured solar-radiation sensor observations collected by this integration. Solar gains can reduce heating demand, but sensor orientation, shading and units affect interpretation.",
+      "Gas correlation":"Pearson correlation between daily gas energy and the named variable. Values range from −1 to +1; magnitude describes association, not causation. At least three paired days are required and small samples are unstable.",
+      "Electricity correlation":"Pearson correlation between daily pump electricity and the named variable. It describes association only, not causation, and requires at least three paired days.",
+      "Room efficiency score":"A heuristic 0–100 diagnostic score assembled from available room metrics. It is not a measured heating efficiency, energy rating or physical heat-loss coefficient. Inspect the component contributions before comparing rooms.",
+      "Observed heat-loss indicator":"Observed room temperature cooling rate during no-demand periods with closed windows, in °C per hour. It is a temperature-decay indicator, not heat loss in watts or W/K.",
+      "Heat retention · per 1°C":"An estimate derived from the observed closed-window cooling rate: hours for the room temperature to fall by 1°C if the observed rate continued. It is not a fixed material property.",
+      "Cooling rate · windows closed":"Temperature decrease per hour during periods without heating demand and with the window reported closed. Solar gains, internal gains, ventilation and sensor noise can influence it.",
+      "Heating response · +0.5°C":"Average observed time for the room temperature to rise by 0.5°C during a heating-demand period. It depends on starting conditions and concurrent heat gains/losses.",
+      "Pump synchronisation":"Compares observed pump-cycle start times against the configured tolerance. A mismatch is a timing observation, not proof of a pump or control fault.",
+      "Demand ↔ pump correlation":"Compares room demand on a floor with that floor's manifold-pump running state. Brief delays and the coordinator sampling interval can create apparent mismatches.",
+      "Average confidence":"A heuristic indicator based on recent sample coverage and consistency. It is not a statistical probability that the forecast will be correct.",
+      "Weather-normalised gas consumption":"Regression estimate comparing actual gas with gas expected under reference weather conditions. It adjusts for HDD, indoor–outdoor ΔT and solar radiation; it is a comparative index, not a physical heat-loss or boiler-efficiency measurement.",
+      "Floor thermal performance":"Area-weighted room observations. Only rooms with configured floor area and valid readings contribute; the coverage percentage is the share of rooms with area configured, not the share of total floor area."
+    };
+    return help[label] || "This value is calculated from the observations available to Heating Intelligence. It is descriptive and may be unavailable until sufficient valid history has been collected.";
+  }
+  _demandHeatmap(rooms) {
+    const now=Date.now(), dayMs=86400000, start=now-7*dayMs;
+    const days=Array.from({length:7},(_,i)=>new Date(start+i*dayMs));
+    const cells=rooms.map(room=>{
+      const hours=Array(7).fill(0).map(()=>Array(24).fill(0));
+      for(const cycle of room.demand_history||[]){
+        const a=Date.parse(cycle.start),b=Date.parse(cycle.end);
+        if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a)continue;
+        const from=Math.max(a,start),to=Math.min(b,now);
+        for(let t=from;t<to;){
+          const d=new Date(t), day=Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(days[0].getFullYear(),days[0].getMonth(),days[0].getDate()))/dayMs);
+          const nextHour=new Date(d.getFullYear(),d.getMonth(),d.getDate(),d.getHours()+1).getTime();
+          const stop=Math.min(to,nextHour);
+          if(day>=0&&day<7)hours[day][d.getHours()]+=Math.max(0,stop-t)/60000;
+          t=stop;
+        }
+      }
+      const total=hours.flat().reduce((a,b)=>a+b,0);
+      return `<div class="heatmap-room"><strong>${this._esc(room.name)}</strong><div class="heatmap-grid">${hours.map((row,d)=>row.map((minutes,h)=>{const intensity=Math.min(1,minutes/60);return `<span class="heat-cell" style="--heat:${intensity.toFixed(2)}" title="${days[d].toLocaleDateString()} ${String(h).padStart(2,"0")}:00 · ${Math.round(minutes)} min"></span>`;}).join("")).join("")}</div><small>${this._duration(total*60)} demand</small></div>`;
+    }).join("");
+    return `<div class="heatmap-labels"><span>Day / hour</span><span>00 → 23</span></div>${cells||'<div class="chart-empty">No room history available.</div>'}`;
+  }
+  _historyComparisons(history) {
+    const rows=(history||[]).filter(d=>d.date&&d.date<new Date().toLocaleDateString("en-CA"));
+    const sum=(items,key)=>items.reduce((n,d)=>n+(Number(d[key])||0),0);
+    const last=rows.slice(-14), current=last.slice(-7), previous=last.slice(0,7);
+    const compare=(key)=>{const a=sum(current,key),b=sum(previous,key);return {a,b,delta:b?((a-b)/b*100):null};};
+    const gas=compare("gas_kwh"), electric=compare("electricity_kwh"), normal=compare("weather_normalised_gas_kwh");
+    const card=(name,v,unit)=>`<div class="metric"><span>${name}</span><strong>${v.delta==null?"Need 14 days":`${v.a.toFixed(1)} vs ${v.b.toFixed(1)} ${unit} · ${v.delta>0?"+":""}${v.delta.toFixed(1)}%`}</strong><small class="subtle">Latest 7 days vs preceding 7 days</small></div>`;
+    return `<div class="overview">${card("Gas consumption",gas,"kWh")}${card("Pump electricity",electric,"kWh")}${normal.a&&normal.b?card("Weather-normalised gas",normal,"kWh"):'<div class="metric"><span>Weather-normalised gas</span><strong>Collecting model data</strong><small class="subtle">Available after the weather model has enough complete days.</small></div>'}</div>`;
+  }
   _temperatureChart(room, prediction, comfortTarget) {
     const samples = (room.temperature_history || []).filter((item) =>
       item && Number.isFinite(Number(item.temperature)) && Number.isFinite(Date.parse(item.time))
@@ -131,12 +187,12 @@ class HeatingIntelligenceCard extends HTMLElement {
         <div class="metric"><span>Current cycle</span><strong>${selected.demand ? this._duration(selected.active_cycle_seconds) : "—"}</strong></div>
         <div class="metric"><span>Total cycles observed</span><strong>${selected.total_cycles ?? 0}</strong></div>
         <div class="metric"><span>Temperature change · 1h / 6h / 24h</span><strong>${this._fmt(selected.temperature_change_1h)} / ${this._fmt(selected.temperature_change_6h)} / ${this._fmt(selected.temperature_change_24h)}</strong></div>
-        <div class="metric"><span>Heating response · +0.5°C</span><strong>${selected.heating_response_minutes == null ? "—" : this._fmt(selected.heating_response_minutes, "min")}</strong></div>
-        <div class="metric"><span>Cooling rate · windows closed</span><strong>${this._fmt(selected.cooling_rate_c_per_hour, "°C/h", 2)}</strong></div>
-        <div class="metric"><span>Heat retention · per 1°C</span><strong>${this._fmt(selected.heat_retention_hours_per_degree, "h/°C", 1)}</strong></div>
+        <div class="metric"><span>Heating response · +0.5°C ${this._info("Heating response · +0.5°C", this._metricHelp("Heating response · +0.5°C"))}</span><strong>${selected.heating_response_minutes == null ? "—" : this._fmt(selected.heating_response_minutes, "min")}</strong></div>
+        <div class="metric"><span>Cooling rate · windows closed ${this._info("Cooling rate · windows closed", this._metricHelp("Cooling rate · windows closed"))}</span><strong>${this._fmt(selected.cooling_rate_c_per_hour, "°C/h", 2)}</strong></div>
+        <div class="metric"><span>Heat retention · per 1°C ${this._info("Heat retention · per 1°C", this._metricHelp("Heat retention · per 1°C"))}</span><strong>${this._fmt(selected.heat_retention_hours_per_degree, "h/°C", 1)}</strong></div>
         <div class="metric"><span>Room floor area</span><strong>${this._fmt(selected.area_m2, "m²", 1)}</strong></div>
-        <div class="metric"><span>Room efficiency score</span><strong class="${selected.score == null ? "" : selected.score >= 70 ? "active" : selected.score < 45 ? "warning" : ""}">${selected.score == null ? "Collecting data" : selected.score + " / 100"}</strong></div>
-        <div class="metric"><span>Observed heat-loss indicator</span><strong>${this._fmt(selected.observed_heat_loss_c_per_hour, "°C/h", 2)}</strong></div>
+        <div class="metric"><span>Room efficiency score ${this._info("Room efficiency score", this._metricHelp("Room efficiency score"))}</span><strong class="${selected.score == null ? "" : selected.score >= 70 ? "active" : selected.score < 45 ? "warning" : ""}">${selected.score == null ? "Collecting data" : selected.score + " / 100"}</strong></div>
+        <div class="metric"><span>Observed heat-loss indicator ${this._info("Observed heat-loss indicator", this._metricHelp("Observed heat-loss indicator"))}</span><strong>${this._fmt(selected.observed_heat_loss_c_per_hour, "°C/h", 2)}</strong></div>
         <div class="metric"><span>Temperature samples</span><strong>${selected.temperature_samples ?? selected.temperature_sample_count ?? 0}</strong></div>
         <div class="metric"><span>Window open during demand today</span><strong>${this._fmt((selected.window_open_demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>
       </div>${this._temperatureChart(selected, attrs.predictions?.rooms?.[selected.id], attrs.predictions?.comfort_target_c ?? 21)}<div class="subtle">Demand source: ${this._esc(selected.demand_state ?? "Unavailable")}. Any available state counts as demand; unavailable means no demand.</div>` :
@@ -161,7 +217,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         .metric span,.pump-values span{display:block;color:var(--secondary-text-color);font-size:.72rem;margin-bottom:4px}
         .metric strong,.pump strong{font-size:1.03rem;font-weight:700;overflow-wrap:anywhere;line-height:1.3}
         .active{color:var(--hi-green)} .warning{color:var(--hi-amber)} .danger{color:var(--hi-red)}
-        .section{margin-top:4px;border:1px solid var(--divider-color);border-radius:12px;overflow:hidden}.section-title{display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:750;margin:0;padding:7px 9px;cursor:pointer;list-style:none}.section-title::-webkit-details-marker{display:none}.section-title:after{content:"＋";margin-left:auto;color:var(--secondary-text-color);font-weight:500}details[open]>.section-title:after{content:"−"}.section-content{padding:0 7px 7px}
+        .info-button{display:inline-grid;place-items:center;flex:0 0 17px;width:17px;height:17px;padding:0;border:1px solid var(--secondary-text-color);border-radius:50%;background:transparent;color:var(--secondary-text-color);font:700 11px/1 sans-serif;cursor:pointer;vertical-align:middle}.info-button:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}.info-popover{display:none;margin-top:5px;padding:8px 10px;border-left:3px solid var(--hi-blue);border-radius:5px;background:var(--card-background-color);color:var(--secondary-text-color);font-size:.75rem;line-height:1.45}.info-popover.open{display:block}.heatmap-room{display:grid;grid-template-columns:78px minmax(0,1fr) 65px;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--divider-color)}.heatmap-room strong{font-size:.72rem;overflow-wrap:anywhere}.heatmap-room small{font-size:.65rem;color:var(--secondary-text-color);text-align:right}.heatmap-grid{display:grid;grid-template-columns:repeat(24,minmax(2px,1fr));gap:2px}.heat-cell{height:12px;border-radius:2px;background:color-mix(in srgb,var(--hi-green) calc(var(--heat)*100%),var(--divider-color));opacity:calc(.35 + var(--heat)*.65)}.heatmap-labels{display:flex;justify-content:space-between;color:var(--secondary-text-color);font-size:.65rem;margin:6px 0}.comparison-heading{font-size:.75rem;color:var(--secondary-text-color);margin:4px 0 7px}.section{margin-top:4px;border:1px solid var(--divider-color);border-radius:12px;overflow:hidden}.section-title{display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:750;margin:0;padding:7px 9px;cursor:pointer;list-style:none}.section-title::-webkit-details-marker{display:none}.section-title:after{content:"＋";margin-left:auto;color:var(--secondary-text-color);font-weight:500}details[open]>.section-title:after{content:"−"}.section-content{padding:0 7px 7px}
         .section-title:before{content:"";width:4px;height:16px;border-radius:4px;background:var(--hi-blue)}
         .pumps{display:grid;grid-template-columns:1fr;gap:4px}.pump{background:linear-gradient(135deg,var(--secondary-background-color),var(--card-background-color))}
         .pump-head{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px}
@@ -222,18 +278,18 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
           <div class="subtle">Daily totals reset at local midnight. Runtime is accumulated from valid running-state observations.</div>
         </div>
-        <div class="section"><div class="section-title">Whole-house efficiency</div>
+        <div class="section"><div class="section-title">Whole-house efficiency ${this._info("Whole-house efficiency",this._metricHelp("Whole-house efficiency"))}</div>
           <div class="overview">
             <div class="metric"><span>Outdoor temperature</span><strong>${this._fmt(attrs.efficiency?.outdoor_temperature)}</strong></div>
-            <div class="metric"><span>Indoor–outdoor ΔT</span><strong>${this._fmt(attrs.efficiency?.delta_t_average)}</strong></div>
-            <div class="metric"><span>Solar radiation average</span><strong>${this._fmt(attrs.efficiency?.solar_radiation_average, "W/m²", 0)}</strong></div>
-            <div class="metric"><span>Heating degree days</span><strong>${this._fmt(attrs.efficiency?.heating_degree_days, "°C·d", 2)}</strong></div>
+            <div class="metric"><span>Indoor–outdoor ΔT ${this._info("Indoor–outdoor ΔT", this._metricHelp("Indoor–outdoor ΔT"))}</span><strong>${this._fmt(attrs.efficiency?.delta_t_average)}</strong></div>
+            <div class="metric"><span>Solar radiation average ${this._info("Solar radiation average", this._metricHelp("Solar radiation average"))}</span><strong>${this._fmt(attrs.efficiency?.solar_radiation_average, "W/m²", 0)}</strong></div>
+            <div class="metric"><span>Heating degree days ${this._info("Heating degree days", this._metricHelp("Heating degree days"))}</span><strong>${this._fmt(attrs.efficiency?.heating_degree_days, "°C·d", 2)}</strong></div>
             <div class="metric"><span>Gas energy today</span><strong>${this._fmt(attrs.efficiency?.gas_energy_today_kwh, "kWh", 2)}</strong></div>
             <div class="metric"><span>Electricity today</span><strong>${this._fmt(attrs.efficiency?.electricity_energy_today_kwh, "kWh", 2)}</strong></div>
             <div class="metric"><span>Downstairs pump electricity</span><strong>${this._fmt(attrs.efficiency?.electricity_ground_floor_today_kwh, "kWh", 3)} · ${this._fmt(attrs.efficiency?.electricity_ground_floor_share_percent, "%", 1)}</strong></div>
             <div class="metric"><span>Upstairs pump electricity</span><strong>${this._fmt(attrs.efficiency?.electricity_upstairs_today_kwh, "kWh", 3)} · ${this._fmt(attrs.efficiency?.electricity_upstairs_share_percent, "%", 1)}</strong></div>
             <div class="metric"><span>Boiler pump electricity</span><strong>${this._fmt(attrs.efficiency?.electricity_boiler_today_kwh, "kWh", 3)} · ${this._fmt(attrs.efficiency?.electricity_boiler_share_percent, "%", 1)}</strong></div>
-            <div class="metric"><span>Gas energy per degree day</span><strong>${this._fmt(attrs.efficiency?.gas_kwh_per_degree_day, "kWh/°C·d", 2)}</strong></div>
+            <div class="metric"><span>Gas energy per degree day ${this._info("Gas energy per degree day", this._metricHelp("Gas energy per degree day"))}</span><strong>${this._fmt(attrs.efficiency?.gas_kwh_per_degree_day, "kWh/°C·d", 2)}</strong></div>
           </div>
           <div class="subtle">Gas correlation · HDD: ${attrs.efficiency?.gas_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.gas_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.gas_solar_correlation ?? "—"}</div>
           <div class="subtle">Electricity correlation · HDD: ${attrs.efficiency?.electricity_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.electricity_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.electricity_solar_correlation ?? "—"} · days sampled: ${attrs.efficiency?.days_with_data ?? 0}</div>
@@ -266,6 +322,7 @@ class HeatingIntelligenceCard extends HTMLElement {
             }).join("")}
           </div>
         </div>
+        <div class="section"><div class="section-title">Historical comparisons ${this._info("Historical comparisons","Compares the latest seven completed days with the preceding seven completed days. Percentage change is descriptive and is not weather-adjusted unless the weather-normalised series is available. Only the last 30 daily records are currently retained in the overview payload.")}</div><div class="section-content"><div class="comparison-heading">Latest 7 days vs preceding 7 days</div>${this._historyComparisons(attrs.energy_history)}</div></div>
         <div class="section"><div class="section-title">Energy history</div>${this._energyChart(attrs.energy_history)}</div>\n        <div class="section"><div class="section-title">Weather-normalised efficiency</div>
           <div class="overview">
             <div class="metric"><span>Model status</span><strong>${this._esc(attrs.efficiency?.weather_normalised?.status || "collecting data")}</strong></div>
@@ -277,11 +334,12 @@ class HeatingIntelligenceCard extends HTMLElement {
             ${(attrs.efficiency?.weather_normalised?.recent_days || []).slice(-7).map((d) => '<div class="metric"><span>' + this._esc(d.date) + '</span><strong>Actual ' + this._fmt(d.actual_gas_kwh, "kWh", 1) + ' · normalised ' + this._fmt(d.weather_normalised_gas_kwh, "kWh", 1) + '</strong><div class="subtle">Weather model expected ' + this._fmt(d.weather_expected_gas_kwh, "kWh", 1) + ' · deviation ' + this._fmt(d.weather_effect_percent, "%", 1) + '</div></div>').join("") || '<p class="subtle">At least 21 complete days with gas, outdoor temperature, ΔT and solar data are required.</p>'}
           </div>
         </div>
+        <div class="section"><div class="section-title">Weekly room-demand heatmap ${this._info("Weekly room-demand heatmap","Each cell represents one hour of the day. Darker green means more minutes with a recorded heating-demand cycle during that hour. It uses stored demand-cycle start/end times; missing history is not interpreted as zero demand.")}</div><div class="section-content"><div class="subtle">Demand minutes by room, day and hour. Select a cell to inspect its time and duration.</div>${this._demandHeatmap(entries)}</div></div>
         <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recorded room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="24" aria-pressed="true">24 hours</button><button data-hours="168" aria-pressed="false">7 days</button></div><div class="demand-timeline">${this._demandTimeline(entries,24)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value.</div></div>\n        <div class="section"><div class="section-title">Forecasts</div>
           <div class="subtle">Explainable short-term projections · confidence reflects sample coverage and trend consistency.</div>
           <div class="overview">
             <div class="metric"><span>Rooms with forecasts</span><strong>${attrs.predictions?.rooms_with_forecasts ?? 0} / ${entries.length}</strong></div>
-            <div class="metric"><span>Average confidence</span><strong>${this._fmt(attrs.predictions?.average_confidence, "%", 0)}</strong></div>
+            <div class="metric"><span>Average confidence ${this._info("Average confidence", this._metricHelp("Average confidence"))}</span><strong>${this._fmt(attrs.predictions?.average_confidence, "%", 0)}</strong></div>
             <div class="metric"><span>Projected gas today</span><strong>${this._fmt(attrs.predictions?.energy?.gas_kwh, "kWh", 1)}</strong></div>
             <div class="metric"><span>Projected electricity today</span><strong>${this._fmt(attrs.predictions?.energy?.electricity_kwh, "kWh", 1)}</strong></div>
           </div>
@@ -336,6 +394,7 @@ class HeatingIntelligenceCard extends HTMLElement {
       section.replaceWith(disclosure);
       if (openSections.has(summary.textContent) || summary.textContent === "Forecasts" || summary.textContent === "Room details") disclosure.open = true;
     });
+    this.shadowRoot.querySelectorAll(".info-button").forEach(button=>button.addEventListener("click",()=>{const existing=button.nextElementSibling;if(existing?.classList.contains("info-popover")){existing.remove();button.setAttribute("aria-expanded","false");return;}const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");}));
     const applyView=(view)=>{this._activeView=view;this.shadowRoot.querySelectorAll(".tab").forEach(b=>{const active=b.dataset.view===view;b.setAttribute("aria-selected",String(active));b.setAttribute("tabindex",active?"0":"-1");});this.shadowRoot.querySelectorAll("details.section").forEach(s=>{const h=s.querySelector("summary")?.textContent||"";const tab=h==="Demand timeline"?"demand":["Forecasts","Room details","Room heat-retention comparison","Advanced diagnostics"].includes(h)?"predict":"overview";s.hidden=tab!==view;if(tab===view)s.open=true;});};
     this.shadowRoot.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>applyView(b.dataset.view)));applyView(this._activeView||"overview");
     this.shadowRoot.querySelectorAll("[data-hours]").forEach(b=>b.addEventListener("click",()=>{this._demandHours=Number(b.dataset.hours);this.shadowRoot.querySelectorAll("[data-hours]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));const target=this.shadowRoot.querySelector(".demand-timeline");if(target)target.innerHTML=this._demandTimeline(entries,this._demandHours);}));

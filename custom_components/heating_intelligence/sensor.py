@@ -12,6 +12,9 @@ from .const import (
     CONF_OUTDOOR_TEMPERATURE_ENTITY, CONF_SOLAR_RADIATION_ENTITY,
     CONF_DELTA_T_ENTITY, CONF_GAS_CONSUMPTION_ENTITY,
     CONF_ELECTRICITY_CONSUMPTION_ENTITY,
+    CONF_ELECTRICITY_GROUND_FLOOR_ENTITY,
+    CONF_ELECTRICITY_UPSTAIRS_ENTITY,
+    CONF_ELECTRICITY_BOILER_ENTITY,
 )
 from .coordinator import HeatingIntelligenceCoordinator
 from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
@@ -54,6 +57,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         (CONF_DELTA_T_ENTITY, "delta_t_average"),
         (CONF_GAS_CONSUMPTION_ENTITY, "gas_energy_today_kwh"),
         (CONF_ELECTRICITY_CONSUMPTION_ENTITY, "electricity_energy_today_kwh"),
+        (CONF_ELECTRICITY_GROUND_FLOOR_ENTITY, "electricity_ground_floor_today_kwh"),
+        (CONF_ELECTRICITY_UPSTAIRS_ENTITY, "electricity_upstairs_today_kwh"),
+        (CONF_ELECTRICITY_BOILER_ENTITY, "electricity_boiler_today_kwh"),
     ):
         if entry.options.get(option):
             entities.append(EfficiencySensor(coordinator, metric))
@@ -241,7 +247,10 @@ EFFICIENCY_METRICS = {
     "delta_t_average": ("Indoor–Outdoor Delta T", "°C", "mdi:thermometer-lines"),
     "heating_degree_days": ("Heating Degree Days Today", "°C·d", "mdi:chart-bell-curve"),
     "gas_energy_today_kwh": ("Gas Energy Today", "kWh", "mdi:fire"),
-    "electricity_energy_today_kwh": ("Electricity Energy Today", "kWh", "mdi:lightning-bolt"),
+    "electricity_energy_today_kwh": ("Heating Pumps Electricity Today", "kWh", "mdi:lightning-bolt"),
+    "electricity_ground_floor_today_kwh": ("Downstairs Pump Electricity Today", "kWh", "mdi:lightning-bolt"),
+    "electricity_upstairs_today_kwh": ("Upstairs Pump Electricity Today", "kWh", "mdi:lightning-bolt"),
+    "electricity_boiler_today_kwh": ("Boiler Pump Electricity Today", "kWh", "mdi:lightning-bolt"),
     "gas_kwh_per_degree_day": ("Gas Energy per Degree Day", "kWh/°C·d", "mdi:chart-line"),
 }
 

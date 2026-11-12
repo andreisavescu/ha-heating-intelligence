@@ -5,6 +5,9 @@ from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySen
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity import EntityCategory
+
+from .devices import RoomDeviceMixin, PumpDeviceMixin
 
 from .const import CONF_PUMPS, CONF_ROOMS, DOMAIN
 from .coordinator import HeatingIntelligenceCoordinator
@@ -22,13 +25,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(entities)
 
 
-class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
+class RoomDemandSensor(RoomDeviceMixin, CoordinatorEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.HEAT
     _attr_should_poll = False
 
     def __init__(self, coordinator, room_id: str, room_name: str) -> None:
         super().__init__(coordinator)
         self.room_id = room_id
+        self.room_name = room_name
         self._attr_name = f"{room_name} Heating Demand"
         self._attr_unique_id = f"{DOMAIN}_{room_id}_heating_demand"
 
@@ -53,13 +57,14 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
         }
 
 
-class RoomWindowSensor(CoordinatorEntity, BinarySensorEntity):
+class RoomWindowSensor(RoomDeviceMixin, CoordinatorEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.WINDOW
     _attr_should_poll = False
 
     def __init__(self, coordinator, room_id: str, room_name: str) -> None:
         super().__init__(coordinator)
         self.room_id = room_id
+        self.room_name = room_name
         self._attr_name = f"{room_name} Window"
         self._attr_unique_id = f"{DOMAIN}_{room_id}_window"
 
@@ -73,7 +78,7 @@ class RoomWindowSensor(CoordinatorEntity, BinarySensorEntity):
         return super().available and room.get("window_state") not in (None, "unavailable", "unknown")
 
 
-class PumpRunningSensor(CoordinatorEntity, BinarySensorEntity):
+class PumpRunningSensor(PumpDeviceMixin, CoordinatorEntity, BinarySensorEntity):
     """Pump is considered running above a small power threshold."""
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
@@ -82,6 +87,7 @@ class PumpRunningSensor(CoordinatorEntity, BinarySensorEntity):
     def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
         super().__init__(coordinator)
         self.pump_id = pump_id
+        self.pump_name = pump_name
         self._attr_name = f"{pump_name} Pump Running"
         self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_running"
 

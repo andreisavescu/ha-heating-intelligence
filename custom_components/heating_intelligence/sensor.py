@@ -65,6 +65,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(EfficiencySensor(coordinator, metric))
     if entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "heating_degree_days"))
+    if any(entry.options.get(option) for option in (
+        CONF_ELECTRICITY_GROUND_FLOOR_ENTITY,
+        CONF_ELECTRICITY_UPSTAIRS_ENTITY,
+        CONF_ELECTRICITY_BOILER_ENTITY,
+    )):
+        entities.append(EfficiencySensor(coordinator, "electricity_energy_today_kwh"))
     if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "gas_kwh_per_degree_day"))
     async_add_entities(entities)

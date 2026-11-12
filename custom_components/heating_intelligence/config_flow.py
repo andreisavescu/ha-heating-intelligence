@@ -108,30 +108,34 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=data)
 
         current = self.config_entry.options
+        # Avoid explicit None defaults on optional entity selectors. Some
+        # Home Assistant frontend versions render those as required fields.
+        def optional_sensor_field(key, fallback=None):
+            saved = current.get(key, fallback)
+            field = vol.Optional(key, default=saved) if saved else vol.Optional(key)
+            return field, selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+
+        schema_fields = dict(
+            optional_sensor_field(key)
+            for key in (
+                CONF_WATER_TEMPERATURE_ENTITY,
+                CONF_RETURN_WATER_TEMPERATURE_ENTITY,
+                CONF_OUTDOOR_TEMPERATURE_ENTITY,
+                CONF_SOLAR_RADIATION_ENTITY,
+                CONF_DELTA_T_ENTITY,
+                CONF_GAS_CONSUMPTION_ENTITY,
+                CONF_ELECTRICITY_BOILER_POWER_ENTITY,
+                CONF_AC_POWER_ENTITY,
+                CONF_AC_ENERGY_ENTITY,
+            )
+        )
+        boiler_energy_field = optional_sensor_field(
+            CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
+            current.get(CONF_ELECTRICITY_BOILER_ENTITY),
+        )
+        schema_fields[boiler_energy_field[0]] = boiler_energy_field[1]
         schema = vol.Schema({
-            vol.Optional(CONF_WATER_TEMPERATURE_ENTITY, default=current.get(CONF_WATER_TEMPERATURE_ENTITY)):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(CONF_RETURN_WATER_TEMPERATURE_ENTITY, default=current.get(CONF_RETURN_WATER_TEMPERATURE_ENTITY)):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(CONF_OUTDOOR_TEMPERATURE_ENTITY, default=current.get(CONF_OUTDOOR_TEMPERATURE_ENTITY)):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(CONF_SOLAR_RADIATION_ENTITY, default=current.get(CONF_SOLAR_RADIATION_ENTITY)):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(CONF_DELTA_T_ENTITY, default=current.get(CONF_DELTA_T_ENTITY)):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(CONF_GAS_CONSUMPTION_ENTITY, default=current.get(CONF_GAS_CONSUMPTION_ENTITY)):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(CONF_ELECTRICITY_BOILER_POWER_ENTITY, default=current.get(CONF_ELECTRICITY_BOILER_POWER_ENTITY)):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(CONF_AC_POWER_ENTITY, default=current.get(CONF_AC_POWER_ENTITY)):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(CONF_AC_ENERGY_ENTITY, default=current.get(CONF_AC_ENERGY_ENTITY)):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(
-                CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
-                default=current.get(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY, current.get(CONF_ELECTRICITY_BOILER_ENTITY)),
-            ):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            **schema_fields,
             vol.Optional(CONF_COMFORT_TARGET_C, default=current.get(CONF_COMFORT_TARGET_C, 21.0)):
                 selector.NumberSelector(selector.NumberSelectorConfig(min=16, max=25, step=0.5, unit_of_measurement="°C", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional(CONF_GAS_ENERGY_FACTOR, default=current.get(CONF_GAS_ENERGY_FACTOR, 10.55)):

@@ -26,7 +26,7 @@ def test_floor_performance_is_area_weighted_and_reports_coverage():
     result = MODULE.build_floor_performance(rooms)
     ground = result["ground_floor"]
     assert ground["configured_area_m2"] == 100
-    assert ground["area_coverage_percent"] == 66.7
+    assert ground["rooms_with_area_percent"] == 66.7
     assert ground["area_weighted_temperature_c"] == 21.6
     assert ground["area_weighted_cooling_c_per_hour"] == 0.9
     assert ground["area_weighted_heating_response_minutes"] == 108.0

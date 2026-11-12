@@ -42,7 +42,7 @@ class RoomDemandSensor(RoomDeviceMixin, CoordinatorEntity, BinarySensorEntity):
         # Demand is represented by source availability: every present state,
         # including "on", "off", and "unknown", means demand. An unavailable
         # or missing source means no demand, not an unavailable integration entity.
-        return demand_is_active(room.get("demand_state))
+        return demand_is_active(room.get("demand_state"))
 
     @property
     def available(self):

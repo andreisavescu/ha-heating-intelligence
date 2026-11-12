@@ -220,11 +220,25 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 for item in rooms
             ]
             return self.async_create_entry(title="", data=data)
-        schema = vol.Schema({
-            vol.Optional(CONF_AREA, default=room.get(CONF_AREA)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=500, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)
-            ),
-        })
+        area_selector = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=500,
+                step=0.5,
+                unit_of_measurement="m²",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        # Do not serialise a null default into the selector schema. Some
+        # frontend/config-flow combinations omit the control entirely when
+        # an optional NumberSelector explicitly defaults to None.
+        current_area = room.get(CONF_AREA)
+        area_field = (
+            vol.Optional(CONF_AREA, default=current_area)
+            if current_area is not None
+            else vol.Optional(CONF_AREA)
+        )
+        schema = vol.Schema({area_field: area_selector})
         return self.async_show_form(
             step_id="set_room_area",
             data_schema=schema,

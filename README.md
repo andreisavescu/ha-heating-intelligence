@@ -46,6 +46,13 @@ Room Heating Demand binary sensors now remain available whenever the integration
 
 All diagnostics are read-only and heuristic. Missing or insufficient data is shown as collecting/unavailable rather than assigned a misleading score.
 
+## 0.7.1 — room floor-area analysis
+
+- Configure an optional floor area (m²) when adding a room, or later through **Set room floor areas** in the integration options.
+- Existing room configurations remain valid; areas are optional and can be left blank.
+- The room detail and diagnostics card show configured room areas and per-floor total configured area.
+- When area and valid closed-window cooling observations are available, floor cooling is summarised as an area-weighted observed cooling rate. This supports more representative floor comparisons but is still not a physical heat-loss coefficient (W/K).
+
 ## Install
 
 1. Add this repository to HACS as a custom repository, category **Integration**.

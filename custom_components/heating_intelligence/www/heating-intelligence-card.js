@@ -75,6 +75,10 @@ class HeatingIntelligenceCard extends HTMLElement {
         <div class="metric"><span>Window open during demand today</span><strong>${this._fmt((selected.window_open_demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>
       </div><div class="subtle">Demand source: ${this._esc(selected.demand_state ?? "Unavailable")}. Any available state counts as demand; unavailable means no demand.</div>` :
       `<p class="subtle">No rooms configured yet.</p>`;
+    const openSections = new Set(
+      [...this.shadowRoot.querySelectorAll("details[open] > summary")]
+        .map((summary) => summary.textContent)
+    );
     this.shadowRoot.innerHTML = `
       <style>
         :host{display:block;color:var(--primary-text-color);--hi-blue:#3989d6;--hi-green:#249c70;--hi-amber:#d89127;--hi-red:#d45c52}
@@ -224,7 +228,7 @@ class HeatingIntelligenceCard extends HTMLElement {
       });
       disclosure.append(summary, content);
       section.replaceWith(disclosure);
-      if (summary.textContent === "Forecasts" || summary.textContent === "Room details") disclosure.open = true;
+      if (openSections.has(summary.textContent) || summary.textContent === "Forecasts" || summary.textContent === "Room details") disclosure.open = true;
     });
     const select = this.shadowRoot.querySelector("select");
     if (select) select.addEventListener("change", (event) => { this._selectedRoom = event.target.value; this._render(); });

@@ -123,7 +123,7 @@ def efficiency_statistics(history: dict[str, Any], now: datetime, base_temperatu
     gas = round(today.get("gas_kwh", 0.0), 3)
     electricity = round(today.get("electricity_kwh", 0.0), 3)
     electricity_by_pump = {pump_id: round(today.get(f"electricity_{pump_id}_kwh", 0.0), 3) for pump_id in ("ground_floor", "upstairs", "boiler")}
-    has_pump_meters = any(f"electricity_{pump_id}_kwh" in today for pump_id in ("ground_floor", "upstairs", "boiler"))
+    has_pump_meters = any(f"electricity_{pump_id}" in history.get("efficiency_last_readings", {}) for pump_id in ("ground_floor", "upstairs", "boiler"))
     electricity_total = sum(electricity_by_pump.values()) if has_pump_meters else electricity
     completed = [v for k, v in sorted(days.items()) if k <= now.date().isoformat()]
     gas_hdd = [(max(0.0, base_temperature - v["outdoor_sum"] / v["outdoor_count"]), v["gas_kwh"])

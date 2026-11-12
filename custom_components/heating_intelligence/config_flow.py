@@ -11,6 +11,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_COMFORT_TARGET_C,
     CONF_FLOOR,
     CONF_AREA,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
@@ -90,6 +91,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                     data[key] = entity_id
                 else:
                     data.pop(key, None)
+            data[CONF_COMFORT_TARGET_C] = float(user_input.get(CONF_COMFORT_TARGET_C) or 21.0)
             data[CONF_GAS_ENERGY_FACTOR] = float(
                 user_input.get(CONF_GAS_ENERGY_FACTOR) or 10.55
             )
@@ -114,6 +116,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 default=current.get(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY, current.get(CONF_ELECTRICITY_BOILER_ENTITY)),
             ):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_COMFORT_TARGET_C, default=current.get(CONF_COMFORT_TARGET_C, 21.0)):
+                selector.NumberSelector(selector.NumberSelectorConfig(min=16, max=25, step=0.5, unit_of_measurement="°C", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional(CONF_GAS_ENERGY_FACTOR, default=current.get(CONF_GAS_ENERGY_FACTOR, 10.55)):
                 selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=20, step=0.01, mode=selector.NumberSelectorMode.BOX)),
         })

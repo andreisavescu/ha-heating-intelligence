@@ -19,7 +19,8 @@
           "remove_room": "Remove a room",
           "global_settings": "Global settings",
           "pump_settings": "Pump settings",
-          "edit_room": "Change a room's floor"
+          "edit_room": "Change a room's floor",
+          "room_area": "Set room floor areas"
         }
       },
       "global_settings": {
@@ -32,7 +33,17 @@
       },
       "add_room": {
         "title": "Add a room",
-        "description": "Select the room's floor (downstairs or upstairs), thermostat demand relay and temperature sensor. The window contact is optional."
+        "description": "Select the room's floor, thermostat demand relay and temperature sensor. Floor area is optional. The window contact is optional.",
+        "data": { "area_m2": "Room floor area (m²)" }
+      },
+      "room_area": {
+        "title": "Select room",
+        "description": "Choose the room whose floor area you want to configure."
+      },
+      "set_room_area": {
+        "title": "Room floor area",
+        "description": "Set the floor area for {room_name}. Leave empty if unknown.",
+        "data": { "area_m2": "Room floor area (m²)" }
       },
       "remove_room": {
         "title": "Remove a room"

@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.6.0)
+## Current scope (0.8.1)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -53,6 +53,14 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - The room detail and diagnostics card show configured room areas and per-floor total configured area.
 - When area and valid closed-window cooling observations are available, floor cooling is summarised as an area-weighted observed cooling rate. This supports more representative floor comparisons but is still not a physical heat-loss coefficient (W/K).
 
+## 0.8.1 — predictive intelligence and compact dashboard
+
+- Add explainable room temperature forecasts for 1, 3 and 6 hours, time-to-comfort and time-below-comfort estimates.
+- Add a configurable comfort target (16–25 °C, default 21 °C).
+- Add end-of-day gas and heating-electricity run-rate projections with confidence and explicit limitations.
+- Expose predictions, recent room-temperature history and 14-day energy history through the existing overview sensor attributes; no prediction entities are added.
+- Compact the Lovelace card with collapsible analysis, room temperature history/forecast charts and daily energy history.
+
 ## Install
 
 1. Add this repository to HACS as a custom repository, category **Integration**.
@@ -68,7 +76,7 @@ The integration creates a central **Heating Intelligence** device, with each con
 
 The integration serves the card JavaScript at:
 
-`/heating_intelligence/heating-intelligence-card.js?v=0.8.0`
+`/heating_intelligence/heating-intelligence-card.js?v=0.8.1`
 
 If it is not automatically registered, add it under **Settings → Dashboards → Resources** as a **JavaScript module**, then add a Manual card:
 

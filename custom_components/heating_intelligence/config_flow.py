@@ -185,7 +185,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema({
             vol.Required(CONF_NAME): str,
             vol.Required(CONF_FLOOR): vol.In({"ground_floor": "Downstairs", "upstairs": "Upstairs"}),
-            vol.Optional(CONF_AREA): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=500, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional(CONF_AREA): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=500, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
             vol.Required(CONF_DEMAND_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig()),
             vol.Required(CONF_TEMPERATURE_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_WINDOW_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),
@@ -224,7 +224,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             selector.NumberSelectorConfig(
                 min=1,
                 max=500,
-                step=0.5,
+                step=0.01,
                 unit_of_measurement="m²",
                 mode=selector.NumberSelectorMode.BOX,
             )

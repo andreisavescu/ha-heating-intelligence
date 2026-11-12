@@ -12,6 +12,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_DEMAND_ENTITY,
     CONF_FLOOR,
+    CONF_AREA,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
     CONF_DELTA_T_ENTITY,
@@ -59,7 +60,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_room", "edit_room", "remove_room", "global_settings", "pump_settings"],
+            menu_options=["add_room", "edit_room", "room_area", "remove_room", "global_settings", "pump_settings"],
         )
 
     async def async_step_global_settings(self, user_input=None):
@@ -168,6 +169,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 "id": slug,
                 CONF_NAME: user_input[CONF_NAME].strip(),
                 CONF_FLOOR: user_input[CONF_FLOOR],
+                CONF_AREA: float(user_input[CONF_AREA]) if user_input.get(CONF_AREA) not in (None, "") else None,
                 CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY],
                 CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY],
                 CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
@@ -179,11 +181,51 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema({
             vol.Required(CONF_NAME): str,
             vol.Required(CONF_FLOOR): vol.In({"ground_floor": "Downstairs", "upstairs": "Upstairs"}),
+            vol.Optional(CONF_AREA): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=500, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
             vol.Required(CONF_DEMAND_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig()),
             vol.Required(CONF_TEMPERATURE_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_WINDOW_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),
         })
         return self.async_show_form(step_id="add_room", data_schema=schema)
+
+    async def async_step_room_area(self, user_input=None):
+        """Select a room and configure its optional floor area."""
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        if not rooms:
+            return self.async_abort(reason="no_rooms")
+        if user_input is not None:
+            self._area_room_id = user_input["room"]
+            return await self.async_step_set_room_area()
+        options = {room["id"]: room[CONF_NAME] for room in rooms}
+        return self.async_show_form(
+            step_id="room_area",
+            data_schema=vol.Schema({vol.Required("room"): vol.In(options)}),
+        )
+
+    async def async_step_set_room_area(self, user_input=None):
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        room = next((item for item in rooms if item["id"] == self._area_room_id), None)
+        if room is None:
+            return self.async_abort(reason="no_rooms")
+        if user_input is not None:
+            area = user_input.get(CONF_AREA)
+            data = dict(self.config_entry.options)
+            data[CONF_ROOMS] = [
+                {**item, CONF_AREA: float(area) if area not in (None, "") else None}
+                if item["id"] == self._area_room_id else item
+                for item in rooms
+            ]
+            return self.async_create_entry(title="", data=data)
+        schema = vol.Schema({
+            vol.Optional(CONF_AREA, default=room.get(CONF_AREA)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=500, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)
+            ),
+        })
+        return self.async_show_form(
+            step_id="set_room_area",
+            data_schema=schema,
+            description_placeholders={"room_name": room[CONF_NAME]},
+        )
 
     async def async_step_edit_room(self, user_input=None):
         """Select a room whose floor assignment should be changed."""

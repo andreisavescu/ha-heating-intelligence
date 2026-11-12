@@ -85,8 +85,8 @@ def update_efficiency_history(
         if old is None or value != old or unit != previous.get(key, {}).get("unit"):
             meter_samples.append({"time": now.astimezone(timezone.utc).isoformat(), "meter": key, "value": value, "unit": unit})
         previous[key] = {"value": value, "unit": unit, "entity_id": reading.get("entity_id")}
-    if any(electricity_meters.values()):
-        day["electricity_kwh"] = sum(day.get(f"electricity_{pump_id}_kwh", 0.0) for pump_id in ("ground_floor", "upstairs", "boiler"))
+    if any(electricity_meters.values()) or readings.get("ac_energy"):
+        day["electricity_kwh"] = sum(day.get(f"electricity_{pump_id}_kwh", 0.0) for pump_id in ("ground_floor", "upstairs", "boiler")) + day.get("ac_electricity_kwh", 0.0)
 
     env = {key: _number((readings.get(key) or {}).get("value"))
            for key in ("outdoor_temperature", "solar_radiation", "delta_t", "indoor_temperature")}
@@ -139,7 +139,7 @@ def efficiency_statistics(history: dict[str, Any], now: datetime, base_temperatu
         key in history.get("efficiency_last_readings", {})
         for key in ("pump_ground_floor", "pump_upstairs", "boiler_energy_meter")
     )
-    electricity_total = sum(electricity_by_pump.values()) if has_pump_meters else electricity
+    electricity_total = (sum(electricity_by_pump.values()) if has_pump_meters else electricity) + round(today.get("ac_electricity_kwh", 0.0), 3)
     completed = [v for k, v in sorted(days.items()) if k <= now.date().isoformat()]
     gas_hdd = [(max(0.0, base_temperature - v["outdoor_sum"] / v["outdoor_count"]), v["gas_kwh"])
                for v in completed if v.get("outdoor_count") and v.get("gas_kwh") is not None]

@@ -4,7 +4,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._render();
   }
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) { this._hass = hass; if (this.shadowRoot?.activeElement?.matches("select, .info-button")) { this._pendingRender = true; return; } this._render(); }
   getCardSize() { return 7; }
   _fmt(value, unit = "°C", digits = 1) {
     return value === null || value === undefined || value === "" ? "—" : `${Number(value).toFixed(digits)} ${unit}`;
@@ -19,7 +19,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
   }
   _info(label, description) {
-    return `<button type="button" class="info-button" aria-label="About ${this._esc(label)}" aria-expanded="false" data-info="${this._esc(description)}">i</button>`;
+    return `<button type="button" class="info-button" aria-label="About ${this._esc(label)}" aria-expanded="false" data-info-key="${this._esc(label)}" data-info="${this._esc(description)}">i</button>`;
   }
   _metricHelp(label) {
     const help = {
@@ -294,6 +294,44 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="subtle">Gas correlation · HDD: ${attrs.efficiency?.gas_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.gas_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.gas_solar_correlation ?? "—"}</div>
           <div class="subtle">Electricity correlation · HDD: ${attrs.efficiency?.electricity_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.electricity_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.electricity_solar_correlation ?? "—"} · days sampled: ${attrs.efficiency?.days_with_data ?? 0}</div>
         </div>
+        <div class="section"><div class="section-title">Heating-water analysis</div>
+          <div class="overview">
+            <div class="metric"><span>Flow / supply</span><strong>${this._fmt(attrs.advanced_heating?.water?.flow_temperature_c)}</strong></div>
+            <div class="metric"><span>Return</span><strong>${this._fmt(attrs.advanced_heating?.water?.return_temperature_c)}</strong></div>
+            <div class="metric"><span>Water-side ΔT</span><strong>${this._fmt(attrs.advanced_heating?.water?.water_delta_t_c)}</strong></div>
+            <div class="metric"><span>24h average ΔT</span><strong>${this._fmt(attrs.advanced_heating?.water?.average_delta_t_24h_c)}</strong></div>
+            <div class="metric"><span>24h min / max ΔT</span><strong>${this._fmt(attrs.advanced_heating?.water?.minimum_delta_t_24h_c)} / ${this._fmt(attrs.advanced_heating?.water?.maximum_delta_t_24h_c)}</strong></div>
+            <div class="metric"><span>Samples (24h)</span><strong>${attrs.advanced_heating?.water?.samples_24h ?? 0}</strong></div>
+          </div>
+          <div class="subtle">Flow temperature uses the existing heating-water inlet sensor. Configure a return-water sensor in Global settings to calculate water-side ΔT. Values are observational; no target range is assumed.</div>
+        </div>
+        <div class="section"><div class="section-title">Solar contribution analysis</div>
+          <div class="overview">
+            <div class="metric"><span>Model status</span><strong>${this._esc(attrs.advanced_heating?.solar?.status || "Collecting data")}</strong></div>
+            <div class="metric"><span>Days analysed</span><strong>${attrs.advanced_heating?.solar?.days_used ?? 0}</strong></div>
+            <div class="metric"><span>Solar / gas-per-HDD correlation</span><strong>${attrs.advanced_heating?.solar?.solar_vs_weather_normalised_gas_correlation ?? "—"}</strong></div>
+            <div class="metric"><span>Low-solar gas / HDD</span><strong>${this._fmt(attrs.advanced_heating?.solar?.low_solar_gas_per_hdd, "kWh/°C·d", 2)}</strong></div>
+            <div class="metric"><span>High-solar gas / HDD</span><strong>${this._fmt(attrs.advanced_heating?.solar?.high_solar_gas_per_hdd, "kWh/°C·d", 2)}</strong></div>
+            <div class="metric"><span>High-solar difference</span><strong>${this._fmt(attrs.advanced_heating?.solar?.high_solar_reduction_percent, "%", 1)}</strong></div>
+          </div>
+          <div class="subtle">${this._esc(attrs.advanced_heating?.solar?.note || "At least 10 valid daily observations are required.")}</div>
+        </div>
+        <div class="section"><div class="section-title">Forecast validation</div>
+          <div class="overview">
+            ${[1,3,6,12].map(h => { const v=attrs.advanced_heating?.forecast_validation?.[String(h)]||{}; return `<div class="metric"><span>${h}h forecast · samples ${v.sample_count ?? 0}</span><strong>${this._fmt(v.mae_c, "°C", 2)} MAE</strong></div>`; }).join("")}
+          </div>
+          <div class="subtle">Mean absolute error compares stored room-temperature forecasts with later measured temperatures near each forecast horizon. Accuracy becomes meaningful only after enough forecasts have matured.</div>
+        </div>
+        <div class="section"><div class="section-title">Seasonal and monthly trends</div>
+          <div class="pumps">
+            ${Object.entries(attrs.advanced_heating?.seasonal?.months || {}).slice(-12).map(([month,v]) => `<div class="metric"><span>${this._esc(month)} · ${v.days} days</span><strong>Gas ${this._fmt(v.gas_kwh,"kWh",1)} · electricity ${this._fmt(v.electricity_kwh,"kWh",1)}</strong><div class="subtle">Heating degree days: ${this._fmt(v.hdd,"°C·d",1)}</div></div>`).join("") || '<p class="subtle">Monthly history is building up.</p>'}
+          </div>
+        </div>
+        <div class="section"><div class="section-title">Advanced heating anomalies</div>
+          <div class="insights">
+            ${(attrs.advanced_heating?.anomalies || []).map(item => `<article class="insight ${item.severity === "warning" ? "insight-warning" : "insight-info"}"><div class="insight-top"><strong>${this._esc(item.title)}</strong><span class="severity">${this._esc(item.severity)}</span></div><p>${this._esc(item.detail)}</p></article>`).join("") || '<div class="empty-insights">No additional water or robust-baseline anomalies detected.</div>'}
+          </div>
+        </div>
         <div class="section"><div class="section-title">Operational insights</div><div class="subhead">Rule-based observations · diagnostic guidance, not automatic fault detection</div><div class="insights">${insightCards}</div></div>
         <div class="section"><div class="section-title">Pump synchronisation</div>
           <div class="metric"><span>Latest result</span><strong class="${syncClass}">${this._esc(syncLabel)}</strong>
@@ -394,7 +432,7 @@ class HeatingIntelligenceCard extends HTMLElement {
       section.replaceWith(disclosure);
       if (openSections.has(summary.textContent) || summary.textContent === "Forecasts" || summary.textContent === "Room details") disclosure.open = true;
     });
-    this.shadowRoot.querySelectorAll(".info-button").forEach(button=>button.addEventListener("click",()=>{const existing=button.nextElementSibling;if(existing?.classList.contains("info-popover")){existing.remove();button.setAttribute("aria-expanded","false");return;}const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");}));
+    this.shadowRoot.querySelectorAll(".info-button").forEach(button=>button.addEventListener("click",()=>{const existing=button.nextElementSibling;if(existing?.classList.contains("info-popover")){existing.remove();button.setAttribute("aria-expanded","false");this._openInfoKey=null;return;}this.shadowRoot.querySelectorAll(".info-popover").forEach(p=>p.remove());this.shadowRoot.querySelectorAll(".info-button").forEach(b=>b.setAttribute("aria-expanded","false"));const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");this._openInfoKey=button.dataset.infoKey;}));\n    if(this._openInfoKey){const button=[...this.shadowRoot.querySelectorAll(".info-button")].find(b=>b.dataset.infoKey===this._openInfoKey);if(button){const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");}}
     const applyView=(view)=>{this._activeView=view;this.shadowRoot.querySelectorAll(".tab").forEach(b=>{const active=b.dataset.view===view;b.setAttribute("aria-selected",String(active));b.setAttribute("tabindex",active?"0":"-1");});this.shadowRoot.querySelectorAll("details.section").forEach(s=>{const h=s.querySelector("summary")?.textContent||"";const tab=h==="Demand timeline"?"demand":["Forecasts","Room details","Room heat-retention comparison","Advanced diagnostics"].includes(h)?"predict":"overview";s.hidden=tab!==view;if(tab===view)s.open=true;});};
     this.shadowRoot.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>applyView(b.dataset.view)));applyView(this._activeView||"overview");
     this.shadowRoot.querySelectorAll("[data-hours]").forEach(b=>b.addEventListener("click",()=>{this._demandHours=Number(b.dataset.hours);this.shadowRoot.querySelectorAll("[data-hours]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));const target=this.shadowRoot.querySelector(".demand-timeline");if(target)target.innerHTML=this._demandTimeline(entries,this._demandHours);}));

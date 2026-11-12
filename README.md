@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.4.0)
+## Current scope (0.4.1)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -18,6 +18,7 @@ A read-only Home Assistant custom integration for analysing underfloor-heating b
 - Persist room-level demand history and calculate daily, Monday-based weekly, and calendar-month demand hours.
 - Track room heating cycles, including daily/weekly/monthly cycle counts, lifetime cycle count, average completed cycle duration, shortest/longest weekly cycles, and the current cycle duration.
 - Expose room analytics as individual Home Assistant sensors and in the Lovelace overview card.
+- Group entities into one central house device, one device per configured room, and one device per manifold pump. Secondary analytics and counters are marked as diagnostic entities.
 - Provide a Lovelace card with whole-house overview, pump readings, room details, and floor-level demand/pump correlation.
 
 ## Install
@@ -26,6 +27,10 @@ A read-only Home Assistant custom integration for analysing underfloor-heating b
 2. Install **Heating Intelligence** and restart Home Assistant.
 3. Go to **Settings → Devices & services → Add integration** and select **Heating Intelligence**.
 4. Open the integration's **Configure** page to add rooms, assign floors, select global sensors, and configure pump power and energy sensors.
+
+## Home Assistant devices and entities
+
+The integration creates a central **Heating Intelligence** device, with each configured room and manifold pump represented as its own child device. Room temperature, heating demand, and optional window status are grouped under that room. Pump running state, power, and cumulative energy are grouped under that pump. Analytics, counters, daily summaries, runtime totals, and pump synchronization are marked as diagnostic entities where appropriate. Existing entity unique IDs and names are retained so the device reorganization does not intentionally create replacement entities.
 
 ## Lovelace card
 

@@ -31,7 +31,7 @@ from .const import (
     CONF_PUMP_POWER_ENTITY,
     CONF_ROOMS,
     CONF_TEMPERATURE_ENTITY,
-    CONF_WATER_TEMPERATURE_ENTITY,
+    CONF_WATER_TEMPERATURE_ENTITY,\n    CONF_RETURN_WATER_TEMPERATURE_ENTITY,
     CONF_WINDOW_ENTITY,
     DOMAIN,
 )
@@ -67,7 +67,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_global_settings(self, user_input=None):
         """Configure optional whole-house weather and energy inputs."""
         entity_options = (
-            CONF_WATER_TEMPERATURE_ENTITY,
+            CONF_WATER_TEMPERATURE_ENTITY,\n            CONF_RETURN_WATER_TEMPERATURE_ENTITY,
             CONF_OUTDOOR_TEMPERATURE_ENTITY,
             CONF_SOLAR_RADIATION_ENTITY,
             CONF_DELTA_T_ENTITY,
@@ -101,7 +101,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema({
             vol.Optional(CONF_WATER_TEMPERATURE_ENTITY, default=current.get(CONF_WATER_TEMPERATURE_ENTITY)):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            vol.Optional(CONF_OUTDOOR_TEMPERATURE_ENTITY, default=current.get(CONF_OUTDOOR_TEMPERATURE_ENTITY)):
+            vol.Optional(CONF_RETURN_WATER_TEMPERATURE_ENTITY, default=current.get(CONF_RETURN_WATER_TEMPERATURE_ENTITY)):\n                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),\n            vol.Optional(CONF_OUTDOOR_TEMPERATURE_ENTITY, default=current.get(CONF_OUTDOOR_TEMPERATURE_ENTITY)):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_SOLAR_RADIATION_ENTITY, default=current.get(CONF_SOLAR_RADIATION_ENTITY)):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),

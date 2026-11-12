@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.6.0)
+## Current scope (0.8.1)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -53,6 +53,14 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - The room detail and diagnostics card show configured room areas and per-floor total configured area.
 - When area and valid closed-window cooling observations are available, floor cooling is summarised as an area-weighted observed cooling rate. This supports more representative floor comparisons but is still not a physical heat-loss coefficient (W/K).
 
+## 0.8.1 — predictive intelligence and compact dashboard
+
+- Add explainable room temperature forecasts for 1, 3 and 6 hours, time-to-comfort and time-below-comfort estimates.
+- Add a configurable comfort target (16–25 °C, default 21 °C).
+- Add end-of-day gas and heating-electricity run-rate projections with confidence and explicit limitations.
+- Expose predictions, recent room-temperature history and 14-day energy history through the existing overview sensor attributes; no prediction entities are added.
+- Compact the Lovelace card with collapsible analysis, room temperature history/forecast charts and daily energy history.
+
 ## Install
 
 1. Add this repository to HACS as a custom repository, category **Integration**.
@@ -68,7 +76,7 @@ The integration creates a central **Heating Intelligence** device, with each con
 
 The integration serves the card JavaScript at:
 
-`/heating_intelligence/heating-intelligence-card.js`
+`/heating_intelligence/heating-intelligence-card.js?v=0.8.1`
 
 If it is not automatically registered, add it under **Settings → Dashboards → Resources** as a **JavaScript module**, then add a Manual card:
 
@@ -89,3 +97,15 @@ Room history is stored in Home Assistant's integration storage and survives rest
 Whole-house efficiency inputs are optional. Configure a cumulative gas meter and, optionally, separate cumulative energy counters for the downstairs manifold pump, upstairs manifold pump, and boiler pump. Use each pump's overall/lifetime energy counter, not its daily or monthly reset counters. The three electricity deltas are tracked independently, summed into combined pump electricity, and shown with each pump's percentage share. Meter deltas are accumulated from the first valid reading after setup; earlier consumption is not reconstructed. The previous single electricity meter option remains supported for backward compatibility, but should not be configured alongside the three pump counters. Gas meters in m³ are converted using the configurable factor (default 10.55 kWh/m³); kWh, Wh, and MWh units are supported. Outdoor temperature is used to calculate daily heating degree days with an 18 °C base. Daily averages are based on integration observations, not recorder backfill. Correlations are exploratory and require at least three days with valid paired data; they are not proof of causation. Solar radiation is expected in W/m². If an observation gap exceeds 90 seconds, the ongoing cycle remains open but its duration timer restarts so unobserved downtime is not counted. Daily totals use Home Assistant local dates; weekly totals start on Monday; monthly totals use calendar months. Demand intervals are split at local midnight, including daylight-saving transitions. Existing history is not backfilled: room analytics begin when version 0.4.0 first observes each configured room.
 
 The coordinator samples every 30 seconds. HA state timestamps are used to place detected transitions accurately, but multiple state changes that occur between two samples can still be missed. Very short demand cycles may therefore be undercounted. Validate readings and statistics on your own Home Assistant installation before relying on them.
+
+## 0.8.0 — predictive intelligence
+
+- Forecast room temperature 1, 3 and 6 hours ahead from recent measured trends, with sample-based confidence and explicit insufficient-data states.
+- Estimate time to reach the configured comfort temperature while heating, or time until temperature falls below it while cooling.
+- Configure the comfort target in **Global settings** (16–25 °C; default 21 °C).
+- Project end-of-day gas and heating-electricity use from the elapsed-day meter run rate. This is a simple baseline, not a weather-aware model.
+- Expose forecasts as attributes of the existing overview sensor; no new forecast entities are created.
+- The card groups secondary analysis into collapsible sections and keeps its expanded sections open during live updates.
+- Room detail includes a 24-hour temperature chart with a distinct forecast line and comfort-target reference.
+- System analysis includes a 14-day gas/electricity consumption chart.
+- Forecasts are read-only estimates and never control heating equipment.

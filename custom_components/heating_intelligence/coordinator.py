@@ -14,9 +14,11 @@ from .room_analytics import demand_is_active, room_statistics, update_room_histo
 from .thermal_analytics import record_temperature_sample, thermal_statistics
 from .efficiency_analytics import update_efficiency_history, efficiency_statistics
 from .advanced_diagnostics import build_advanced_diagnostics
+from .prediction_engine import build_predictions
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_COMFORT_TARGET_C,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
     CONF_DELTA_T_ENTITY,
@@ -241,6 +243,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "pump_cycles": sum(p.get("daily_cycle_count", 0) for p in result["pumps"].values()),
         }
 
+        prediction_rooms = {}
         floor_analysis = {
             "ground_floor": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("ground_floor", {}).get("running")), "pump_power_w": result["pumps"].get("ground_floor", {}).get("power")},
             "upstairs": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("upstairs", {}).get("running")), "pump_power_w": result["pumps"].get("upstairs", {}).get("power")},
@@ -284,6 +287,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             daily[daily_key] = demand_seconds
             if demand_active:
                 floor_data["active_rooms"] = int(floor_data.get("active_rooms", 0)) + 1
+            prediction_rooms[room_id] = {
+                "temperature": temperature_value,
+                "demand": demand_active,
+                "temperature_samples": room_history.get("temperature_samples", []),
+            }
             result["rooms"][room_id] = {
                 "floor": floor,
                 "area_m2": _as_float(room.get("area_m2")),
@@ -296,6 +304,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 **stats,
                 **thermal,
                 "window_open_demand_seconds_today": round(float(room_history.get("window_open_demand_seconds_today", 0))),
+                "temperature_history": [
+                    {"time": sample.get("time"), "temperature": sample.get("temperature"),
+                     "demand": sample.get("demand", False), "window_open": sample.get("window_open", False)}
+                    for sample in room_history.get("temperature_samples", [])[-145:]
+                ],
                 "temperature_entity": room[CONF_TEMPERATURE_ENTITY],
                 "temperature": temperature_value,
                 "window_entity": window_id,
@@ -357,6 +370,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
         )
         result["efficiency"] = efficiency_statistics(self._history, now_local)
+        result["energy_history"] = [
+            {"date": date_key, "gas_kwh": round(day.get("gas_kwh", 0.0), 3),
+             "electricity_kwh": round(day.get("electricity_kwh", 0.0), 3)}
+            for date_key, day in sorted(self._history.get("efficiency_daily", {}).items())[-14:]
+        ]
         boiler_power = readings.get("boiler_power")
         boiler_power_w = boiler_power.get("value") if boiler_power else None
         boiler_power_unit = (boiler_power.get("unit") or "").lower() if boiler_power else ""
@@ -378,6 +396,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         for room_id, metrics in advanced["room_diagnostics"].items():
             result["rooms"][room_id].update(metrics)
         result["advanced_diagnostics"] = advanced
+        result["predictions"] = build_predictions(prediction_rooms, result["efficiency"], now_local, float(self.entry.options.get(CONF_COMFORT_TARGET_C, 21.0)))
         await self._store.async_save(self._history)
         return result
 

@@ -28,7 +28,8 @@
         "description": "Configure whole-house environmental inputs, gas consumption, and the boiler's electrical power and cumulative energy sensors.",
         "data": {
           "electricity_boiler_power_entity": "Boiler electrical power (W)",
-          "electricity_boiler_energy_entity": "Boiler electrical energy (kWh)"
+          "electricity_boiler_energy_entity": "Boiler electrical energy (kWh)",
+          "comfort_target_c": "Comfort temperature target (°C)"
         }
       },
       "add_room": {

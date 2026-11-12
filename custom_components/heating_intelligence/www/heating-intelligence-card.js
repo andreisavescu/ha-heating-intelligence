@@ -44,17 +44,18 @@ class HeatingIntelligenceCard extends HTMLElement {
     const y = v => 116 - (v - minY) / Math.max(0.1, maxY - minY) * 94;
     const line = points => points.map(p => `${x(p.x).toFixed(1)},${y(p.y).toFixed(1)}`).join(" ");
     const targetY = y(Number(comfortTarget));
+    const demandBands = actual.map((point, index) => { const sample = samples.find(item => Date.parse(item.time) === point.x); if (!sample?.demand) return ""; const next = actual[index + 1]?.x ?? Math.min(now, point.x + 600000); const left = Math.max(start, point.x), right = Math.min(now, next); return right > left ? `<rect x="${x(left).toFixed(1)}" y="22" width="${Math.max(1, x(right)-x(left)).toFixed(1)}" height="94" class="demand-band"/>` : ""; }).join("");
     const actualLine = line(actual);
     const forecastLine = future.length > 1 ? line(future) : "";
     return `<div class="chart-wrap"><div class="chart-heading"><strong>Room temperature · last 24h + forecast</strong><span>°C</span></div>
       <svg viewBox="0 0 400 146" role="img" aria-label="Room temperature history and forecast">
         <line x1="36" y1="22" x2="380" y2="22" class="chart-grid"/><line x1="36" y1="69" x2="380" y2="69" class="chart-grid"/><line x1="36" y1="116" x2="380" y2="116" class="chart-grid"/>
-        <line x1="36" y1="${targetY.toFixed(1)}" x2="380" y2="${targetY.toFixed(1)}" class="chart-target"/>
+        ${demandBands}<line x1="36" y1="${targetY.toFixed(1)}" x2="380" y2="${targetY.toFixed(1)}" class="chart-target"/>
         <polyline points="${actualLine}" class="chart-actual"/>
         ${forecastLine ? `<polyline points="${forecastLine}" class="chart-forecast"/>` : ""}
         <text x="3" y="25" class="chart-label">${maxY.toFixed(1)}</text><text x="3" y="72" class="chart-label">${((maxY+minY)/2).toFixed(1)}</text><text x="3" y="119" class="chart-label">${minY.toFixed(1)}</text>
         <text x="36" y="138" class="chart-label">−24h</text><text x="208" y="138" text-anchor="middle" class="chart-label">Now</text><text x="380" y="138" text-anchor="end" class="chart-label">+6h</text>
-      </svg><div class="chart-legend"><span><i class="legend-actual"></i>Measured</span><span><i class="legend-forecast"></i>Forecast</span><span><i class="legend-target"></i>Target ${Number(comfortTarget).toFixed(1)}°C</span></div></div>`;
+      </svg><div class="chart-legend"><span><i class="legend-actual"></i>Measured</span><span><i class="legend-forecast"></i>Forecast</span><span><i class="legend-target"></i>Target ${Number(comfortTarget).toFixed(1)}°C</span><span><i class="legend-demand"></i>Heat demand</span></div></div>`;
   }
   _energyChart(days) {
     const rows = (days || []).filter(d => Number.isFinite(Number(d.gas_kwh)) || Number.isFinite(Number(d.electricity_kwh)));
@@ -166,7 +167,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         .chart-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.68rem;color:var(--secondary-text-color);margin-top:3px}
         .chart-legend span{display:flex;align-items:center;gap:5px}.chart-legend i{display:inline-block;width:13px;height:3px;border-radius:2px}
         .legend-actual{background:var(--hi-blue)}.legend-forecast{background:var(--hi-green)}.legend-target{background:var(--hi-amber)}.legend-gas{background:#d89127}.legend-electric{background:#3989d6}
-        .bar-gas{fill:#d89127}.bar-electric{fill:#3989d6}
+        .bar-gas{fill:#d89127}.bar-electric{fill:#3989d6}.demand-band{fill:var(--hi-green);opacity:.09}.legend-demand{height:8px!important;background:var(--hi-green);opacity:.25}
         .chart-empty{padding:14px 8px;color:var(--secondary-text-color);font-size:.76rem;border:1px dashed var(--divider-color);border-radius:10px;margin:10px 0}
         .subtle{color:var(--secondary-text-color);font-size:.76rem;margin:10px 2px 0;line-height:1.45}
         .insights{display:grid;gap:8px}

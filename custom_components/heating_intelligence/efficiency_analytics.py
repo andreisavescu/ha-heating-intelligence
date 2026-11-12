@@ -62,8 +62,11 @@ def update_efficiency_history(
     meter_samples = history.setdefault("meter_samples", [])
     meter_readings = [("gas", readings.get("gas"), True, "gas_kwh")]
     electricity_meters = readings.get("electricity_meters") or {}
-    for pump_id in ("ground_floor", "upstairs", "boiler"):
-        meter_readings.append((f"electricity_{pump_id}", electricity_meters.get(pump_id), False, f"electricity_{pump_id}_kwh"))
+    # Use distinct keys for manifold pump meters so a previous global meter
+    # selection cannot be mistaken for the newly reused pump-settings source.
+    for pump_id in ("ground_floor", "upstairs"):
+        meter_readings.append((f"pump_{pump_id}", electricity_meters.get(pump_id), False, f"electricity_{pump_id}_kwh"))
+    meter_readings.append(("boiler_energy_meter", electricity_meters.get("boiler"), False, "electricity_boiler_kwh"))
     # Retain compatibility with the old single counter when no individual meters are configured.
     if not any(electricity_meters.values()):
         meter_readings.append(("electricity", readings.get("electricity"), False, "electricity_kwh"))
@@ -123,7 +126,10 @@ def efficiency_statistics(history: dict[str, Any], now: datetime, base_temperatu
     gas = round(today.get("gas_kwh", 0.0), 3)
     electricity = round(today.get("electricity_kwh", 0.0), 3)
     electricity_by_pump = {pump_id: round(today.get(f"electricity_{pump_id}_kwh", 0.0), 3) for pump_id in ("ground_floor", "upstairs", "boiler")}
-    has_pump_meters = any(f"electricity_{pump_id}" in history.get("efficiency_last_readings", {}) for pump_id in ("ground_floor", "upstairs", "boiler"))
+    has_pump_meters = any(
+        key in history.get("efficiency_last_readings", {})
+        for key in ("pump_ground_floor", "pump_upstairs", "boiler_energy_meter")
+    )
     electricity_total = sum(electricity_by_pump.values()) if has_pump_meters else electricity
     completed = [v for k, v in sorted(days.items()) if k <= now.date().isoformat()]
     gas_hdd = [(max(0.0, base_temperature - v["outdoor_sum"] / v["outdoor_count"]), v["gas_kwh"])
@@ -152,7 +158,7 @@ def efficiency_statistics(history: dict[str, Any], now: datetime, base_temperatu
         "electricity_upstairs_share_percent": round(100 * electricity_by_pump["upstairs"] / electricity_total, 1) if electricity_total else None,
         "electricity_boiler_share_percent": round(100 * electricity_by_pump["boiler"] / electricity_total, 1) if electricity_total else None,
         "gas_kwh_per_degree_day": round(gas / hdd, 3) if hdd and hdd > 0 else None,
-        "electricity_kwh_per_degree_day": round(electricity / hdd, 3) if hdd and hdd > 0 else None,
+        "electricity_kwh_per_degree_day": round(electricity_total / hdd, 3) if hdd and hdd > 0 else None,
         "days_with_data": len(completed),
         "gas_hdd_correlation": _correlation(gas_hdd),
         "gas_delta_t_correlation": _correlation(gas_delta),

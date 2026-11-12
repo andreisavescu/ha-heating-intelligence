@@ -24,7 +24,11 @@
       },
       "global_settings": {
         "title": "Global settings",
-        "description": "Select the underfloor-heating input/supply water temperature sensor."
+        "description": "Configure whole-house environmental inputs, gas consumption, and the boiler's electrical power and cumulative energy sensors.",
+        "data": {
+          "electricity_boiler_power_entity": "Boiler electrical power (W)",
+          "electricity_boiler_energy_entity": "Boiler electrical energy (kWh)"
+        }
       },
       "add_room": {
         "title": "Add a room",

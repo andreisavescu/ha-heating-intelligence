@@ -58,6 +58,7 @@ def update_room_history(
     state_changed: datetime | None,
     interval_start: datetime,
     now: datetime,
+    continuity_gap: bool = False,
 ) -> dict[str, Any]:
     """Update one room's persisted history from a coordinator observation.
 
@@ -94,6 +95,11 @@ def update_room_history(
         bucket["cycles_started"] = int(bucket.get("cycles_started", 0)) + 1
 
     if active:
+        if previous is True and continuity_gap:
+            # Preserve the ongoing cycle count, but do not claim that demand
+            # remained continuous while Home Assistant was not observing it.
+            cycle_start = now
+            room["cycle_start"] = now.isoformat()
         start = interval_start
         if previous is not True:
             start = max(interval_start, transition)

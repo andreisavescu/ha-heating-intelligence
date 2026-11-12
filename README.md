@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.8.1)
+## Current scope (0.8.2)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -61,6 +61,13 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - Expose predictions, recent room-temperature history and 14-day energy history through the existing overview sensor attributes; no prediction entities are added.
 - Compact the Lovelace card with collapsible analysis, room temperature history/forecast charts and daily energy history.
 
+## 0.8.2 — automatic card resource versioning
+
+- Automatically register the Lovelace card resource when using storage-managed dashboard resources.
+- Automatically update the resource URL to match the installed integration version, forcing browsers and the Home Assistant Android app to fetch the new card after an integration update.
+- Preserve the existing resource entry rather than requiring users to edit its URL on every release.
+- YAML-managed Lovelace resources remain user-managed; update their URL query version manually when upgrading.
+
 ## Install
 
 1. Add this repository to HACS as a custom repository, category **Integration**.
@@ -74,11 +81,15 @@ The integration creates a central **Heating Intelligence** device, with each con
 
 ## Lovelace card
 
-The integration serves the card JavaScript at:
+The integration serves its card JavaScript from:
 
-`/heating_intelligence/heating-intelligence-card.js?v=0.8.1`
+`/heating_intelligence/heating-intelligence-card.js`
 
-If it is not automatically registered, add it under **Settings → Dashboards → Resources** as a **JavaScript module**, then add a Manual card:
+When Lovelace resources are managed through the Home Assistant UI (the default), Heating Intelligence automatically creates or updates the card resource on integration setup. The resource URL receives the installed integration version as a query parameter (for example, `?v=0.8.2`), so each integration update automatically changes the URL and bypasses stale browser/app caches. You no longer need to edit the resource URL manually.
+
+If Lovelace resources are configured in YAML (`lovelace: resource_mode: yaml`), Home Assistant does not allow integrations to modify that list. In that case, keep the resource as a JavaScript module and update its URL query version manually when upgrading.
+
+Add a Manual card:
 
 ```yaml
 type: custom:heating-intelligence-card

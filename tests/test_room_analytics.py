@@ -96,3 +96,19 @@ def test_on_to_off_state_change_does_not_split_availability_demand_cycle():
 
     assert room["total_cycles"] == 1
     assert room["cycles"][0]["duration_seconds"] == 2700
+
+
+
+def test_long_observation_gap_does_not_inflate_active_cycle():
+    history = {}
+    start = dt("2026-11-12T07:00:00")
+    restart = dt("2026-11-12T10:00:00")
+    update_room_history(history, "bedroom", True, start, start, start)
+    room = update_room_history(
+        history, "bedroom", True, start, restart, restart, continuity_gap=True
+    )
+    stats = room_statistics(room, restart)
+
+    assert room["total_cycles"] == 1
+    assert stats["active_cycle_seconds"] == 0
+    assert stats["demand_seconds_today"] == 0

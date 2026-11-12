@@ -356,9 +356,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         )
         result["efficiency"] = efficiency_statistics(self._history, now_local)
         boiler_power = readings.get("boiler_power")
-        result["efficiency"]["boiler_power_w"] = (
-            boiler_power.get("value") if boiler_power else None
-        )
+        boiler_power_w = boiler_power.get("value") if boiler_power else None
+        boiler_power_unit = (boiler_power.get("unit") or "").lower() if boiler_power else ""
+        if boiler_power_w is not None:
+            if boiler_power_unit == "kw":
+                boiler_power_w *= 1000
+            elif boiler_power_unit == "mw":
+                boiler_power_w /= 1000
+        result["efficiency"]["boiler_power_w"] = boiler_power_w
         result["efficiency"]["sources"] = {
             key: value.get("entity_id") if value else None
             for key, value in readings.items() if key != "electricity_meters"

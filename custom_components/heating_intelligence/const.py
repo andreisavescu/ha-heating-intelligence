@@ -24,4 +24,6 @@ CONF_GAS_ENERGY_FACTOR = "gas_energy_factor"
 
 CONF_ELECTRICITY_GROUND_FLOOR_ENTITY = "electricity_ground_floor_entity"
 CONF_ELECTRICITY_UPSTAIRS_ENTITY = "electricity_upstairs_entity"
-CONF_ELECTRICITY_BOILER_ENTITY = "electricity_boiler_entity"
+CONF_ELECTRICITY_BOILER_ENTITY = "electricity_boiler_entity"  # Legacy energy-meter option
+CONF_ELECTRICITY_BOILER_POWER_ENTITY = "electricity_boiler_power_entity"
+CONF_ELECTRICITY_BOILER_ENERGY_ENTITY = "electricity_boiler_energy_entity"

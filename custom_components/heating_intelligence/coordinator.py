@@ -14,6 +14,7 @@ from .room_analytics import demand_is_active, room_statistics, update_room_histo
 from .thermal_analytics import record_temperature_sample, thermal_statistics
 from .efficiency_analytics import update_efficiency_history, efficiency_statistics
 from .advanced_diagnostics import build_advanced_diagnostics
+from .prediction_engine import build_predictions
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -241,6 +242,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "pump_cycles": sum(p.get("daily_cycle_count", 0) for p in result["pumps"].values()),
         }
 
+        prediction_rooms = {}
         floor_analysis = {
             "ground_floor": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("ground_floor", {}).get("running")), "pump_power_w": result["pumps"].get("ground_floor", {}).get("power")},
             "upstairs": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("upstairs", {}).get("running")), "pump_power_w": result["pumps"].get("upstairs", {}).get("power")},
@@ -284,6 +286,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             daily[daily_key] = demand_seconds
             if demand_active:
                 floor_data["active_rooms"] = int(floor_data.get("active_rooms", 0)) + 1
+            prediction_rooms[room_id] = {
+                "temperature": temperature_value,
+                "demand": demand_active,
+                "temperature_samples": room_history.get("temperature_samples", []),
+            }
             result["rooms"][room_id] = {
                 "floor": floor,
                 "area_m2": _as_float(room.get("area_m2")),
@@ -378,6 +385,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         for room_id, metrics in advanced["room_diagnostics"].items():
             result["rooms"][room_id].update(metrics)
         result["advanced_diagnostics"] = advanced
+        result["predictions"] = build_predictions(prediction_rooms, result["efficiency"], now_local)
         await self._store.async_save(self._history)
         return result
 

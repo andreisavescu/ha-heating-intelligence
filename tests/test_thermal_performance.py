@@ -1,4 +1,4 @@
-"""Tests for the gas-derived whole-house thermal model."""
+"""Tests for the whole-house thermal model, including AC heating."""
 from datetime import datetime, timedelta, timezone
 import importlib.util
 from pathlib import Path
@@ -59,3 +59,31 @@ def test_delta_t_is_integrated_as_degree_hours():
     EFFICIENCY.update_efficiency_history(history, {"delta_t": {"value": 10.0}}, now, 0, False)
     EFFICIENCY.update_efficiency_history(history, {"delta_t": {"value": 10.0}}, now + timedelta(seconds=30), 30, False)
     assert history["efficiency_daily"]["2026-11-13"]["delta_t_degree_hours"] == 10 * 30 / 3600
+
+
+def test_ac_heat_is_added_to_boiler_delivered_heat():
+    now = datetime(2026, 11, 13, 12, tzinfo=timezone.utc)
+    history = {"efficiency_daily": {now.date().isoformat(): {
+        "gas_kwh": 10.0, "ac_electricity_kwh": 4.0,
+        "delta_t_degree_hours": 24.0,
+    }}}
+    result = THERMAL.thermal_performance_statistics(history, now, 0.90, 361.26, 3.0)
+    assert result["estimated_ac_delivered_heat_today_kwh"] == 12.0
+    assert result["estimated_delivered_heat_today_kwh"] == 21.0
+    assert result["heat_loss_coefficient_w_k"] == 875.0
+
+
+def test_ac_energy_meter_source_change_establishes_baseline():
+    history = {}
+    now = datetime(2026, 11, 13, tzinfo=timezone.utc)
+    EFFICIENCY.update_efficiency_history(history, {
+        "ac_energy": {"value": 120.0, "unit": "kWh", "entity_id": "sensor.ac_total"}
+    }, now, 0, False)
+    EFFICIENCY.update_efficiency_history(history, {
+        "ac_energy": {"value": 8.0, "unit": "kWh", "entity_id": "sensor.ac_heating"}
+    }, now + timedelta(minutes=1), 60, False)
+    assert history["efficiency_daily"]["2026-11-13"]["ac_electricity_kwh"] == 0
+    EFFICIENCY.update_efficiency_history(history, {
+        "ac_energy": {"value": 9.5, "unit": "kWh", "entity_id": "sensor.ac_heating"}
+    }, now + timedelta(minutes=2), 60, False)
+    assert history["efficiency_daily"]["2026-11-13"]["ac_electricity_kwh"] == 1.5

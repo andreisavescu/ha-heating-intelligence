@@ -56,6 +56,7 @@ def update_efficiency_history(
         "indoor_sum": 0.0, "indoor_count": 0,
     })
     previous = history.setdefault("efficiency_last_readings", {})
+    meter_samples = history.setdefault("meter_samples", [])
     for key, gas in (("gas", True), ("electricity", False)):
         reading = readings.get(key)
         value = _number(reading.get("value")) if reading else None
@@ -66,6 +67,14 @@ def update_efficiency_history(
         if old is not None and value >= old:
             delta = value - old
             day["gas_kwh" if gas else "electricity_kwh"] += _energy_kwh(delta, unit, gas, gas_factor)
+        # Retain raw cumulative readings so energy conversions can be revisited.
+        if old is None or value != old or unit != previous.get(key, {}).get("unit"):
+            meter_samples.append({
+                "time": now.astimezone(timezone.utc).isoformat(),
+                "meter": key,
+                "value": value,
+                "unit": unit,
+            })
         # A meter reset establishes a new baseline, without negative energy.
         previous[key] = {"value": value, "unit": unit}
 
@@ -88,6 +97,10 @@ def update_efficiency_history(
         item for item in samples
         if datetime.fromisoformat(item["time"]).astimezone(timezone.utc) >= cutoff
     ][-40000:]
+    history["meter_samples"] = [
+        item for item in meter_samples
+        if datetime.fromisoformat(item["time"]).astimezone(timezone.utc) >= cutoff
+    ][-50000:]
 
     # Keep daily aggregates for the same retention horizon as room observations.
     history["efficiency_daily"] = {
@@ -113,6 +126,12 @@ def efficiency_statistics(history: dict[str, Any], now: datetime, base_temperatu
                  for v in completed if v.get("delta_t_count") and v.get("gas_kwh") is not None]
     gas_solar = [(v["solar_sum"] / v["solar_count"], v["gas_kwh"])
                  for v in completed if v.get("solar_count") and v.get("gas_kwh") is not None]
+    electricity_hdd = [(max(0.0, base_temperature - v["outdoor_sum"] / v["outdoor_count"]), v["electricity_kwh"])
+                       for v in completed if v.get("outdoor_count") and v.get("electricity_kwh") is not None]
+    electricity_delta = [(v["delta_t_sum"] / v["delta_t_count"], v["electricity_kwh"])
+                         for v in completed if v.get("delta_t_count") and v.get("electricity_kwh") is not None]
+    electricity_solar = [(v["solar_sum"] / v["solar_count"], v["electricity_kwh"])
+                         for v in completed if v.get("solar_count") and v.get("electricity_kwh") is not None]
     return {
         "outdoor_temperature": round(outdoor, 2) if outdoor is not None else None,
         "solar_radiation_average": round(solar, 1) if solar is not None else None,
@@ -126,4 +145,7 @@ def efficiency_statistics(history: dict[str, Any], now: datetime, base_temperatu
         "gas_hdd_correlation": _correlation(gas_hdd),
         "gas_delta_t_correlation": _correlation(gas_delta),
         "gas_solar_correlation": _correlation(gas_solar),
+        "electricity_hdd_correlation": _correlation(electricity_hdd),
+        "electricity_delta_t_correlation": _correlation(electricity_delta),
+        "electricity_solar_correlation": _correlation(electricity_solar),
     }

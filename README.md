@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.10.0)
+## Current scope (0.10.1)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -68,7 +68,7 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - Preserve the existing resource entry rather than requiring users to edit its URL on every release.
 - YAML-managed Lovelace resources remain user-managed; update their URL query version manually when upgrading.
 
-## 0.10.0 — floor thermal performance, weather normalisation and area-input fixes
+## 0.10.1 — floor thermal performance, weather normalisation and area-input fixes
 
 - Add downstairs/upstairs comparisons using area-weighted room temperature, observed closed-window cooling rate, heating response time and daily demand hours.
 - Show the number and percentage of rooms with configured surface areas so incomplete area coverage is visible.
@@ -97,7 +97,7 @@ The integration serves its card JavaScript from:
 
 `/heating_intelligence/heating-intelligence-card.js`
 
-When Lovelace resources are managed through the Home Assistant UI (the default), Heating Intelligence automatically creates or updates the card resource on integration setup. The resource URL receives the installed integration version as a query parameter (for example, `?v=0.10.0`), so each integration update automatically changes the URL and bypasses stale browser/app caches. You no longer need to edit the resource URL manually.
+When Lovelace resources are managed through the Home Assistant UI (the default), Heating Intelligence automatically creates or updates the card resource on integration setup. The resource URL receives the installed integration version as a query parameter (for example, `?v=0.10.1`), so each integration update automatically changes the URL and bypasses stale browser/app caches. You no longer need to edit the resource URL manually.
 
 If Lovelace resources are configured in YAML (`lovelace: resource_mode: yaml`), Home Assistant does not allow integrations to modify that list. In that case, keep the resource as a JavaScript module and update its URL query version manually when upgrading.
 
@@ -134,7 +134,7 @@ The coordinator samples every 30 seconds. HA state timestamps are used to place 
 - Forecasts are read-only estimates and never control heating equipment.
 
 
-## 0.10.0 — adaptive forecasts and demand timeline
+## 0.10.1 — adaptive forecasts and demand timeline
 
 - Embedded Overview, Heat demand and Predictions tabs for a dedicated dashboard card.
 - Room-by-room 24-hour and 7-day demand timeline from persisted cycle timestamps, including ongoing requests.
@@ -142,3 +142,10 @@ The coordinator samples every 30 seconds. HA state timestamps are used to place 
 - Add 1, 3, 6 and 12-hour forecasts with uncertainty ranges, model sample counts, confidence and comfort-crossing estimates.
 - Energy projections remain labelled as elapsed-day run-rate estimates.
 - Read-only operation and existing entities/configuration are preserved.
+
+
+## 0.10.1 — card tab navigation fix
+
+- Fix the missing embedded Overview, Heat demand and Predictions tab bar in the Lovelace card.
+- Keep the tab selection stable across Home Assistant state updates.
+- Separate the demand timeline and prediction/diagnostic sections from the overview.

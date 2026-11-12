@@ -20,10 +20,8 @@ from .const import (
     CONF_SOLAR_RADIATION_ENTITY,
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
-    CONF_ELECTRICITY_CONSUMPTION_ENTITY,
-    CONF_ELECTRICITY_GROUND_FLOOR_ENTITY,
-    CONF_ELECTRICITY_UPSTAIRS_ENTITY,
-    CONF_ELECTRICITY_BOILER_ENTITY,
+    CONF_ELECTRICITY_BOILER_POWER_ENTITY,
+    CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
     CONF_GAS_ENERGY_FACTOR,
     CONF_FLOOR,
     CONF_PUMPS,
@@ -213,6 +211,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "power": power,
                 "energy_entity": pump["energy_entity"],
                 "energy": energy,
+                "energy_unit": energy_state.attributes.get("unit_of_measurement") if energy_state else None,
                 "running": running,
                 "power_source_state": power_state.state if power_state else "missing",
                 "energy_source_state": energy_state.state if energy_state else "missing",
@@ -325,12 +324,19 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "solar_radiation": read_sensor(CONF_SOLAR_RADIATION_ENTITY),
             "delta_t": read_sensor(CONF_DELTA_T_ENTITY),
             "gas": read_sensor(CONF_GAS_CONSUMPTION_ENTITY),
-            "electricity": read_sensor(CONF_ELECTRICITY_CONSUMPTION_ENTITY),
+            # Reuse the cumulative energy meters already selected in Pump settings.
+            "electricity": None,
             "electricity_meters": {
-                "ground_floor": read_sensor(CONF_ELECTRICITY_GROUND_FLOOR_ENTITY),
-                "upstairs": read_sensor(CONF_ELECTRICITY_UPSTAIRS_ENTITY),
-                "boiler": read_sensor(CONF_ELECTRICITY_BOILER_ENTITY),
+                pump_id: ({
+                    "value": pump_data.get("energy"),
+                    "unit": pump_data.get("energy_unit"),
+                    "entity_id": pump_data.get("energy_entity"),
+                } if pump_data.get("energy") is not None else None)
+                for pump_id, pump_data in result["pumps"].items()
+            } | {
+                "boiler": read_sensor(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY),
             },
+            "boiler_power": read_sensor(CONF_ELECTRICITY_BOILER_POWER_ENTITY),
             "indoor_temperature": {
                 "value": sum(indoor_values) / len(indoor_values),
                 "unit": "°C",
@@ -345,6 +351,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
         )
         result["efficiency"] = efficiency_statistics(self._history, now_local)
+        boiler_power = readings.get("boiler_power")
+        result["efficiency"]["boiler_power_w"] = (
+            boiler_power.get("value") if boiler_power else None
+        )
         result["efficiency"]["sources"] = {
             key: value.get("entity_id") if value else None
             for key, value in readings.items() if key != "electricity_meters"

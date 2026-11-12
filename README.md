@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.5.1)
+## Current scope (0.5.2)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -18,7 +18,7 @@ A read-only Home Assistant custom integration for analysing underfloor-heating b
 - Persist room-level demand history and calculate daily, Monday-based weekly, and calendar-month demand hours.
 - Track room heating cycles, including daily/weekly/monthly cycle counts, lifetime cycle count, average completed cycle duration, shortest/longest weekly cycles, and the current cycle duration.
 - Expose room analytics as individual Home Assistant sensors and in the Lovelace overview card.
-- Group entities into one central house device, one device per configured room, and one device per manifold pump. Secondary analytics and counters are marked as diagnostic entities.
+- Group entities into one central house device, one device per configured room, and one device per manifold pump. On setup, repair existing entity-registry device assignments using their existing unique IDs, preserving entity IDs and history. Secondary analytics and counters are marked as diagnostic entities.
 - Provide a Lovelace card with whole-house overview, pump readings, room details, and floor-level demand/pump correlation.
 - Analyse room thermal behaviour: temperature changes over 1, 6 and 24 hours, average heating response time to a 0.5 °C rise, cooling rate while there is no demand and windows are closed, and estimated hours per 1 °C of heat retention.
 - Measure how long windows remain open while a room is requesting heat.

@@ -335,7 +335,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 } if pump_data.get("energy") is not None else None)
                 for pump_id, pump_data in result["pumps"].items()
             } | {
-                "boiler": read_sensor(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY),
+                "boiler": (
+                    read_sensor(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY)
+                    or read_sensor(CONF_ELECTRICITY_BOILER_ENTITY)
+                ),
             },
             "boiler_power": read_sensor(CONF_ELECTRICITY_BOILER_POWER_ENTITY),
             "indoor_temperature": {

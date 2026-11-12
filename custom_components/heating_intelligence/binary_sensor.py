@@ -34,12 +34,14 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self):
-        return (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {}).get("demand", False)
+        room = (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {})
+        state = room.get("demand_state")
+        return state is not None and state != "unavailable"
 
     @property
     def available(self):
         room = (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {})
-        return super().available and room.get("demand_state") not in (None, "unknown")
+        return super().available and room.get("demand_state") not in (None, "unavailable")
 
     @property
     def extra_state_attributes(self):
@@ -47,7 +49,7 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
         return {
             "source_entity": room.get("demand_entity"),
             "source_state": room.get("demand_state"),
-            "interpretation": "on = heat requested; unavailable/off = no active request",
+            "interpretation": "any available source state = demand; unavailable = no demand",
         }
 
 

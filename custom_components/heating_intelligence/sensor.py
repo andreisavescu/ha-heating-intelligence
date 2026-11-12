@@ -50,20 +50,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         ])
     if len(entry.options.get(CONF_PUMPS, [])) == 2:
         entities.append(PumpSynchronizationSensor(coordinator))
+    boiler_energy_configured = (
+        entry.options.get(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY)
+        or entry.options.get(CONF_ELECTRICITY_BOILER_ENTITY)
+    )
     for option, metric in (
         (CONF_OUTDOOR_TEMPERATURE_ENTITY, "outdoor_temperature"),
         (CONF_SOLAR_RADIATION_ENTITY, "solar_radiation_average"),
         (CONF_DELTA_T_ENTITY, "delta_t_average"),
         (CONF_GAS_CONSUMPTION_ENTITY, "gas_energy_today_kwh"),
-        (CONF_ELECTRICITY_BOILER_ENERGY_ENTITY, "electricity_boiler_today_kwh"),
     ):
         if entry.options.get(option):
             entities.append(EfficiencySensor(coordinator, metric))
+    if boiler_energy_configured:
+        entities.append(EfficiencySensor(coordinator, "electricity_boiler_today_kwh"))
     if entry.options.get(CONF_ELECTRICITY_BOILER_POWER_ENTITY):
         entities.append(EfficiencySensor(coordinator, "boiler_power_w"))
     if entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "heating_degree_days"))
-    if entry.options.get(CONF_PUMPS) or entry.options.get(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY):
+    if entry.options.get(CONF_PUMPS) or boiler_energy_configured:
         entities.append(EfficiencySensor(coordinator, "electricity_energy_today_kwh"))
     if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "gas_kwh_per_degree_day"))

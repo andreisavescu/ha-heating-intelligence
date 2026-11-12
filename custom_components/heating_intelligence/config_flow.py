@@ -12,6 +12,12 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_DEMAND_ENTITY,
     CONF_FLOOR,
+    CONF_OUTDOOR_TEMPERATURE_ENTITY,
+    CONF_SOLAR_RADIATION_ENTITY,
+    CONF_DELTA_T_ENTITY,
+    CONF_GAS_CONSUMPTION_ENTITY,
+    CONF_ELECTRICITY_CONSUMPTION_ENTITY,
+    CONF_GAS_ENERGY_FACTOR,
     CONF_NAME,
     CONF_PUMPS,
     CONF_PUMP_ENERGY_ENTITY,
@@ -52,19 +58,44 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def async_step_global_settings(self, user_input=None):
+        """Configure optional whole-house weather and energy inputs."""
+        entity_options = (
+            CONF_WATER_TEMPERATURE_ENTITY,
+            CONF_OUTDOOR_TEMPERATURE_ENTITY,
+            CONF_SOLAR_RADIATION_ENTITY,
+            CONF_DELTA_T_ENTITY,
+            CONF_GAS_CONSUMPTION_ENTITY,
+            CONF_ELECTRICITY_CONSUMPTION_ENTITY,
+        )
         if user_input is not None:
             data = dict(self.config_entry.options)
-            entity_id = user_input.get(CONF_WATER_TEMPERATURE_ENTITY)
-            if entity_id:
-                data[CONF_WATER_TEMPERATURE_ENTITY] = entity_id
-            else:
-                data.pop(CONF_WATER_TEMPERATURE_ENTITY, None)
+            for key in entity_options:
+                entity_id = user_input.get(key)
+                if entity_id:
+                    data[key] = entity_id
+                else:
+                    data.pop(key, None)
+            data[CONF_GAS_ENERGY_FACTOR] = float(
+                user_input.get(CONF_GAS_ENERGY_FACTOR) or 10.55
+            )
             return self.async_create_entry(title="", data=data)
 
-        current = self.config_entry.options.get(CONF_WATER_TEMPERATURE_ENTITY)
+        current = self.config_entry.options
         schema = vol.Schema({
-            vol.Optional(CONF_WATER_TEMPERATURE_ENTITY, default=current):
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+            vol.Optional(CONF_WATER_TEMPERATURE_ENTITY, default=current.get(CONF_WATER_TEMPERATURE_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_OUTDOOR_TEMPERATURE_ENTITY, default=current.get(CONF_OUTDOOR_TEMPERATURE_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_SOLAR_RADIATION_ENTITY, default=current.get(CONF_SOLAR_RADIATION_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_DELTA_T_ENTITY, default=current.get(CONF_DELTA_T_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_GAS_CONSUMPTION_ENTITY, default=current.get(CONF_GAS_CONSUMPTION_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_ELECTRICITY_CONSUMPTION_ENTITY, default=current.get(CONF_ELECTRICITY_CONSUMPTION_ENTITY)):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_GAS_ENERGY_FACTOR, default=current.get(CONF_GAS_ENERGY_FACTOR, 10.55)):
+                selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=20, step=0.01, mode=selector.NumberSelectorMode.BOX)),
         })
         return self.async_show_form(step_id="global_settings", data_schema=schema)
 

@@ -25,6 +25,8 @@ class HeatingIntelligenceCard extends HTMLElement {
     const rooms = attrs.rooms || {};
     const pumps = Object.values(attrs.pumps || {}).sort((a,b) => a.name.localeCompare(b.name));
     const entries = Object.values(rooms).sort((a,b) => a.name.localeCompare(b.name));
+    const thermalRanking = entries.filter((r) => r.heat_retention_hours_per_degree != null)
+      .sort((a,b) => b.heat_retention_hours_per_degree - a.heat_retention_hours_per_degree);
     const selected = entries.find((r) => r.id === this._selectedRoom) || entries[0];
     if (selected) this._selectedRoom = selected.id;
     const pumpCards = pumps.map((p) => `
@@ -60,6 +62,11 @@ class HeatingIntelligenceCard extends HTMLElement {
         <div class="metric"><span>Shortest / longest cycle</span><strong>${selected.shortest_cycle_seconds_week == null ? "—" : this._duration(selected.shortest_cycle_seconds_week)} / ${selected.longest_cycle_seconds_week == null ? "—" : this._duration(selected.longest_cycle_seconds_week)}</strong></div>
         <div class="metric"><span>Current cycle</span><strong>${selected.demand ? this._duration(selected.active_cycle_seconds) : "—"}</strong></div>
         <div class="metric"><span>Total cycles observed</span><strong>${selected.total_cycles ?? 0}</strong></div>
+        <div class="metric"><span>Temperature change · 1h / 6h / 24h</span><strong>${this._fmt(selected.temperature_change_1h)} / ${this._fmt(selected.temperature_change_6h)} / ${this._fmt(selected.temperature_change_24h)}</strong></div>
+        <div class="metric"><span>Heating response · +0.5°C</span><strong>${selected.heating_response_minutes == null ? "—" : this._fmt(selected.heating_response_minutes, "min")}</strong></div>
+        <div class="metric"><span>Cooling rate · windows closed</span><strong>${this._fmt(selected.cooling_rate_c_per_hour, "°C/h", 2)}</strong></div>
+        <div class="metric"><span>Heat retention · per 1°C</span><strong>${this._fmt(selected.heat_retention_hours_per_degree, "h/°C", 1)}</strong></div>
+        <div class="metric"><span>Window open during demand today</span><strong>${this._fmt((selected.window_open_demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>
       </div><div class="subtle">Demand source: ${this._esc(selected.demand_state ?? "Unavailable")}. Any available state counts as demand; unavailable means no demand.</div>` :
       `<p class="subtle">No rooms configured yet.</p>`;
     this.shadowRoot.innerHTML = `
@@ -95,6 +102,19 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
           <div class="subtle">Daily totals reset at local midnight. Runtime is accumulated from valid running-state observations.</div>
         </div>
+        <div class="section"><div class="section-title">Whole-house efficiency</div>
+          <div class="overview">
+            <div class="metric"><span>Outdoor temperature</span><strong>${this._fmt(attrs.efficiency?.outdoor_temperature)}</strong></div>
+            <div class="metric"><span>Indoor–outdoor ΔT</span><strong>${this._fmt(attrs.efficiency?.delta_t_average)}</strong></div>
+            <div class="metric"><span>Solar radiation average</span><strong>${this._fmt(attrs.efficiency?.solar_radiation_average, "W/m²", 0)}</strong></div>
+            <div class="metric"><span>Heating degree days</span><strong>${this._fmt(attrs.efficiency?.heating_degree_days, "°C·d", 2)}</strong></div>
+            <div class="metric"><span>Gas energy today</span><strong>${this._fmt(attrs.efficiency?.gas_energy_today_kwh, "kWh", 2)}</strong></div>
+            <div class="metric"><span>Electricity today</span><strong>${this._fmt(attrs.efficiency?.electricity_energy_today_kwh, "kWh", 2)}</strong></div>
+            <div class="metric"><span>Gas energy per degree day</span><strong>${this._fmt(attrs.efficiency?.gas_kwh_per_degree_day, "kWh/°C·d", 2)}</strong></div>
+          </div>
+          <div class="subtle">Gas correlation · HDD: ${attrs.efficiency?.gas_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.gas_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.gas_solar_correlation ?? "—"}</div>
+          <div class="subtle">Electricity correlation · HDD: ${attrs.efficiency?.electricity_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.electricity_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.electricity_solar_correlation ?? "—"} · days sampled: ${attrs.efficiency?.days_with_data ?? 0}</div>
+        </div>
         <div class="section"><div class="section-title">Pump synchronisation</div>
           <div class="metric"><span>Latest result</span><strong class="${syncClass}">${this._esc(syncLabel)}</strong>
             <div class="subtle">Mismatches: ${sync.mismatch_count ?? 0} · Allowed start difference: ${sync.tolerance_seconds ?? 60}s</div>
@@ -114,6 +134,11 @@ class HeatingIntelligenceCard extends HTMLElement {
         </div>
         <div class="section"><div class="section-title">Room details</div>
           ${entries.length ? `<select aria-label="Select room">${roomOptions}</select>${roomDetail}` : roomDetail}
+        </div>
+        <div class="section"><div class="section-title">Room heat-retention comparison</div>
+          <div class="pumps">
+            ${thermalRanking.length ? thermalRanking.map((r) => `<div class="metric"><span>${this._esc(r.name)}</span><strong>${this._fmt(r.heat_retention_hours_per_degree, "h/°C", 1)} · cooling ${this._fmt(r.cooling_rate_c_per_hour, "°C/h", 2)}</strong></div>`).join("") : '<p class="subtle">Waiting for enough closed-window cooling observations.</p>'}
+          </div>
         </div>
       </ha-card>`;
     const select = this.shadowRoot.querySelector("select");

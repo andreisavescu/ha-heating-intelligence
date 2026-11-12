@@ -167,6 +167,22 @@ class HeatingIntelligenceCard extends HTMLElement {
             }).join("")}
           </div>
         </div>
+        <div class="section"><div class="section-title">Forecasts</div>
+          <div class="subtle">Explainable short-term projections · confidence reflects sample coverage and trend consistency.</div>
+          <div class="overview">
+            <div class="metric"><span>Rooms with forecasts</span><strong>${attrs.predictions?.rooms_with_forecasts ?? 0} / ${entries.length}</strong></div>
+            <div class="metric"><span>Average confidence</span><strong>${this._fmt(attrs.predictions?.average_confidence, "%", 0)}</strong></div>
+            <div class="metric"><span>Projected gas today</span><strong>${this._fmt(attrs.predictions?.energy?.gas_kwh, "kWh", 1)}</strong></div>
+            <div class="metric"><span>Projected electricity today</span><strong>${this._fmt(attrs.predictions?.energy?.electricity_kwh, "kWh", 1)}</strong></div>
+          </div>
+          <div class="pumps">
+            ${entries.map((r) => {
+              const p = attrs.predictions?.rooms?.[r.id] || {};
+              return `<div class="metric"><span>${this._esc(r.name)} · ${p.status === "available" ? `confidence ${p.confidence}%` : "collecting data"}</span><strong>${p.status === "available" ? `1h ${this._fmt(p.temperature_1h)} · 3h ${this._fmt(p.temperature_3h)} · 6h ${this._fmt(p.temperature_6h)}` : "Forecast unavailable"}</strong><div class="subtle">${p.time_to_comfort_minutes != null ? `Time to comfort: ${this._duration(p.time_to_comfort_minutes * 60)} · ` : ""}${p.time_below_comfort_minutes != null ? `Below comfort in: ${this._duration(p.time_below_comfort_minutes * 60)} · ` : ""}${this._esc(p.note || "")}</div></div>`;
+            }).join("")}
+          </div>
+          <div class="subtle">${this._esc(attrs.predictions?.energy?.note || "Energy forecast unavailable.")}</div>
+        </div>
         <div class="section"><div class="section-title">Room details</div>
           ${entries.length ? `<select aria-label="Select room">${roomOptions}</select>${roomDetail}` : roomDetail}
         </div>

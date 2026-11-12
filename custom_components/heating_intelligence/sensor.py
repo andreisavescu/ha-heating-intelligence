@@ -252,7 +252,7 @@ EFFICIENCY_METRICS = {
     "delta_t_average": ("Indoor–Outdoor Delta T", "°C", "mdi:thermometer-lines"),
     "heating_degree_days": ("Heating Degree Days Today", "°C·d", "mdi:chart-bell-curve"),
     "gas_energy_today_kwh": ("Gas Energy Today", "kWh", "mdi:fire"),
-    "electricity_energy_today_kwh": ("Heating Pumps Electricity Today", "kWh", "mdi:lightning-bolt"),
+    "electricity_energy_today_kwh": ("Heating System Electricity Today", "kWh", "mdi:lightning-bolt"),
     "electricity_ground_floor_today_kwh": ("Downstairs Pump Electricity Today", "kWh", "mdi:lightning-bolt"),
     "electricity_upstairs_today_kwh": ("Upstairs Pump Electricity Today", "kWh", "mdi:lightning-bolt"),
     "electricity_boiler_today_kwh": ("Boiler Electricity Today", "kWh", "mdi:lightning-bolt"),

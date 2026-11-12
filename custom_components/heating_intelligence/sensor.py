@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_PUMPS, CONF_ROOMS, DOMAIN
 from .coordinator import HeatingIntelligenceCoordinator
+from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -36,7 +38,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(entities)
 
 
-class HeatingOverviewSensor(CoordinatorEntity, SensorEntity):
+class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     """Master sensor used by the Lovelace overview card."""
 
     _attr_should_poll = False
@@ -75,7 +77,7 @@ class HeatingOverviewSensor(CoordinatorEntity, SensorEntity):
         }
 
 
-class WaterTemperatureSensor(CoordinatorEntity, SensorEntity):
+class WaterTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "°C"
     _attr_should_poll = False
     _attr_icon = "mdi:thermometer-water"
@@ -94,13 +96,14 @@ class WaterTemperatureSensor(CoordinatorEntity, SensorEntity):
         return super().available and self.coordinator.data.get("water_temperature") is not None
 
 
-class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
+class RoomTemperatureSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "°C"
     _attr_should_poll = False
 
     def __init__(self, coordinator, room_id: str, room_name: str) -> None:
         super().__init__(coordinator)
         self.room_id = room_id
+        self.room_name = room_name
         self._attr_name = f"{room_name} Temperature"
         self._attr_unique_id = f"{DOMAIN}_{room_id}_temperature"
 
@@ -128,15 +131,17 @@ ROOM_ANALYTICS_METRICS = {
 }
 
 
-class RoomAnalyticsSensor(CoordinatorEntity, SensorEntity):
+class RoomAnalyticsSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     """One room-level demand or cycle statistic."""
 
     _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_state_class = "measurement"
 
     def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
         super().__init__(coordinator)
         self.room_id = room_id
+        self.room_name = room_name
         self.metric = metric
         label, unit, divisor, icon = ROOM_ANALYTICS_METRICS[metric]
         self.divisor = divisor
@@ -165,7 +170,7 @@ class RoomAnalyticsSensor(CoordinatorEntity, SensorEntity):
         }
 
 
-class PumpPowerSensor(CoordinatorEntity, SensorEntity):
+class PumpPowerSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "W"
     _attr_should_poll = False
     _attr_device_class = "power"
@@ -174,6 +179,7 @@ class PumpPowerSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
         super().__init__(coordinator)
         self.pump_id = pump_id
+        self.pump_name = pump_name
         self._attr_name = f"{pump_name} Pump Power"
         self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_power"
 
@@ -186,7 +192,7 @@ class PumpPowerSensor(CoordinatorEntity, SensorEntity):
         return super().available and self.native_value is not None
 
 
-class PumpEnergySensor(CoordinatorEntity, SensorEntity):
+class PumpEnergySensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "kWh"
     _attr_should_poll = False
     _attr_device_class = "energy"
@@ -195,6 +201,7 @@ class PumpEnergySensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
         super().__init__(coordinator)
         self.pump_id = pump_id
+        self.pump_name = pump_name
         self._attr_name = f"{pump_name} Pump Energy"
         self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_energy"
 
@@ -207,9 +214,10 @@ class PumpEnergySensor(CoordinatorEntity, SensorEntity):
         return super().available and self.native_value is not None
 
 
-class PumpCycleCountSensor(CoordinatorEntity, SensorEntity):
+class PumpCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Number of on/off cycles observed for one pump."""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = "cycles"
     _attr_should_poll = False
     _attr_state_class = "total_increasing"
@@ -218,6 +226,7 @@ class PumpCycleCountSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
         super().__init__(coordinator)
         self.pump_id = pump_id
+        self.pump_name = pump_name
         self._attr_name = f"{pump_name} Pump Cycle Count"
         self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_cycle_count"
 
@@ -226,9 +235,10 @@ class PumpCycleCountSensor(CoordinatorEntity, SensorEntity):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("cycle_count", 0)
 
 
-class PumpRuntimeSensor(CoordinatorEntity, SensorEntity):
+class PumpRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Accumulated pump runtime in hours."""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = "h"
     _attr_should_poll = False
     _attr_state_class = "total_increasing"
@@ -237,6 +247,7 @@ class PumpRuntimeSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
         super().__init__(coordinator)
         self.pump_id = pump_id
+        self.pump_name = pump_name
         self._attr_name = f"{pump_name} Pump Runtime"
         self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_runtime"
 
@@ -246,9 +257,10 @@ class PumpRuntimeSensor(CoordinatorEntity, SensorEntity):
         return round(seconds / 3600, 2)
 
 
-class PumpSynchronizationSensor(CoordinatorEntity, SensorEntity):
+class PumpSynchronizationSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     """Latest comparison of overlapping pump cycle starts."""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_should_poll = False
     _attr_icon = "mdi:sync"
 
@@ -266,9 +278,10 @@ class PumpSynchronizationSensor(CoordinatorEntity, SensorEntity):
         return self.coordinator.data.get("sync", {})
 
 
-class PumpDailyEnergySensor(CoordinatorEntity, SensorEntity):
+class PumpDailyEnergySensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Pump energy consumed since local midnight."""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = "kWh"
     _attr_should_poll = False
     _attr_device_class = "energy"
@@ -278,6 +291,7 @@ class PumpDailyEnergySensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
         super().__init__(coordinator)
         self.pump_id = pump_id
+        self.pump_name = pump_name
         self._attr_name = f"{pump_name} Pump Energy Today"
         self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_energy_today"
 
@@ -286,9 +300,10 @@ class PumpDailyEnergySensor(CoordinatorEntity, SensorEntity):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("daily_energy_kwh", 0)
 
 
-class PumpDailyRuntimeSensor(CoordinatorEntity, SensorEntity):
+class PumpDailyRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Pump runtime accumulated since local midnight."""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = "h"
     _attr_should_poll = False
     _attr_state_class = "measurement"
@@ -297,6 +312,7 @@ class PumpDailyRuntimeSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
         super().__init__(coordinator)
         self.pump_id = pump_id
+        self.pump_name = pump_name
         self._attr_name = f"{pump_name} Pump Runtime Today"
         self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_runtime_today"
 
@@ -306,9 +322,10 @@ class PumpDailyRuntimeSensor(CoordinatorEntity, SensorEntity):
         return round(seconds / 3600, 3)
 
 
-class PumpDailyCycleCountSensor(CoordinatorEntity, SensorEntity):
+class PumpDailyCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Pump cycles started since local midnight."""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_should_poll = False
     _attr_state_class = "measurement"
     _attr_icon = "mdi:counter"
@@ -316,6 +333,7 @@ class PumpDailyCycleCountSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, pump_id: str, pump_name: str) -> None:
         super().__init__(coordinator)
         self.pump_id = pump_id
+        self.pump_name = pump_name
         self._attr_name = f"{pump_name} Pump Cycles Today"
         self._attr_unique_id = f"{DOMAIN}_{pump_id}_pump_cycles_today"
 

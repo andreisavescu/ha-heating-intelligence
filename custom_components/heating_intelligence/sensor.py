@@ -15,7 +15,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities = [HeatingOverviewSensor(coordinator)]
     if entry.options.get("water_temperature_entity"):
         entities.append(WaterTemperatureSensor(coordinator))
-    entities.extend(RoomTemperatureSensor(coordinator, room["id"], room["name"]) for room in entry.options.get(CONF_ROOMS, []))
+    for room in entry.options.get(CONF_ROOMS, []):
+        entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
+        entities.extend(
+            RoomAnalyticsSensor(coordinator, room["id"], room["name"], metric)
+            for metric in ROOM_ANALYTICS_METRICS
+        )
     for pump in entry.options.get(CONF_PUMPS, []):
         entities.extend([
             PumpPowerSensor(coordinator, pump["id"], pump["name"]),
@@ -106,6 +111,58 @@ class RoomTemperatureSensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self):
         return super().available and self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("temperature") is not None
+
+
+ROOM_ANALYTICS_METRICS = {
+    "demand_seconds_today": ("Heating Demand Today", "h", 3600, "mdi:clock-outline"),
+    "demand_seconds_week": ("Heating Demand This Week", "h", 3600, "mdi:calendar-week"),
+    "demand_seconds_month": ("Heating Demand This Month", "h", 3600, "mdi:calendar-month"),
+    "cycles_today": ("Heating Cycles Today", "cycles", 1, "mdi:counter"),
+    "cycles_week": ("Heating Cycles This Week", "cycles", 1, "mdi:counter"),
+    "cycles_month": ("Heating Cycles This Month", "cycles", 1, "mdi:counter"),
+    "average_cycle_seconds_week": ("Average Heating Cycle This Week", "min", 60, "mdi:timer-outline"),
+    "shortest_cycle_seconds_week": ("Shortest Heating Cycle This Week", "min", 60, "mdi:timer-sand"),
+    "longest_cycle_seconds_week": ("Longest Heating Cycle This Week", "min", 60, "mdi:timer"),
+    "active_cycle_seconds": ("Current Heating Cycle Duration", "min", 60, "mdi:timer-play-outline"),
+    "total_cycles": ("Heating Cycles Total", "cycles", 1, "mdi:counter"),
+}
+
+
+class RoomAnalyticsSensor(CoordinatorEntity, SensorEntity):
+    """One room-level demand or cycle statistic."""
+
+    _attr_should_poll = False
+    _attr_state_class = "measurement"
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.metric = metric
+        label, unit, divisor, icon = ROOM_ANALYTICS_METRICS[metric]
+        self.divisor = divisor
+        if metric == "total_cycles":
+            self._attr_state_class = "total_increasing"
+        self._attr_name = f"{room_name} {label}"
+        self._attr_native_unit_of_measurement = unit
+        self._attr_icon = icon
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+
+    @property
+    def native_value(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        value = room.get(self.metric)
+        return round(value / self.divisor, 2) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        return {
+            "shortest_cycle_seconds_this_week": room.get("shortest_cycle_seconds_week"),
+            "longest_cycle_seconds_this_week": room.get("longest_cycle_seconds_week"),
+            "active_cycle_seconds": room.get("active_cycle_seconds", 0),
+            "source_entity": room.get("demand_entity"),
+            "source_state": room.get("demand_state"),
+        }
 
 
 class PumpPowerSensor(CoordinatorEntity, SensorEntity):

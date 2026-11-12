@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.3.4)
+## Current scope (0.4.0)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -15,6 +15,9 @@ A read-only Home Assistant custom integration for analysing underfloor-heating b
 - Configure the underfloor-heating supply-water temperature sensor.
 - Monitor ground-floor and upstairs manifold pump power (W), cumulative energy (kWh), and running state.
 - Track daily pump energy, runtime, cycle counts, and room-demand hours.
+- Persist room-level demand history and calculate daily, Monday-based weekly, and calendar-month demand hours.
+- Track room heating cycles, including daily/weekly/monthly cycle counts, lifetime cycle count, average completed cycle duration, shortest/longest weekly cycles, and the current cycle duration.
+- Expose room analytics as individual Home Assistant sensors and in the Lovelace overview card.
 - Provide a Lovelace card with whole-house overview, pump readings, room details, and floor-level demand/pump correlation.
 
 ## Install
@@ -40,9 +43,10 @@ The default overview entity is `sensor.heating_intelligence_overview`. If Home A
 
 ## Important behaviour
 
-For thermostat relays:
-- `on`: heating demand is active.
-- `off` or `unavailable`: no active demand is inferred.
-- `unknown` or a missing source: the demand entity reports the source state and may become unavailable.
+For configured room demand entities, **availability is the signal**:
+- Any present state (including `on`, `off`, or `unknown`) means demand is active.
+- `unavailable` or a missing entity means no active demand.
 
-This is an early development integration. Validate readings and statistics on your own Home Assistant installation before relying on them.
+Room history is stored in Home Assistant's integration storage and survives restarts. If an observation gap exceeds 90 seconds, the ongoing cycle remains open but its duration timer restarts so unobserved downtime is not counted. Daily totals use Home Assistant local dates; weekly totals start on Monday; monthly totals use calendar months. Demand intervals are split at local midnight, including daylight-saving transitions. Existing history is not backfilled: room analytics begin when version 0.4.0 first observes each configured room.
+
+The coordinator samples every 30 seconds. HA state timestamps are used to place detected transitions accurately, but multiple state changes that occur between two samples can still be missed. Very short demand cycles may therefore be undercounted. Validate readings and statistics on your own Home Assistant installation before relying on them.

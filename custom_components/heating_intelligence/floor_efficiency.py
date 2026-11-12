@@ -74,7 +74,7 @@ def build_floor_performance(
         result[floor] = {
             "room_count": len(members),
             "rooms_with_area": len(area_rooms),
-            "area_coverage_percent": round(area_coverage * 100, 1),
+            "rooms_with_area_percent": round(area_coverage * 100, 1),
             "configured_area_m2": round(configured_area, 2),
             "area_with_temperature_m2": round(temp_area, 2),
             "area_weighted_temperature_c": average_temp,

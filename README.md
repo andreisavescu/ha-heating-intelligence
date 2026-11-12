@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.11.1)
+## Current scope (0.12.0)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -79,6 +79,16 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - Report actual gas use, model-expected gas use and a weather-normalised comparison index at median observed weather conditions.
 - Require at least 21 complete days with gas, outdoor temperature, ΔT and solar data before presenting the model.
 - Keep all calculations descriptive and read-only; no physical heat-loss coefficient or boiler efficiency is inferred.
+
+## 0.12.0 — advanced heating intelligence
+
+- Add optional return-water temperature configuration alongside the existing flow/inlet sensor, with current and rolling 24-hour flow/return ΔT statistics.
+- Add exploratory solar contribution analysis comparing solar radiation with weather-normalised gas use (gas per heating degree day); at least 10 valid daily observations are required. This is an association, not a measured solar heat-gain quantity.
+- Validate 1, 3, 6 and 12-hour room forecasts against later measured temperatures and report mean absolute error with sample counts.
+- Add monthly and seasonal energy / heating-degree-day summaries from retained daily history.
+- Add robust high-consumption anomaly prompts using historical median and median absolute deviation, plus unusual water-side ΔT observations. These are diagnostic prompts, not fault declarations.
+- Keep room selection and information popovers stable during Home Assistant state updates; focused controls defer full card rendering until interaction ends, and open explanations are restored after a refresh.
+- Preserve existing entities, settings, dashboard views and read-only behaviour. Return-water measurement is optional; all new analyses clearly show when data is insufficient.
 
 ## Install
 

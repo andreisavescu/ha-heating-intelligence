@@ -73,6 +73,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(EfficiencySensor(coordinator, "electricity_energy_today_kwh"))
     if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
         entities.append(EfficiencySensor(coordinator, "gas_kwh_per_degree_day"))
+    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_DELTA_T_ENTITY):
+        entities.extend(EfficiencySensor(coordinator, metric) for metric in (
+            "estimated_delivered_heat_today_kwh", "heat_loss_coefficient_w_k",
+            "heat_loss_u_value_daily", "heat_loss_u_value_7d", "heat_loss_u_value_30d"))
     async_add_entities(entities)
 
 
@@ -267,6 +271,11 @@ EFFICIENCY_METRICS = {
     "electricity_boiler_today_kwh": ("Boiler Electricity Today", "kWh", "mdi:lightning-bolt"),
     "boiler_power_w": ("Boiler Electrical Power", "W", "mdi:lightning-bolt"),
     "gas_kwh_per_degree_day": ("Gas Energy per Degree Day", "kWh/°C·d", "mdi:chart-line"),
+    "estimated_delivered_heat_today_kwh": ("Estimated Delivered Heat Today", "kWh", "mdi:heat-wave"),
+    "heat_loss_coefficient_w_k": ("Daily Heat Loss Coefficient", "W/K", "mdi:home-thermometer"),
+    "heat_loss_u_value_daily": ("Daily Heat Loss per Envelope Area", "W/m²K", "mdi:home-thermometer"),
+    "heat_loss_u_value_7d": ("7-day Heat Loss per Envelope Area", "W/m²K", "mdi:chart-line"),
+    "heat_loss_u_value_30d": ("30-day Heat Loss per Envelope Area", "W/m²K", "mdi:chart-line"),
 }
 
 
@@ -285,6 +294,9 @@ class EfficiencySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
         self._attr_native_unit_of_measurement = unit
         self._attr_icon = icon
         self._attr_unique_id = f"{DOMAIN}_{metric}"
+        if metric == "estimated_delivered_heat_today_kwh":
+            self._attr_device_class = "energy"
+            self._attr_state_class = "total"
 
     @property
     def native_value(self):

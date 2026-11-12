@@ -29,6 +29,8 @@ from .const import (
     CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
     CONF_ELECTRICITY_BOILER_ENTITY,
     CONF_GAS_ENERGY_FACTOR,
+    CONF_BOILER_EFFICIENCY,
+    CONF_ENVELOPE_AREA,
     CONF_FLOOR,
     CONF_PUMPS,
     CONF_ROOMS,
@@ -385,6 +387,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
         )
         result["efficiency"] = efficiency_statistics(self._history, now_local)
+        from .thermal_performance import thermal_performance_statistics
+        result["efficiency"].update(thermal_performance_statistics(self._history, now_local,
+            float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
+            float(self.entry.options.get(CONF_ENVELOPE_AREA, 361.26))))
         weather_model = weather_normalised_efficiency(
             self._history.get("efficiency_daily", {}),
             local_date,

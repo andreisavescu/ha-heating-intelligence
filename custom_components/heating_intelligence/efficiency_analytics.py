@@ -57,6 +57,7 @@ def update_efficiency_history(
         "solar_sum": 0.0, "solar_count": 0,
         "delta_t_sum": 0.0, "delta_t_count": 0,
         "indoor_sum": 0.0, "indoor_count": 0,
+        "delta_t_degree_hours": 0.0,
     })
     previous = history.setdefault("efficiency_last_readings", {})
     meter_samples = history.setdefault("meter_samples", [])
@@ -74,18 +75,25 @@ def update_efficiency_history(
         value = _number(reading.get("value")) if reading else None
         if value is None:
             continue
-        old = _number(previous.get(key, {}).get("value"))
+        old_record = previous.get(key, {})
+        old = _number(old_record.get("value"))
         unit = reading.get("unit")
-        if old is not None and value >= old:
+        source_changed = bool(reading.get("entity_id") and reading.get("entity_id") != old_record.get("entity_id"))
+        if old is not None and not source_changed and value >= old:
             day[daily_field] += _energy_kwh(value - old, unit, gas, gas_factor)
         if old is None or value != old or unit != previous.get(key, {}).get("unit"):
             meter_samples.append({"time": now.astimezone(timezone.utc).isoformat(), "meter": key, "value": value, "unit": unit})
-        previous[key] = {"value": value, "unit": unit}
+        previous[key] = {"value": value, "unit": unit, "entity_id": reading.get("entity_id")}
     if any(electricity_meters.values()):
         day["electricity_kwh"] = sum(day.get(f"electricity_{pump_id}_kwh", 0.0) for pump_id in ("ground_floor", "upstairs", "boiler"))
 
     env = {key: _number((readings.get(key) or {}).get("value"))
            for key in ("outdoor_temperature", "solar_radiation", "delta_t", "indoor_temperature")}
+    previous_delta_t = _number(history.get("last_delta_t"))
+    if previous_delta_t is not None and env["delta_t"] is not None and 0 < elapsed_seconds <= 90 and not continuity_gap:
+        day["delta_t_degree_hours"] += max(0.0, previous_delta_t) * elapsed_seconds / 3600
+    if env["delta_t"] is not None:
+        history["last_delta_t"] = env["delta_t"]
     for key, field in (("outdoor_temperature", "outdoor"), ("solar_radiation", "solar"),
                        ("delta_t", "delta_t"), ("indoor_temperature", "indoor")):
         value = env[key]

@@ -21,3 +21,7 @@ CONF_DELTA_T_ENTITY = "delta_t_entity"
 CONF_GAS_CONSUMPTION_ENTITY = "gas_consumption_entity"
 CONF_ELECTRICITY_CONSUMPTION_ENTITY = "electricity_consumption_entity"
 CONF_GAS_ENERGY_FACTOR = "gas_energy_factor"
+
+CONF_ELECTRICITY_GROUND_FLOOR_ENTITY = "electricity_ground_floor_entity"
+CONF_ELECTRICITY_UPSTAIRS_ENTITY = "electricity_upstairs_entity"
+CONF_ELECTRICITY_BOILER_ENTITY = "electricity_boiler_entity"

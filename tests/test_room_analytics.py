@@ -70,3 +70,29 @@ def test_week_and_month_aggregate_daily_buckets():
     assert stats["demand_seconds_week"] == 25 * 3600
     assert stats["demand_seconds_month"] == 25 * 3600
     assert stats["cycles_week"] == 1
+
+
+
+def test_daylight_saving_fallback_counts_real_elapsed_time():
+    history = {}
+    start = dt("2026-10-25T00:30:00")
+    end = dt("2026-10-25T04:30:00")
+    update_room_history(history, "hallway", True, start, start, start)
+    room = update_room_history(history, "hallway", True, start, start, end)
+
+    # The local clock repeats one hour when DST ends in Romania.
+    assert room["daily"]["2026-10-25"]["demand_seconds"] == 5 * 3600
+
+
+def test_on_to_off_state_change_does_not_split_availability_demand_cycle():
+    history = {}
+    start = dt("2026-11-12T07:00:00")
+    changed = dt("2026-11-12T07:20:00")
+    end = dt("2026-11-12T07:45:00")
+    update_room_history(history, "study", True, start, start, start)
+    # The source toggles from on to off, but remains available: demand continues.
+    room = update_room_history(history, "study", True, changed, start, changed)
+    room = update_room_history(history, "study", False, end, changed, end)
+
+    assert room["total_cycles"] == 1
+    assert room["cycles"][0]["duration_seconds"] == 2700

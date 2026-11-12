@@ -17,6 +17,7 @@ from .const import (
 )
 from .coordinator import HeatingIntelligenceCoordinator
 from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
+from .insights import build_heating_insights
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -112,6 +113,7 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "daily_heating": data.get("daily", {}),
             "floor_analysis": data.get("floor_analysis", {}),
             "efficiency": data.get("efficiency", {}),
+            "insights": build_heating_insights(data),
         }
 
 

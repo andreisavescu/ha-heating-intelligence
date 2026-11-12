@@ -83,11 +83,15 @@ def thermal_statistics(room: dict[str, Any], now: datetime) -> dict[str, Any]:
 
     # Cooling rate uses the most recent continuous period with neither heat
     # demand nor an open window, avoiding obvious ventilation contamination.
-    cooling = [item for item in samples if not item["demand"] and not item["window_open"]]
+    cooling_segment = []
+    for item in reversed(samples):
+        if item["demand"] or item["window_open"]:
+            break
+        cooling_segment.append(item)
     cooling_rate = None
-    if len(cooling) >= 2:
-        end = cooling[-1]
-        start = next((item for item in reversed(cooling[:-1])
+    if len(cooling_segment) >= 2:
+        end = cooling_segment[0]
+        start = next((item for item in cooling_segment[1:]
                       if (end["_dt"] - item["_dt"]).total_seconds() >= 1800), None)
         if start:
             hours = (end["_dt"] - start["_dt"]).total_seconds() / 3600

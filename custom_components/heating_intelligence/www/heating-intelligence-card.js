@@ -25,6 +25,8 @@ class HeatingIntelligenceCard extends HTMLElement {
     const rooms = attrs.rooms || {};
     const pumps = Object.values(attrs.pumps || {}).sort((a,b) => a.name.localeCompare(b.name));
     const entries = Object.values(rooms).sort((a,b) => a.name.localeCompare(b.name));
+    const thermalRanking = entries.filter((r) => r.heat_retention_hours_per_degree != null)
+      .sort((a,b) => b.heat_retention_hours_per_degree - a.heat_retention_hours_per_degree);
     const selected = entries.find((r) => r.id === this._selectedRoom) || entries[0];
     if (selected) this._selectedRoom = selected.id;
     const pumpCards = pumps.map((p) => `
@@ -110,7 +112,8 @@ class HeatingIntelligenceCard extends HTMLElement {
             <div class="metric"><span>Electricity today</span><strong>${this._fmt(attrs.efficiency?.electricity_energy_today_kwh, "kWh", 2)}</strong></div>
             <div class="metric"><span>Gas energy per degree day</span><strong>${this._fmt(attrs.efficiency?.gas_kwh_per_degree_day, "kWh/°C·d", 2)}</strong></div>
           </div>
-          <div class="subtle">Gas correlation · HDD: ${attrs.efficiency?.gas_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.gas_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.gas_solar_correlation ?? "—"} · days sampled: ${attrs.efficiency?.days_with_data ?? 0}</div>
+          <div class="subtle">Gas correlation · HDD: ${attrs.efficiency?.gas_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.gas_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.gas_solar_correlation ?? "—"}</div>
+          <div class="subtle">Electricity correlation · HDD: ${attrs.efficiency?.electricity_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.electricity_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.electricity_solar_correlation ?? "—"} · days sampled: ${attrs.efficiency?.days_with_data ?? 0}</div>
         </div>
         <div class="section"><div class="section-title">Pump synchronisation</div>
           <div class="metric"><span>Latest result</span><strong class="${syncClass}">${this._esc(syncLabel)}</strong>
@@ -131,6 +134,11 @@ class HeatingIntelligenceCard extends HTMLElement {
         </div>
         <div class="section"><div class="section-title">Room details</div>
           ${entries.length ? `<select aria-label="Select room">${roomOptions}</select>${roomDetail}` : roomDetail}
+        </div>
+        <div class="section"><div class="section-title">Room heat-retention comparison</div>
+          <div class="pumps">
+            ${thermalRanking.length ? thermalRanking.map((r) => `<div class="metric"><span>${this._esc(r.name)}</span><strong>${this._fmt(r.heat_retention_hours_per_degree, "h/°C", 1)} · cooling ${this._fmt(r.cooling_rate_c_per_hour, "°C/h", 2)}</strong></div>`).join("") : '<p class="subtle">Waiting for enough closed-window cooling observations.</p>'}
+          </div>
         </div>
       </ha-card>`;
     const select = this.shadowRoot.querySelector("select");

@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.11.0)
+## Current scope (0.11.1)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -151,7 +151,7 @@ The coordinator samples every 30 seconds. HA state timestamps are used to place 
 - Separate the demand timeline and prediction/diagnostic sections from the overview.
 
 
-## 0.11.0 — explainability and historical analytics
+## 0.11.1 — explainability and historical analytics
 
 - Add reusable, touch-friendly information controls beside non-obvious card metrics, explaining definitions, calculation, interpretation, data requirements and limitations.
 - Clarify that gas per heating degree day is a daily weather-demand indicator, whole-house efficiency is a collection of comparative indicators, and room efficiency scores are heuristic rather than measured physical efficiencies.

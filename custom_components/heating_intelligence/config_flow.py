@@ -12,6 +12,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_DEMAND_ENTITY,
     CONF_FLOOR,
+    CONF_AREA,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
     CONF_DELTA_T_ENTITY,
@@ -168,6 +169,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 "id": slug,
                 CONF_NAME: user_input[CONF_NAME].strip(),
                 CONF_FLOOR: user_input[CONF_FLOOR],
+                CONF_AREA: float(user_input[CONF_AREA]) if user_input.get(CONF_AREA) not in (None, "") else None,
                 CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY],
                 CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY],
                 CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
@@ -179,6 +181,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema({
             vol.Required(CONF_NAME): str,
             vol.Required(CONF_FLOOR): vol.In({"ground_floor": "Downstairs", "upstairs": "Upstairs"}),
+            vol.Optional(CONF_AREA): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=500, step=0.1, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="m²")),
             vol.Required(CONF_DEMAND_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig()),
             vol.Required(CONF_TEMPERATURE_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_WINDOW_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),

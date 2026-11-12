@@ -304,6 +304,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 **stats,
                 **thermal,
                 "window_open_demand_seconds_today": round(float(room_history.get("window_open_demand_seconds_today", 0))),
+                "temperature_history": [
+                    {"time": sample.get("time"), "temperature": sample.get("temperature"),
+                     "demand": sample.get("demand", False), "window_open": sample.get("window_open", False)}
+                    for sample in room_history.get("temperature_samples", [])[-145:]
+                ],
                 "temperature_entity": room[CONF_TEMPERATURE_ENTITY],
                 "temperature": temperature_value,
                 "window_entity": window_id,
@@ -365,6 +370,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
         )
         result["efficiency"] = efficiency_statistics(self._history, now_local)
+        result["energy_history"] = [
+            {"date": date_key, "gas_kwh": round(day.get("gas_kwh", 0.0), 3),
+             "electricity_kwh": round(day.get("electricity_kwh", 0.0), 3)}
+            for date_key, day in sorted(self._history.get("efficiency_daily", {}).items())[-14:]
+        ]
         boiler_power = readings.get("boiler_power")
         boiler_power_w = boiler_power.get("value") if boiler_power else None
         boiler_power_unit = (boiler_power.get("unit") or "").lower() if boiler_power else ""

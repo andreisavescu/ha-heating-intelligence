@@ -100,3 +100,30 @@ def test_three_pump_meter_reset_does_not_create_negative_energy():
         "electricity_meters": {"boiler": {"value": 1, "unit": "kWh"}}
     }, now + timedelta(minutes=1), 60, False)
     assert history["efficiency_daily"]["2026-11-12"]["electricity_boiler_kwh"] == 0
+
+
+def test_existing_daily_record_is_backfilled_with_new_fields():
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+    history = {
+        "efficiency_daily": {
+            "2026-11-12": {
+                "gas_kwh": 1.25,
+                "electricity_kwh": 0.5,
+                "delta_t_sum": 12.0,
+                "delta_t_count": 1,
+            }
+        }
+    }
+    MODULE.update_efficiency_history(
+        history,
+        {"delta_t": {"value": 10.0, "unit": "°C"}},
+        now,
+        60,
+        False,
+    )
+    day = history["efficiency_daily"]["2026-11-12"]
+    assert day["gas_kwh"] == 1.25
+    assert day["electricity_kwh"] == 0.5
+    assert day["delta_t_degree_hours"] == 0.0
+    assert day["ac_electricity_kwh"] == 0.0
+    assert day["outdoor_count"] == 0

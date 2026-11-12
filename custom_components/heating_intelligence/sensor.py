@@ -114,6 +114,7 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "floor_analysis": data.get("floor_analysis", {}),
             "efficiency": data.get("efficiency", {}),
             "insights": build_heating_insights(data),
+            "advanced_diagnostics": data.get("advanced_diagnostics", {}),
         }
 
 

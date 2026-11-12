@@ -39,6 +39,16 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=timedelta(seconds=30),
         )
+        # Keep entities safe during startup or a failed first refresh.
+        self.data = {
+            "rooms": {},
+            "pumps": {},
+            "water_temperature": None,
+            "water_temperature_entity": None,
+            "sync": {"status": "unknown", "mismatch_count": 0},
+            "daily": {},
+            "floor_analysis": {},
+        }
 
     async def async_load_history(self) -> None:
         """Restore pump cycle counters and active-cycle timestamps."""

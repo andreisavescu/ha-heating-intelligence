@@ -34,16 +34,16 @@ class RoomDemandSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self):
-        return self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("demand", False)
+        return (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {}).get("demand", False)
 
     @property
     def available(self):
-        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        room = (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {})
         return super().available and room.get("demand_state") not in (None, "unknown")
 
     @property
     def extra_state_attributes(self):
-        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        room = (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {})
         return {
             "source_entity": room.get("demand_entity"),
             "source_state": room.get("demand_state"),
@@ -63,11 +63,11 @@ class RoomWindowSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self):
-        return self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("window_open", False)
+        return (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {}).get("window_open", False)
 
     @property
     def available(self):
-        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        room = (self.coordinator.data or {}).get("rooms", {}).get(self.room_id, {})
         return super().available and room.get("window_state") not in (None, "unavailable", "unknown")
 
 
@@ -85,16 +85,16 @@ class PumpRunningSensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self):
-        return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("running", False)
+        return (self.coordinator.data or {}).get("pumps", {}).get(self.pump_id, {}).get("running", False)
 
     @property
     def available(self):
-        pump = self.coordinator.data.get("pumps", {}).get(self.pump_id, {})
+        pump = (self.coordinator.data or {}).get("pumps", {}).get(self.pump_id, {})
         return super().available and pump.get("power") is not None
 
     @property
     def extra_state_attributes(self):
-        pump = self.coordinator.data.get("pumps", {}).get(self.pump_id, {})
+        pump = (self.coordinator.data or {}).get("pumps", {}).get(self.pump_id, {})
         return {
             "power": pump.get("power"),
             "power_entity": pump.get("power_entity"),

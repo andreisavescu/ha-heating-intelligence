@@ -36,6 +36,12 @@ Version 0.6.0 also removes the two retired legacy daily pump-electricity entitie
 
 Room Heating Demand binary sensors now remain available whenever the integration coordinator is healthy. The configured source entity's availability is interpreted only as the demand signal: any present state (`on`, `off`, or `unknown`) means demand; `unavailable` or a missing source means no demand (`off`). A source becoming unavailable no longer makes the Heating Intelligence entity itself unavailable.
 
+## 0.7.1 — room floor area
+
+- Configure an optional floor area in m² for each room when adding it. Existing rooms without area remain supported.
+- Expose per-room area, daily heating-demand hours per m², and total configured room area in advanced diagnostics.
+- Per-area demand is a comparative indicator, not heat output or a physical heat-loss coefficient. Observed cooling remains °C/h; area alone cannot calculate W/K.
+
 ## 0.7.0 — advanced diagnostics
 
 - Room efficiency score (0–100) with visible component contributions. Scores are withheld until at least 12 temperature samples and two valid metrics are available.

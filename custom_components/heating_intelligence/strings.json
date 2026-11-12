@@ -32,7 +32,8 @@
       },
       "add_room": {
         "title": "Add a room",
-        "description": "Select the room's floor (downstairs or upstairs), thermostat demand relay and temperature sensor. The window contact is optional."
+        "description": "Select the room's floor, thermostat demand relay and temperature sensor. Room floor area (m²) is optional and enables per-area demand comparisons.",
+        "data": { "area_m2": "Room floor area (m²)" }
       },
       "remove_room": {
         "title": "Remove a room"

@@ -121,6 +121,9 @@ ROOM_ANALYTICS_METRICS = {
     "cycles_week": ("Heating Cycles This Week", "cycles", 1, "mdi:counter"),
     "cycles_month": ("Heating Cycles This Month", "cycles", 1, "mdi:counter"),
     "average_cycle_seconds_week": ("Average Heating Cycle This Week", "min", 60, "mdi:timer-outline"),
+    "shortest_cycle_seconds_week": ("Shortest Heating Cycle This Week", "min", 60, "mdi:timer-sand"),
+    "longest_cycle_seconds_week": ("Longest Heating Cycle This Week", "min", 60, "mdi:timer"),
+    "active_cycle_seconds": ("Current Heating Cycle Duration", "min", 60, "mdi:timer-play-outline"),
     "total_cycles": ("Heating Cycles Total", "cycles", 1, "mdi:counter"),
 }
 

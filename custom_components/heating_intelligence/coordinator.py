@@ -13,6 +13,7 @@ from homeassistant.util import dt as dt_util
 from .room_analytics import demand_is_active, room_statistics, update_room_history
 from .thermal_analytics import record_temperature_sample, thermal_statistics
 from .efficiency_analytics import update_efficiency_history, efficiency_statistics
+from .advanced_diagnostics import build_advanced_diagnostics
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -372,6 +373,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             key: value.get("entity_id") if value else None
             for key, value in readings["electricity_meters"].items()
         }
+        advanced = build_advanced_diagnostics(result["rooms"], result["efficiency"], self._history)
+        for room_id, metrics in advanced["room_diagnostics"].items():
+            result["rooms"][room_id].update(metrics)
+        result["advanced_diagnostics"] = advanced
         await self._store.async_save(self._history)
         return result
 

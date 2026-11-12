@@ -36,6 +36,22 @@ def test_room_score_is_withheld_when_data_is_insufficient():
     assert result["room_diagnostics"]["bedroom"]["score"] is None
 
 
+def test_room_area_produces_per_area_demand_metric():
+    rooms = {"bedroom": {"name": "Bedroom", "area_m2": 20, "daily_demand_seconds": 3600}}
+    result = MODULE.build_advanced_diagnostics(rooms, {}, {})
+    diagnostic = result["room_diagnostics"]["bedroom"]
+    assert diagnostic["area_m2"] == 20
+    assert diagnostic["heating_demand_hours_per_m2_today"] == 0.05
+    assert result["configured_room_area_m2"] == 20
+
+
+def test_missing_room_area_is_supported():
+    result = MODULE.build_advanced_diagnostics({"bedroom": {"name": "Bedroom"}}, {}, {})
+    diagnostic = result["room_diagnostics"]["bedroom"]
+    assert diagnostic["area_m2"] is None
+    assert diagnostic["heating_demand_hours_per_m2_today"] is None
+
+
 def test_boiler_analysis_does_not_claim_combustion_efficiency():
     result = MODULE.build_advanced_diagnostics({}, {
         "gas_energy_today_kwh": 10,

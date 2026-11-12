@@ -28,7 +28,9 @@ def test_cooling_rate_excludes_open_window_periods():
     MODULE.record_temperature_sample(room, start + timedelta(minutes=30), 21.5, False, False)
     MODULE.record_temperature_sample(room, start + timedelta(minutes=40), 21.0, False, True)
     MODULE.record_temperature_sample(room, start + timedelta(minutes=50), 20.5, False, True)
-    stats = MODULE.thermal_statistics(room, start + timedelta(minutes=50))
+    MODULE.record_temperature_sample(room, start + timedelta(minutes=60), 20.5, False, False)
+    MODULE.record_temperature_sample(room, start + timedelta(minutes=90), 20.0, False, False)
+    stats = MODULE.thermal_statistics(room, start + timedelta(minutes=90))
     assert stats["cooling_rate_c_per_hour"] == 1.0
     assert stats["heat_retention_hours_per_degree"] == 1.0
 

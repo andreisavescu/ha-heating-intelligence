@@ -149,6 +149,28 @@ def update_advanced_history(
     else:
         water_stats = {"status": "collecting_data", "flow_temperature_c": flow_c, "return_temperature_c": return_c, "water_delta_t_c": round(flow_c-return_c, 2) if flow_c is not None and return_c is not None else None, "samples_24h": 0}
 
+    anomalies = []
+    if water_stats.get("water_delta_t_c") is not None:
+        delta = water_stats["water_delta_t_c"]
+        if delta < 2:
+            anomalies.append({"id": "water_delta_t_low", "severity": "info", "title": "Low heating-water ΔT", "detail": f"Current flow/return difference is {delta:.1f} °C. Compare it with normal operation and pump flow; this is an observation, not a fault diagnosis."})
+        elif delta > 15:
+            anomalies.append({"id": "water_delta_t_high", "severity": "warning", "title": "High heating-water ΔT", "detail": f"Current flow/return difference is {delta:.1f} °C. Compare it with your usual operating range and verify sensor placement."})
+    from statistics import median
+    dated = sorted(daily.items())
+    if len(dated) >= 11:
+        current_date, current_day = dated[-1]
+        for metric, label in (("gas_kwh", "Gas"), ("electricity_kwh", "Heating electricity")):
+            baseline = [float(day.get(metric, 0) or 0) for _, day in dated[-31:-1]]
+            if len(baseline) < 10:
+                continue
+            center = median(baseline)
+            mad = median([abs(value-center) for value in baseline])
+            value = float(current_day.get(metric, 0) or 0)
+            threshold = max(center * 1.5, center + 3 * 1.4826 * mad)
+            if center > 0 and value > threshold:
+                anomalies.append({"id": f"robust_{metric}_outlier", "severity": "warning", "title": f"{label} is unusually high", "detail": f"{current_date}: {value:.2f} kWh versus a historical median of {center:.2f} kWh across {len(baseline)} days. Weather, occupancy and partial-day readings can affect this comparison."})
+
     seasons = {}
     for month, values in sorted(monthly.items()):
         m = int(month[5:7])

@@ -60,6 +60,11 @@ class HeatingIntelligenceCard extends HTMLElement {
         <div class="metric"><span>Shortest / longest cycle</span><strong>${selected.shortest_cycle_seconds_week == null ? "—" : this._duration(selected.shortest_cycle_seconds_week)} / ${selected.longest_cycle_seconds_week == null ? "—" : this._duration(selected.longest_cycle_seconds_week)}</strong></div>
         <div class="metric"><span>Current cycle</span><strong>${selected.demand ? this._duration(selected.active_cycle_seconds) : "—"}</strong></div>
         <div class="metric"><span>Total cycles observed</span><strong>${selected.total_cycles ?? 0}</strong></div>
+        <div class="metric"><span>Temperature change · 1h / 6h / 24h</span><strong>${this._fmt(selected.temperature_change_1h)} / ${this._fmt(selected.temperature_change_6h)} / ${this._fmt(selected.temperature_change_24h)}</strong></div>
+        <div class="metric"><span>Heating response · +0.5°C</span><strong>${selected.heating_response_minutes == null ? "—" : this._fmt(selected.heating_response_minutes, "min")}</strong></div>
+        <div class="metric"><span>Cooling rate · windows closed</span><strong>${this._fmt(selected.cooling_rate_c_per_hour, "°C/h", 2)}</strong></div>
+        <div class="metric"><span>Heat retention · per 1°C</span><strong>${this._fmt(selected.heat_retention_hours_per_degree, "h/°C", 1)}</strong></div>
+        <div class="metric"><span>Window open during demand today</span><strong>${this._fmt((selected.window_open_demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>
       </div><div class="subtle">Demand source: ${this._esc(selected.demand_state ?? "Unavailable")}. Any available state counts as demand; unavailable means no demand.</div>` :
       `<p class="subtle">No rooms configured yet.</p>`;
     this.shadowRoot.innerHTML = `
@@ -94,6 +99,18 @@ class HeatingIntelligenceCard extends HTMLElement {
             <div class="metric"><span>Pump cycles today</span><strong>${attrs.daily_heating?.pump_cycles ?? 0}</strong></div>
           </div>
           <div class="subtle">Daily totals reset at local midnight. Runtime is accumulated from valid running-state observations.</div>
+        </div>
+        <div class="section"><div class="section-title">Whole-house efficiency</div>
+          <div class="overview">
+            <div class="metric"><span>Outdoor temperature</span><strong>${this._fmt(attrs.efficiency?.outdoor_temperature)}</strong></div>
+            <div class="metric"><span>Indoor–outdoor ΔT</span><strong>${this._fmt(attrs.efficiency?.delta_t_average)}</strong></div>
+            <div class="metric"><span>Solar radiation average</span><strong>${this._fmt(attrs.efficiency?.solar_radiation_average, "W/m²", 0)}</strong></div>
+            <div class="metric"><span>Heating degree days</span><strong>${this._fmt(attrs.efficiency?.heating_degree_days, "°C·d", 2)}</strong></div>
+            <div class="metric"><span>Gas energy today</span><strong>${this._fmt(attrs.efficiency?.gas_energy_today_kwh, "kWh", 2)}</strong></div>
+            <div class="metric"><span>Electricity today</span><strong>${this._fmt(attrs.efficiency?.electricity_energy_today_kwh, "kWh", 2)}</strong></div>
+            <div class="metric"><span>Gas energy per degree day</span><strong>${this._fmt(attrs.efficiency?.gas_kwh_per_degree_day, "kWh/°C·d", 2)}</strong></div>
+          </div>
+          <div class="subtle">Gas correlation · HDD: ${attrs.efficiency?.gas_hdd_correlation ?? "—"} · ΔT: ${attrs.efficiency?.gas_delta_t_correlation ?? "—"} · solar: ${attrs.efficiency?.gas_solar_correlation ?? "—"} · days sampled: ${attrs.efficiency?.days_with_data ?? 0}</div>
         </div>
         <div class="section"><div class="section-title">Pump synchronisation</div>
           <div class="metric"><span>Latest result</span><strong class="${syncClass}">${this._esc(syncLabel)}</strong>

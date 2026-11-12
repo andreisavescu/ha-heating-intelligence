@@ -53,7 +53,16 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         """Return a snapshot and update pump cycle accounting on state transitions."""
         now = dt_util.utcnow()
         local_date = dt_util.now().date().isoformat()
-        previous_update = dt_util.parse_datetime(self._history.get("last_update"))
+        last_update = self._history.get("last_update")
+        try:
+            previous_update = (
+                dt_util.parse_datetime(last_update)
+                if isinstance(last_update, str) and last_update
+                else None
+            )
+        except (TypeError, ValueError):
+            _LOGGER.warning("Ignoring invalid stored last_update timestamp: %r", last_update)
+            previous_update = None
         elapsed = (now - previous_update).total_seconds() if previous_update else 0.0
         if elapsed < 0 or elapsed > 90:
             elapsed = 0.0

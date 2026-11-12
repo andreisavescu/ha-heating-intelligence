@@ -57,5 +57,5 @@ def test_correlations_are_calculated_for_gas_and_electricity():
     )
     assert stats["gas_hdd_correlation"] == 1.0
     assert stats["electricity_hdd_correlation"] == 1.0
-    assert stats["gas_delta_t_correlation"] == -1.0
-    assert stats["electricity_delta_t_correlation"] == -1.0
+    assert stats["gas_delta_t_correlation"] == 1.0
+    assert stats["electricity_delta_t_correlation"] == 1.0

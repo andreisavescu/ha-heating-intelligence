@@ -6,7 +6,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.13.1)
+## Current scope (0.13.2)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.
 - Change an existing room's floor assignment; the currently saved floor is preselected.
@@ -79,6 +79,13 @@ All diagnostics are read-only and heuristic. Missing or insufficient data is sho
 - Report actual gas use, model-expected gas use and a weather-normalised comparison index at median observed weather conditions.
 - Require at least 21 complete days with gas, outdoor temperature, ΔT and solar data before presenting the model.
 - Keep all calculations descriptive and read-only; no physical heat-loss coefficient or boiler efficiency is inferred.
+
+## 0.13.2 — completed-day thermal performance
+
+- Finalise daily W/m²K and W/K once per local calendar day using the previous completed day, rather than a fluctuating live estimate.
+- Calculate 7-day and 30-day W/m²K from combined delivered-heat and degree-hour totals over completed days only.
+- Split degree-hour integration at local midnight so the final sample interval is attributed to the correct day.
+- Keep estimated delivered heat today as a live diagnostic; thermal performance values use completed-day data.
 
 ## 0.13.1 — configuration-flow fix
 

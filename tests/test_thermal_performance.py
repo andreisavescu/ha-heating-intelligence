@@ -65,14 +65,20 @@ def test_delta_t_is_integrated_as_degree_hours():
 
 def test_ac_heat_is_added_to_boiler_delivered_heat():
     now = datetime(2026, 11, 13, 12, tzinfo=timezone.utc)
-    history = {"efficiency_daily": {now.date().isoformat(): {
-        "gas_kwh": 10.0, "ac_electricity_kwh": 4.0,
-        "delta_t_degree_hours": 24.0,
-    }}}
+    history = {"efficiency_daily": {
+        (now.date() - timedelta(days=1)).isoformat(): {
+            "gas_kwh": 10.0, "ac_electricity_kwh": 4.0,
+            "delta_t_degree_hours": 24.0,
+        },
+        now.date().isoformat(): {
+            "gas_kwh": 10.0, "ac_electricity_kwh": 4.0,
+            "delta_t_degree_hours": 24.0,
+        },
+    }}
     result = THERMAL.thermal_performance_statistics(history, now, 0.90, 361.26, 3.0)
     assert result["estimated_ac_delivered_heat_today_kwh"] == 12.0
     assert result["estimated_delivered_heat_today_kwh"] == 21.0
-    assert result["heat_loss_coefficient_w_k"] is None
+    assert result["heat_loss_coefficient_w_k"] == 875.0
 
 
 def test_ac_energy_meter_source_change_establishes_baseline():

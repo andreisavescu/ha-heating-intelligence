@@ -282,7 +282,7 @@ EFFICIENCY_METRICS = {
     "gas_kwh_per_degree_day": ("Gas Energy per Degree Day", "kWh/°C·d", "mdi:chart-line"),
     "estimated_delivered_heat_today_kwh": ("Estimated Delivered Heat Today", "kWh", "mdi:heat-wave"),
     "heat_loss_coefficient_w_k": ("Daily Heat Loss Coefficient", "W/K", "mdi:home-thermometer"),
-    "heat_loss_u_value_daily": ("Daily Heat Loss per Envelope Area", "W/m²K", "mdi:home-thermometer"),
+    "heat_loss_u_value_daily": ("Previous Day Heat Loss per Envelope Area", "W/m²K", "mdi:home-thermometer"),
     "heat_loss_u_value_7d": ("7-day Heat Loss per Envelope Area", "W/m²K", "mdi:chart-line"),
     "heat_loss_u_value_30d": ("30-day Heat Loss per Envelope Area", "W/m²K", "mdi:chart-line"),
 }

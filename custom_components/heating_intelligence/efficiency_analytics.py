@@ -109,7 +109,27 @@ def update_efficiency_history(
            for key in ("outdoor_temperature", "solar_radiation", "delta_t", "indoor_temperature")}
     previous_delta_t = _number(history.get("last_delta_t"))
     if previous_delta_t is not None and env["delta_t"] is not None and 0 < elapsed_seconds <= 90 and not continuity_gap:
-        day["delta_t_degree_hours"] += max(0.0, previous_delta_t) * elapsed_seconds / 3600
+        # Split the final sampling interval at local midnight. Otherwise the
+        # first refresh after midnight would assign the entire interval to
+        # the new day instead of the day in which most of it occurred.
+        interval_start = now - timedelta(seconds=elapsed_seconds)
+        midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=now.tzinfo)
+        seconds_before_midnight = (
+            max(0.0, (midnight - interval_start).total_seconds())
+            if interval_start.date() < now.date() else 0.0
+        )
+        if seconds_before_midnight:
+            previous_key = interval_start.date().isoformat()
+            previous_day = days.setdefault(previous_key, {})
+            previous_day.setdefault("delta_t_degree_hours", 0.0)
+            previous_day["delta_t_degree_hours"] += (
+                max(0.0, previous_delta_t) * min(elapsed_seconds, seconds_before_midnight) / 3600
+            )
+            day["delta_t_degree_hours"] += (
+                max(0.0, previous_delta_t) * max(0.0, elapsed_seconds - seconds_before_midnight) / 3600
+            )
+        else:
+            day["delta_t_degree_hours"] += max(0.0, previous_delta_t) * elapsed_seconds / 3600
     if env["delta_t"] is not None:
         history["last_delta_t"] = env["delta_t"]
     for key, field in (("outdoor_temperature", "outdoor"), ("solar_radiation", "solar"),

@@ -37,16 +37,31 @@ def _learn_mode(
     eligible = [point for point in points if point[2] == demand and not point[3] and not point[4] and point[5]]
     excluded_external = sum(1 for point in points if point[4])
     rates = []
-    for first, second in zip(points, points[1:]):
-        minutes = (second[0] - first[0]).total_seconds() / 60
-        if (
-            first[2] == demand and second[2] == demand
-            and not first[3] and not second[3]
-            and not first[4] and not second[4]
-            and first[5] and second[5]
-            and MIN_INTERVAL_MINUTES <= minutes <= MAX_INTERVAL_MINUTES
-        ):
-            rates.append((second[1] - first[1]) / (minutes / 60))
+    index = 0
+    while index < len(points) - 1:
+        first = points[index]
+        first_valid = first[2] == demand and not first[3] and not first[4] and first[5]
+        if not first_valid:
+            index += 1
+            continue
+        paired = False
+        cursor = index + 1
+        while cursor < len(points):
+            second = points[cursor]
+            second_valid = second[2] == demand and not second[3] and not second[4] and second[5]
+            if not second_valid:
+                break
+            minutes = (second[0] - first[0]).total_seconds() / 60
+            if minutes > MAX_INTERVAL_MINUTES:
+                break
+            if minutes >= MIN_INTERVAL_MINUTES:
+                rates.append((second[1] - first[1]) / (minutes / 60))
+                index = cursor
+                paired = True
+                break
+            cursor += 1
+        if not paired:
+            index += 1
     span = (eligible[-1][0] - eligible[0][0]).total_seconds() / 3600 if len(eligible) > 1 else 0
     if len(rates) < MIN_INTERVALS or span < MIN_SPAN_HOURS:
         return {
@@ -58,7 +73,7 @@ def _learn_mode(
             "span_hours": round(span, 1),
             "rate_c_per_hour": None,
             "noise_c_per_hour": None,
-            "note": f"Needs at least {MIN_INTERVALS} valid consecutive intervals spanning {MIN_SPAN_HOURS:g} hours, with a configured and available window contact confirming closed windows.",
+            "note": f"Needs at least {MIN_INTERVALS} valid non-overlapping intervals spanning {MIN_SPAN_HOURS:g} hours, with a configured and available window contact confirming closed windows.",
         }
     rate = median(rates)
     noise = median([abs(value - rate) for value in rates])

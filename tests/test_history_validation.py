@@ -486,6 +486,11 @@ def test_multizone_identification_withholds_collinear_thermal_drivers():
     assert living["normalized_rates_per_hour"] is None
     assert living["max_abs_predictor_correlation"] >= 0.985
     assert living["predictor_correlations"]
+    assert living["coefficient_uncertainty_method"] == "deterministic_moving_block_bootstrap_90_percentile_range"
+    uncertainty = living["coefficient_uncertainty"]["envelope"]
+    assert uncertainty["successful_replicates"] >= 40
+    assert uncertainty["lower_90_percentile_1_per_hour"] is not None
+    assert uncertainty["upper_90_percentile_1_per_hour"] >= uncertainty["lower_90_percentile_1_per_hour"]
     assert living["predictor_excitation"]["bedroom"]["positive_gradient_intervals"] > 0
     assert living["predictor_excitation"]["bedroom"]["negative_gradient_intervals"] > 0
     assert living["room_link_excitation_status"] in (

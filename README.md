@@ -1,3 +1,12 @@
+## 0.15.4 — Recorder-backed validated calibration learning
+
+- Persist compact, validated room-response calibration snapshots derived from Home Assistant Recorder history across integration restarts.
+- Promote room-response fits only when they pass chronological holdout validation, coefficient-stability checks, and predictor identifiability requirements.
+- Preserve the previously accepted calibration when new Recorder data is insufficient or a candidate fit fails validation.
+- Expose the accepted calibration version, promotion timestamp, accepted rooms and rejection diagnostics in the thermal-model diagnostics.
+- Keep raw Recorder history out of persistent integration storage; only the compact accepted calibration state is retained.
+- Keep normalized room-response rates in 1/hour clearly distinguished from absolute physical conductances, thermal capacities, delivered heat and room heat shares. The multi-zone physical simulator remains withheld until those physical quantities are independently identified.
+
 ## 0.15.0 — multi-zone thermal model foundation and Recorder history coverage
 
 - Add a Home Assistant-independent lumped RC network solver with bounded integration steps, explicit energy accounting for gains and fixed boundaries, and a maximum-substep safety guard.

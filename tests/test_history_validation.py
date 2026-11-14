@@ -1076,3 +1076,41 @@ def test_partial_correlation_block_sensitivity_reports_resampling_range():
     assert result["successful_replicates"] >= 20
     assert result["lower_5_percentile_partial_r"] <= result["median_partial_r"]
     assert result["median_partial_r"] <= result["upper_95_percentile_partial_r"]
+
+
+def test_multizone_holdout_diagnostics_report_bias_autocorrelation_and_trend():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    holdout = [
+        (start + timedelta(minutes=30 * index), [0.0], value)
+        for index, value in enumerate(
+            [0.01, 0.02, 0.03, 0.05, 0.07, 0.10, 0.13, 0.17,
+             0.20, 0.24, 0.28, 0.33, 0.38, 0.44, 0.50, 0.57,
+             0.64, 0.72, 0.80, 0.89, 0.98, 1.08, 1.18, 1.29]
+        )
+    ]
+    result = MODULE._multizone_holdout_diagnostics(
+        holdout, [0.0], 0.0, 30,
+    )
+    assert result["status"] == "holdout_residuals_available"
+    assert result["interval_count"] == 24
+    assert result["mean_bias_c"] < 0
+    assert result["lag_one_residual_correlation"] > 0.9
+    assert result["residual_linear_trend_c_per_day"] < 0
+    assert result["cadence_deviation_intervals"] == 0
+    sensitivity = result["block_error_sensitivity"]
+    assert sensitivity["successful_replicates"] == 80
+    assert sensitivity["mae_5th_50th_95th_c"][0] <= sensitivity["mae_5th_50th_95th_c"][2]
+    assert "not a confidence interval" in sensitivity["interpretation"]
+
+
+def test_multizone_holdout_diagnostics_withhold_short_resampling_history():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    holdout = [
+        (start + timedelta(minutes=30 * index), [1.0], 0.1 * index)
+        for index in range(8)
+    ]
+    result = MODULE._multizone_holdout_diagnostics(
+        holdout, [0.0], 0.0, 30,
+    )
+    assert result["status"] == "holdout_residuals_available"
+    assert result["block_error_sensitivity"] is None

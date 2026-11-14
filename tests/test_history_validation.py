@@ -2207,3 +2207,46 @@ def test_multizone_identification_converts_ac_power_units_before_heating_filter(
     assert idle["rooms"]["living"]["excluded_intervals"]["ac_heating_active_or_unavailable"] == 0
     assert unsupported["rooms"]["living"]["excluded_intervals"]["unsupported_ac_power_unit"] > 0
 
+def test_control_event_inventory_measures_explicit_dwell_and_breaks_unknown_gaps():
+    start = datetime(2026, 11, 14, tzinfo=timezone.utc)
+    history = {
+        "switch.zone": [
+            {"state": "off", "last_changed": start.isoformat()},
+            {"state": "on", "last_changed": (start + timedelta(seconds=10)).isoformat()},
+            {"state": "off", "last_changed": (start + timedelta(seconds=30)).isoformat()},
+            {"state": "unavailable", "last_changed": (start + timedelta(seconds=40)).isoformat()},
+            {"state": "on", "last_changed": (start + timedelta(seconds=50)).isoformat()},
+            {"state": "unavailable", "last_changed": (start + timedelta(seconds=65)).isoformat()},
+            {"state": "off", "last_changed": (start + timedelta(seconds=80)).isoformat()},
+        ]
+    }
+    result = MODULE.build_control_event_inventory(history, {"switch.zone": ["room:office:demand"]})
+    zone = result["entities"]["switch.zone"]
+    assert zone["roles"] == ["room:office:demand"]
+    assert zone["explicit_transitions"] == 2
+    assert zone["complete_on_intervals"] == 1
+    assert zone["complete_off_intervals"] == 1
+    assert zone["complete_on_off_cycles"] == 1
+    assert zone["interrupted_on_intervals"] == 2
+    assert zone["on_duration_seconds"]["median"] == 20.0
+    assert zone["off_duration_seconds"]["median"] == 10.0
+    assert zone["unknown_or_unavailable_samples"] == 2
+    assert result["raw_history_retained"] is False
+
+
+def test_control_event_inventory_does_not_infer_cycles_from_on_unavailable_only():
+    start = datetime(2026, 11, 14, tzinfo=timezone.utc)
+    history = {
+        "switch.zone": [
+            {"state": "on", "last_changed": start.isoformat()},
+            {"state": "unavailable", "last_changed": (start + timedelta(seconds=20)).isoformat()},
+            {"state": "on", "last_changed": (start + timedelta(seconds=40)).isoformat()},
+            {"state": "unavailable", "last_changed": (start + timedelta(seconds=60)).isoformat()},
+        ]
+    }
+    result = MODULE.build_control_event_inventory(history)
+    zone = result["entities"]["switch.zone"]
+    assert zone["status"] == "partial_unknown_gaps"
+    assert zone["complete_on_intervals"] == 0
+    assert zone["complete_on_off_cycles"] == 0
+    assert zone["on_duration_seconds"]["median"] is None

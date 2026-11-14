@@ -121,6 +121,16 @@ def build_house_assessment(
     ]
     configured_area = round(sum(room_areas), 2)
     room_count = len(rooms)
+    ach_values = [
+        ach for room in rooms.values()
+        if (ach := _number(room.get("air_changes_per_hour"))) is not None and ach > 0
+    ]
+    average_ach = round(sum(ach_values) / len(ach_values), 3) if ach_values else None
+    if ach_values:
+        observations.append(
+            f"User-entered room air-change measurements are available for {len(ach_values)} rooms; "
+            f"their unweighted average is {average_ach:g} air changes per hour."
+        )
 
     performance = {key: efficiency.get(key) for key in _PERFORMANCE_KEYS if efficiency.get(key) is not None}
     if efficiency.get("heat_loss_u_value_30d") is not None:
@@ -169,6 +179,10 @@ def build_house_assessment(
             "rooms_with_area": len(room_areas),
             "room_area_coverage_percent": round(100 * len(room_areas) / room_count) if room_count else None,
             "configured_room_area_m2": configured_area,
+            "rooms_with_measured_ach": len(ach_values),
+            "average_measured_ach": average_ach,
+            "minimum_measured_ach": min(ach_values) if ach_values else None,
+            "maximum_measured_ach": max(ach_values) if ach_values else None,
         },
         "measured_performance": performance,
         "measurement_assumptions": {

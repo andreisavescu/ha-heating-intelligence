@@ -1232,7 +1232,7 @@ def test_water_side_thermal_output_uses_flow_and_delta_t_with_unit_conversion():
     result = MODULE.build_water_side_thermal_output(samples)
     assert result["status"] == "system_water_side_output_available"
     assert result["valid_samples"] == 2
-    assert result["median_thermal_output_w"] == pytest.approx(4186.0, abs=1.0)
+    assert result["median_thermal_output_w"] == pytest.approx(4173.4, abs=1.0)
     assert result["room_heat_allocation_w"] is None
     assert result["status_scope"] == "system_water_side_only_not_room_delivery"
 

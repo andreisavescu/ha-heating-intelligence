@@ -3952,12 +3952,27 @@ def build_multizone_physical_calibration_readiness(
         key for key in ("room_heat_output_w", "zone_heat_output_w")
         if has_verified_room_heat_output(key)
     ]
+    supported_flow_units = {
+        "l/min", "lpm", "l/minute", "l/s", "lps", "l/sec",
+        "m3/h", "m3/hr", "m3/hour", "m3h-1",
+        "kg/h", "kg/hr", "kg/hour", "kg/s", "kg/sec",
+    }
+    def has_verified_flow(channel_key):
+        for sample in samples:
+            channels = sample.get("channels") or {}
+            flow = _finite_number_or_none(channels.get(channel_key))
+            age = _finite_number_or_none(channels.get(channel_key + "_age_minutes"))
+            unit = str(channels.get(channel_key + "_unit") or "").strip().lower()
+            normalized = unit.replace("³", "3").replace("^", "").replace(" ", "")
+            if (flow is not None and flow > 0
+                    and (age is None or age <= 45.0)
+                    and normalized in supported_flow_units):
+                return True
+        return False
+
     water_flow_channels = [
         key for key in ("water_flow_rate", "water_flow_l_min", "water_flow_m3_h")
-        if any(
-            _finite_number_or_none((sample.get("channels") or {}).get(key)) is not None
-            for sample in samples
-        )
+        if has_verified_flow(key)
     ]
     measured_floor_output_ids = [
         floor_id for floor_id, item in (floor_thermal_output.get("floors") or {}).items()

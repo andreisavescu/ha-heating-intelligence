@@ -79,6 +79,7 @@ def build_validated_learning_state(previous: dict[str, Any] | None, identificati
         state["last_promotion"] = "unchanged_validated_fit"
     else:
         state["last_promotion"] = "no_candidate_passed_validation"
+    state["accepted"] = accepted
     state["status"] = "validated_normalized_fit_available" if accepted else "collecting_validated_history"
     state["last_checked_at"] = checked_at
     state["last_candidate_status"] = identification.get("status") if isinstance(identification, dict) else "not_available"

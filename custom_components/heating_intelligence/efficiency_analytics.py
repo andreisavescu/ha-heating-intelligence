@@ -49,7 +49,7 @@ def update_efficiency_history(
     date_key = now.date().isoformat()
     days = history.setdefault("efficiency_daily", {})
     day = days.setdefault(date_key, {
-        "gas_kwh": 0.0, "electricity_kwh": 0.0,
+        "gas_kwh": 0.0, "gas_meter_volume_m3": 0.0, "gas_meter_conversion_basis": None, "electricity_kwh": 0.0,
         "electricity_ground_floor_kwh": 0.0,
         "electricity_upstairs_kwh": 0.0,
         "electricity_boiler_kwh": 0.0, "ac_electricity_kwh": 0.0,
@@ -97,8 +97,21 @@ def update_efficiency_history(
         old = _number(old_record.get("value"))
         unit = reading.get("unit")
         source_changed = bool(reading.get("entity_id") and reading.get("entity_id") != old_record.get("entity_id"))
+        if gas:
+            normalized_gas_unit = (unit or "").lower().replace(" ", "")
+            basis = "volume_m3" if normalized_gas_unit in ("m³", "m3", "㎥") else (
+                "energy_kwh" if normalized_gas_unit in ("kwh", "wh", "mwh") else "unsupported"
+            )
+            old_basis = day.get("gas_meter_conversion_basis")
+            if old_basis is None:
+                day["gas_meter_conversion_basis"] = basis
+            elif old_basis != basis:
+                day["gas_meter_conversion_basis"] = "mixed_or_unknown"
         if old is not None and not source_changed and value >= old:
-            day[daily_field] += _energy_kwh(value - old, unit, gas, gas_factor)
+            delta = value - old
+            day[daily_field] += _energy_kwh(delta, unit, gas, gas_factor)
+            if gas and basis == "volume_m3":
+                day["gas_meter_volume_m3"] = day.get("gas_meter_volume_m3", 0.0) + delta
         if old is None or value != old or unit != previous.get(key, {}).get("unit"):
             meter_samples.append({"time": now.astimezone(timezone.utc).isoformat(), "meter": key, "value": value, "unit": unit})
         previous[key] = {"value": value, "unit": unit, "entity_id": reading.get("entity_id")}

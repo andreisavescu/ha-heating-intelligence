@@ -689,7 +689,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         result["efficiency"].update(thermal_performance_statistics(self._history, now_local,
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
             float(self.entry.options.get(CONF_ENVELOPE_AREA, 361.26)),
-            float(self.entry.options.get(CONF_AC_HEATING_COP, 3.0))))
+            float(self.entry.options.get(CONF_AC_HEATING_COP, 3.0)),
+            float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55))))
         weather_model = weather_normalised_efficiency(
             self._history.get("efficiency_daily", {}),
             local_date,

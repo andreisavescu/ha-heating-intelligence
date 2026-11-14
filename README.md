@@ -257,3 +257,6 @@ The Recorder summary also reports an aggregate effective whole-building heat cap
 
 
 The UFH observability screen now uses aligned Recorder history for each manifold to compare adjacent-room temperature rates during pump-on and pump-off intervals, and reports supply/return delta-T when both readings are fresh. This is only an excitation diagnostic: pump electrical power is not delivered heat, water delta-T without flow is not thermal output, and no slab capacity is inferred. The floor nodes expose this evidence while keeping slab temperature, capacity and heat output withheld.
+
+
+Recorder calibration now preserves each energy meter's `unit_of_measurement` and derives interval energy only from fresh, monotonic cumulative meters with explicit energy units. Gas volume units (for example m³) are not converted without a configured calorific value and meter basis. For verified gas kWh and AC electricity kWh it reports delivered-heat sensitivity scenarios (boiler efficiency 0.80/0.90/0.98 and AC COP 2/3/5); these are assumptions, not measured efficiencies. The results remain whole-system input proxies and are not allocated to individual rooms or UFH slabs.

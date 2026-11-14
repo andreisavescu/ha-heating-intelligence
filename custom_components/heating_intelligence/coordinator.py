@@ -59,6 +59,7 @@ from .const import (
     CONF_TEMPERATURE_ENTITY,
     CONF_WATER_TEMPERATURE_ENTITY,
     CONF_RETURN_WATER_TEMPERATURE_ENTITY,
+    CONF_WATER_FLOW_RATE_ENTITY,
     CONF_WINDOW_ENTITY,
     CONF_HUMIDITY_ENTITY,
     CONF_CO2_ENTITY,
@@ -125,7 +126,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             CONF_OUTDOOR_TEMPERATURE_ENTITY, CONF_SOLAR_RADIATION_ENTITY,
             CONF_ATTIC_TEMPERATURE_ENTITY, CONF_ATTIC_HUMIDITY_ENTITY,
             CONF_GAS_CONSUMPTION_ENTITY, CONF_WATER_TEMPERATURE_ENTITY,
-            CONF_RETURN_WATER_TEMPERATURE_ENTITY, CONF_AC_POWER_ENTITY,
+            CONF_RETURN_WATER_TEMPERATURE_ENTITY, CONF_WATER_FLOW_RATE_ENTITY, CONF_AC_POWER_ENTITY,
             CONF_AC_ENERGY_ENTITY, CONF_BOILER_BURNER_ENTITY,
             CONF_BOILER_MODULATION_ENTITY, CONF_ELECTRICITY_BOILER_POWER_ENTITY,
             CONF_ELECTRICITY_BOILER_ENERGY_ENTITY, CONF_ELECTRICITY_BOILER_ENTITY,
@@ -183,6 +184,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "ac_energy": self.entry.options.get(CONF_AC_ENERGY_ENTITY),
                 "water_supply_temperature": self.entry.options.get(CONF_WATER_TEMPERATURE_ENTITY),
                 "water_return_temperature": self.entry.options.get(CONF_RETURN_WATER_TEMPERATURE_ENTITY),
+                "water_flow_rate": self.entry.options.get(CONF_WATER_FLOW_RATE_ENTITY),
                 "boiler_burner": self.entry.options.get(CONF_BOILER_BURNER_ENTITY),
                 "boiler_modulation": self.entry.options.get(CONF_BOILER_MODULATION_ENTITY),
             }
@@ -203,6 +205,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 self._calibration_dataset_samples, configured_rooms, interval_minutes=30, max_age_minutes=45,
             )
             summary["thermal_input_energy_observability"] = build_thermal_input_energy_observability(
+                self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
+            )
+            summary["water_side_thermal_output"] = build_water_side_thermal_output(
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
             )
             summary["ufh_slab_observability"] = build_ufh_slab_observability(

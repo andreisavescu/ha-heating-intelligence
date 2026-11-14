@@ -161,14 +161,6 @@ class HeatingIntelligenceCard extends HTMLElement {
       <div class="pump">
         <div class="pump-head"><strong>${this._esc(p.name)}</strong><span class="${p.running ? "active" : ""}">${p.running ? "Running" : "Stopped"}</span></div>
         <div class="pump-values">
-          <div><span>Detected stage</span><strong>${this._esc(({awaiting_idle_baseline:"Learning idle baseline",idle:"Idle",valve_opening:"Valve opening",pump_running:"Pump running"})[p.stage] || p.stage || "No data")}</strong></div>
-          <div><span>Valve opened</span><strong>${p.valve_opened_at ? this._esc(new Date(p.valve_opened_at).toLocaleTimeString()) : "—"}</strong></div>
-          <div><span>Pump started</span><strong>${p.pump_started_at ? this._esc(new Date(p.pump_started_at).toLocaleTimeString()) : "—"}</strong></div>
-          <div><span>Valve → pump delay</span><strong>${p.valve_opened_at && p.pump_started_at ? this._duration((new Date(p.pump_started_at)-new Date(p.valve_opened_at))/1000) : "—"}</strong></div>
-          <div><span>Idle baseline</span><strong>${this._fmt(p.idle_baseline_w, "W", 1)}</strong></div>
-          <div><span>Valve signature</span><strong>${this._fmt(p.valve_level_w, "W", 1)}</strong></div>
-        </div>
-        <div class="pump-values">
           <div><span>Power</span><strong>${this._fmt(p.power, "W")}</strong></div>
           <div><span>Energy total</span><strong>${this._fmt(p.energy, "kWh", 2)}</strong></div>
           <div><span>Cycles</span><strong>${p.cycle_count ?? 0}</strong></div>
@@ -180,6 +172,18 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div><span>Cycles today</span><strong>${p.daily_cycle_count ?? 0}</strong></div>
         </div>
       </div>`).join("");
+    const pumpStageCards = pumps.map((p) => `
+      <div class="pump">
+        <div class="pump-head"><strong>${this._esc(p.name)}</strong><span class="${p.stage === "pump_running" ? "active" : p.stage === "valve_opening" ? "warning" : ""}">${this._esc(({awaiting_idle_baseline:"Learning idle baseline",idle:"Idle",valve_opening:"Valve opening",pump_running:"Pump running"})[p.stage] || p.stage || "No data")}</span></div>
+        <div class="pump-values">
+          <div><span>Valve opened</span><strong>${p.valve_opened_at ? this._esc(new Date(p.valve_opened_at).toLocaleTimeString()) : "—"}</strong></div>
+          <div><span>Pump started</span><strong>${p.pump_started_at ? this._esc(new Date(p.pump_started_at).toLocaleTimeString()) : "—"}</strong></div>
+          <div><span>Valve → pump delay</span><strong>${p.valve_opened_at && p.pump_started_at ? this._duration((new Date(p.pump_started_at)-new Date(p.valve_opened_at))/1000) : "—"}</strong></div>
+          <div><span>Idle baseline</span><strong>${this._fmt(p.idle_baseline_w, "W", 1)}</strong></div>
+          <div><span>Valve signature</span><strong>${this._fmt(p.valve_level_w, "W", 1)}</strong></div>
+        </div>
+      </div>`).join("");
+
     const sync = attrs.pump_synchronization || {};
     const syncLabel = ({ synchronised:"Synchronised", out_of_sync:"Out of sync", single_pump_cycle:"Single-pump cycle (OK)", unknown:"No comparison yet" })[sync.status] || sync.status || "—";
     const syncClass = sync.status === "out_of_sync" ? "warning" : sync.status === "synchronised" || sync.status === "single_pump_cycle" ? "active" : "";
@@ -403,6 +407,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
         </div>
         <div class="section"><div class="section-title">Manifold pumps</div><div class="pumps">${pumpCards || '<p class="subtle">Configure pump sensors in integration settings.</p>'}</div></div>
+        <div class="section"><div class="section-title">Manifold pump stages</div><div class="subtle">Valve and pump stages inferred from each manifold’s electrical power signature; this is not a direct water-flow measurement.</div><div class="pumps">${pumpStageCards || '<p class="subtle">Configure manifold pump power sensors to enable stage detection.</p>'}</div></div>
         <div class="section"><div class="section-title">Demand ↔ pump correlation</div>
           <div class="pumps">
             ${["ground_floor","upstairs"].map((id) => {

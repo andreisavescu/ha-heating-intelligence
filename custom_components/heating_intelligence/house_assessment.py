@@ -12,7 +12,7 @@ _SECTIONS = {
         "window_area_east_m2", "window_area_west_m2",
     ),
     "heating": (
-        "boiler_model", "heating_distribution", "boiler_dhw", "buffer_tank",
+        "boiler_model", "heating_distribution", "thermal_mass", "boiler_dhw", "buffer_tank",
         "ufh_screed_cm", "ac_heating", "ac_units",
     ),
     "ventilation_occupancy": (
@@ -148,6 +148,7 @@ def build_house_assessment(
             "shading": profile.get("shading"),
             "ventilation_type": profile.get("ventilation_type"),
             "heating_distribution": profile.get("heating_distribution"),
+            "thermal_mass": profile.get("thermal_mass"),
             "ufh_screed_cm": _number(profile.get("ufh_screed_cm")),
             "occupants": _number(profile.get("occupants")),
             "internal_gains": profile.get("internal_gains"),

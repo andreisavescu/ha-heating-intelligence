@@ -9,8 +9,8 @@ A read-only Home Assistant custom integration for analysing underfloor-heating b
 ## Current scope (0.14.0 development)
 
 - Editable multi-step house profile for envelope construction, insulation, glazing/orientation/shading, heating plant, thermal mass, ventilation, occupancy and internal gains. Profile completeness is reported separately from measured thermal performance; no U-values or EPC rating are inferred from insulation thickness alone.
-- Optional per-room humidity and CO2 sensor configuration, native live Home Assistant sensors, room-level indicative bands, and whole-house coverage, average, maximum and exception summaries.
-- Rolling self-learning room thermal-response model. It learns separate heating and coasting temperature-change rates from persisted closed-window observations over a 30-day window, reports sample sufficiency and confidence, and produces 1/3/6/12-hour projections when enough data exists.
+- Optional per-room humidity and CO2 sensor configuration, native live Home Assistant sensors, combined room-level interpretation and whole-house coverage, averages, highest-CO2 room and humidity exception summaries.
+- Rolling self-learning room thermal-response model. It learns separate heating and coasting temperature-change rates only from consecutive, closed-window observations over a rolling 30-day window, reports sample sufficiency and confidence, and produces 1/3/6/12-hour projections when enough data exists. The overview combines these room models with the existing measured whole-house heat-loss estimates.
 - The overview card exposes the house profile, measured thermal-performance status, whole-house air analysis and learned room model. All outputs remain read-only and descriptive; occupancy, solar gains, thermal storage and operating changes can affect observed rates.
 
 

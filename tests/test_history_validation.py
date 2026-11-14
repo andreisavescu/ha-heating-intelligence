@@ -1666,3 +1666,118 @@ def test_ufh_observability_handles_floor_with_pump_but_no_configured_rooms():
     assert upstairs["room_response"] == {}
     assert upstairs["slab_capacity_wh_per_k"] is None
 
+def test_solar_room_response_recovers_delayed_association_on_holdout():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    count = 100
+    solar = [float((index * 73) % 101) * 8.0 for index in range(count)]
+    outdoor = [5.0 + ((index * 17) % 31) * 0.1 for index in range(count)]
+    demand = [bool((index * 7) % 13 < 6) for index in range(count)]
+    slopes = []
+    for index in range(count - 1):
+        delayed_solar = solar[index - 2] if index >= 2 else 0.0
+        slopes.append(
+            0.0015 * delayed_solar
+            + 0.03 * outdoor[index + 1]
+            + 0.05 * float(demand[index + 1])
+            + 0.008 * math.sin(index * 1.37)
+        )
+    temperatures = [20.0]
+    for slope in slopes:
+        temperatures.append(temperatures[-1] + slope * 0.5)
+    samples = []
+    for index in range(count):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "solar_radiation": solar[index],
+                "solar_radiation_unit": "W/m²",
+                "solar_radiation_age_minutes": 0,
+                "outdoor_temperature": outdoor[index],
+                "outdoor_temperature_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {
+                    "temperature": temperatures[index],
+                    "temperature_age_minutes": 0,
+                    "demand": "on" if demand[index] else "off",
+                    "demand_age_minutes": 0,
+                    "window": "off",
+                    "window_age_minutes": 0,
+                }
+            },
+        })
+    result = MODULE.build_solar_room_response_analysis(
+        samples,
+        [{"id": "living", "window_area_m2": 8.0, "window_orientation": "south"}],
+        interval_minutes=30,
+        maximum_lag_intervals=4,
+        minimum_pairs=30,
+    )
+    room = result["rooms"]["living"]
+    assert room["status"] == "repeatable_adjusted_solar_response_association_only"
+    assert room["selected_training_lag_minutes"] == 60
+    assert room["holdout_same_direction"] is True
+    assert room["solar_gain_w"] is None
+    assert result["solar_gain_w_identified"] is False
+
+
+def test_solar_room_response_excludes_open_windows_stale_solar_and_cadence_gaps():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(50):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index + (30 if index >= 25 else 0))).isoformat(),
+            "channels": {
+                "solar_radiation": 100.0 + (index % 7) * 50.0,
+                "solar_radiation_unit": "W/m2",
+                "solar_radiation_age_minutes": 90 if index == 10 else 0,
+                "outdoor_temperature": 8.0 + (index % 5),
+                "outdoor_temperature_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {
+                    "temperature": 20.0 + index * 0.03,
+                    "temperature_age_minutes": 0,
+                    "demand": "off",
+                    "demand_age_minutes": 0,
+                    "window": "on" if index == 15 else "off",
+                    "window_age_minutes": 0,
+                }
+            },
+        })
+    result = MODULE.build_solar_room_response_analysis(
+        samples, [{"id": "living"}], interval_minutes=30, maximum_lag_intervals=2,
+        minimum_pairs=12,
+    )
+    exclusions = result["excluded_observations"]["living"]
+    assert exclusions["open_window"] >= 1
+    assert exclusions["invalid_or_stale_solar"] >= 1
+    assert exclusions["invalid_cadence"] >= 1
+    assert result["solar_gain_w_identified"] is False
+
+
+def test_solar_room_response_withholds_unsupported_irradiance_units():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = [{
+        "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+        "channels": {
+            "solar_radiation": 250.0,
+            "solar_radiation_unit": "%",
+            "solar_radiation_age_minutes": 0,
+            "outdoor_temperature": 8.0 + index * 0.1,
+        },
+        "rooms": {
+            "living": {
+                "temperature": 20.0 + index * 0.02,
+                "demand": "off",
+                "window": "off",
+            }
+        },
+    } for index in range(30)]
+    result = MODULE.build_solar_room_response_analysis(
+        samples, [{"id": "living"}], interval_minutes=30, maximum_lag_intervals=2,
+        minimum_pairs=12,
+    )
+    assert result["excluded_observations"]["living"]["unsupported_solar_unit"] > 0
+    assert result["rooms"]["living"]["selected_training_lag_minutes"] is None
+

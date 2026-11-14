@@ -1114,3 +1114,65 @@ def test_multizone_holdout_diagnostics_withhold_short_resampling_history():
     )
     assert result["status"] == "holdout_residuals_available"
     assert result["block_error_sensitivity"] is None
+
+
+def test_multizone_physical_readiness_separates_normalized_fit_from_absolute_parameters():
+    samples = [
+        {
+            "rooms": {
+                "living": {"temperature": 20.0 + index * 0.01, "demand": "off", "window": "off"},
+                "hall": {"temperature": 19.0 + index * 0.02, "demand": "off", "window": "off"},
+            },
+            "channels": {"gas_consumption": float(index), "gas_consumption_age_minutes": 0},
+        }
+        for index in range(12)
+    ]
+    response = {
+        "rooms": {
+            "living": {
+                "status": "holdout_better_than_persistence",
+                "normalized_rates_per_hour": {"envelope": 0.02, "hall": 0.01},
+                "holdout_mae_c": 0.04,
+                "persistence_baseline_mae_c": 0.08,
+                "coefficient_uncertainty": {"envelope": {"stability": "relatively_stable"}},
+                "temporal_coefficient_stability": {"envelope": {"valid_windows": 3}},
+            },
+            "hall": {"status": "insufficient_clean_intervals"},
+        }
+    }
+    energy = {
+        "meters": {
+            "gas_consumption": {"measured_energy_kwh": 2.4},
+            "ac_energy": {"measured_energy_kwh": None},
+        }
+    }
+    result = MODULE.build_multizone_physical_calibration_readiness(
+        samples,
+        [
+            {"id": "living", "volume_m3": 40, "air_changes_per_hour": 0.5},
+            {"id": "hall", "volume_m3": 20, "air_changes_per_hour": 0.4},
+        ],
+        response,
+        energy,
+        {"status": "available"},
+    )
+    assert result["rooms_with_normalized_response_fit"] == 1
+    assert result["system_energy_meters_with_verified_deltas"] == ["gas_consumption"]
+    assert result["absolute_room_parameters_identified"] is False
+    assert result["physical_simulation_ready"] is False
+    assert "no_water_flow_measurement_for_water_side_output" in result["blockers"]
+    assert "no_validated_room_level_heat_allocation" in result["blockers"]
+    assert result["rooms"]["living"]["effective_room_capacity_wh_per_k"] is None
+
+
+def test_multizone_physical_readiness_withholds_without_any_response_fit_or_energy():
+    result = MODULE.build_multizone_physical_calibration_readiness(
+        [],
+        [{"id": "bedroom"}],
+        {"rooms": {}},
+        {"meters": {}},
+    )
+    assert result["status"] == "absolute_parameters_withheld_insufficient_response_evidence"
+    assert result["rooms_with_normalized_response_fit"] == 0
+    assert result["system_energy_meters_with_verified_deltas"] == []
+    assert result["physical_simulation_ready"] is False

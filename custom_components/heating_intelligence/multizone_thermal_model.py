@@ -170,6 +170,7 @@ def build_multizone_observation_model(
             "window_open": room.get("window_open"),
             "window_state_known": room.get("window_state_known", False),
             "area_m2": _finite_or_none(room.get("area_m2")),
+            "volume_m3": _finite_or_none(room.get("volume_m3")),
             "configured_ach": _finite_or_none(room.get("air_changes_per_hour")),
             "co2_ppm": _finite_or_none(room.get("co2_ppm")),
             "humidity_percent": _finite_or_none(room.get("humidity")),
@@ -237,6 +238,29 @@ def build_multizone_observation_model(
         'note': 'No water-side heat output is calculated without flow rate and a validated flow/return measurement pair.',
     }
     nodes['plant:heating'] = plant_node
+    # Ventilation conductance can be estimated when both room volume and
+    # ACH are configured. rho*cp/3600 converts m3/h into W/K.
+    ventilation_paths = []
+    ventilation_factor_w_per_k_per_m3_ach = 1.2 * 1005.0 / 3600.0
+    if "boundary:outdoors" in nodes:
+        for room_id, room in rooms.items():
+            volume = _finite_or_none(room.get("volume_m3"))
+            ach = _finite_or_none(room.get("air_changes_per_hour"))
+            if volume is None or ach is None or volume <= 0 or ach <= 0:
+                continue
+            ventilation_paths.append({
+                "from": "room:" + room_id,
+                "to": "boundary:outdoors",
+                "path": "ventilation",
+                "conductance_w_per_k": round(
+                    ventilation_factor_w_per_k_per_m3_ach * volume * ach, 4
+                ),
+                "source": "configured_room_volume_and_ach",
+                "volume_m3": volume,
+                "air_changes_per_hour": ach,
+                "status": "estimated_from_configured_inputs",
+            })
+
     # Conductive roof and ceiling paths are only exposed when both U-value
     # and area were explicitly entered in the house assessment.
     connections = []
@@ -283,6 +307,7 @@ def build_multizone_observation_model(
         "simulation_status": "withheld_missing_physical_parameters",
         "nodes": nodes,
         "configured_connections": connections,
+        "ventilation_paths": ventilation_paths,
         "pending_paths": pending_paths,
         "floor_nodes": floor_nodes,
         "plant": plant_node,
@@ -293,6 +318,7 @@ def build_multizone_observation_model(
             "rooms_with_co2": sum(1 for room in rooms.values() if _finite_or_none(room.get("co2_ppm")) is not None),
             "rooms_with_humidity": sum(1 for room in rooms.values() if _finite_or_none(room.get("humidity")) is not None),
             "rooms_with_ach": sum(1 for room in rooms.values() if _finite_or_none(room.get("air_changes_per_hour")) is not None),
+            "rooms_with_volume_and_ach": sum(1 for room in rooms.values() if _finite_or_none(room.get("volume_m3")) is not None and _finite_or_none(room.get("air_changes_per_hour")) is not None),
             "attic_temperature_available": attic_c is not None,
             "outdoor_temperature_available": outdoor_c is not None,
             "ufh_floor_nodes": len(floor_nodes),

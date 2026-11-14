@@ -344,6 +344,7 @@ class HeatingIntelligenceCard extends HTMLElement {
             <div class="metric"><span>Room temperature coverage</span><strong>${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_temperature ?? 0} / ${attrs.thermal_model?.multi_zone?.coverage?.configured_rooms ?? 0}</strong></div>
             <div class="metric"><span>CO₂ / humidity / ACH</span><strong>${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_co2 ?? 0} / ${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_humidity ?? 0} / ${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_ach ?? 0} rooms</strong></div>
             <div class="metric"><span>UFH floor observations</span><strong>${attrs.thermal_model?.multi_zone?.coverage?.ufh_floor_nodes ?? 0}</strong></div>
+            <div class="metric"><span>Ventilation paths identified</span><strong>${attrs.thermal_model?.multi_zone?.ventilation_paths?.length ?? 0}</strong><div class="subtle">${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_volume_and_ach ?? 0} rooms with volume + ACH</div></div>
             <div class="metric"><span>Water supply / return</span><strong>${this._fmt(attrs.thermal_model?.multi_zone?.plant?.supply_water_temperature_c)} / ${this._fmt(attrs.thermal_model?.multi_zone?.plant?.return_water_temperature_c)}</strong></div>
           </div>
           <div class="subtle">Thermal capacities awaiting identification: ${(attrs.thermal_model?.multi_zone?.missing_parameters?.thermal_capacities || []).map(id => this._esc(id)).join(", ") || "None"}.</div>

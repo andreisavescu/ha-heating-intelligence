@@ -447,6 +447,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["rooms"][room_id] = {
                 "floor": floor,
                 "area_m2": _as_float(room.get("area_m2")),
+                "volume_m3": _as_float(room.get("volume_m3")),
                 "air_changes_per_hour": _as_float(room.get(CONF_ACH)),
                 "floor_label": {"ground_floor": "Downstairs", "upstairs": "Upstairs", "unassigned": "Unassigned"}.get(floor, floor),
                 "id": room_id,

@@ -27,7 +27,7 @@
       },
       "global_settings": {
         "title": "Global settings",
-        "description": "Select the heating-only cumulative gas meter (not combined hot water), environmental sensors, boiler efficiency assumption and total external envelope area.",
+        "description": "Configure optional weather-station inputs and heating energy sensors. A weather entity can supply standard outdoor attributes; individual sensors can override or supplement it. Attic temperature and humidity are optional. Heat-flow estimates require explicit U-values and areas; insulation thickness alone is not converted into a U-value.",
         "data": {
           "electricity_boiler_power_entity": "Boiler electrical power (W)",
           "electricity_boiler_energy_entity": "Boiler electrical energy (kWh)",
@@ -35,7 +35,18 @@
           "return_water_temperature_entity": "Heating water return temperature sensor (°C)",
           "gas_consumption_entity": "Heating-only cumulative gas consumption (m³ or kWh)",
           "boiler_efficiency": "Assumed seasonal boiler efficiency (0–1)",
-          "envelope_area_m2": "Total external envelope area (m²)"
+          "envelope_area_m2": "Total external envelope area (m²)",
+          "weather_entity": "Weather entity (e.g. Weather Underground station)",
+          "outdoor_temperature_entity": "Outdoor temperature sensor (°C)",
+          "solar_radiation_entity": "Solar radiation sensor (W/m²)",
+          "wind_speed_entity": "Wind speed sensor",
+          "wind_direction_entity": "Wind direction sensor (degrees)",
+          "wind_gust_entity": "Wind gust sensor",
+          "outdoor_humidity_entity": "Outdoor relative humidity sensor (%)",
+          "dew_point_entity": "Outdoor dew point sensor (°C)",
+          "outdoor_pressure_entity": "Atmospheric pressure sensor",
+          "attic_temperature_entity": "Attic air temperature above insulation (°C)",
+          "attic_humidity_entity": "Attic relative humidity (%)"
         }
       },
       "add_room": {
@@ -105,7 +116,7 @@
       },
       "house_assessment": {
         "title": "Building and envelope",
-        "description": "Enter known building details. Your known defaults are prefilled; leave unknown values blank. You can revisit and change every answer.",
+        "description": "Enter known building details. Your known defaults are prefilled; leave unknown values blank. You can revisit and change every answer. Optional roof and attic-floor U-values and areas enable approximate conductive heat-flow estimates.",
         "data": {
           "construction_year": "Construction year",
           "wall_insulation_cm": "External wall insulation thickness (cm)",
@@ -124,7 +135,11 @@
           "window_area_west_m2": "West-facing window area (m²)",
           "wall_insulation_material": "External wall insulation material",
           "roof_insulation_material": "Roof/attic insulation material",
-          "floor_insulation_material": "Ground-floor insulation material"
+          "floor_insulation_material": "Ground-floor insulation material",
+          "roof_area_m2": "Insulated roof area (m²)",
+          "roof_u_value": "Roof assembly U-value (W/m²K), if known",
+          "attic_floor_area_m2": "Insulated ceiling area between upstairs and attic (m²)",
+          "attic_floor_u_value": "Ceiling/attic-floor U-value (W/m²K), if known"
         }
       },
       "assessment_heating": {

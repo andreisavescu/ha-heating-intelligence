@@ -21,12 +21,22 @@ from .advanced_heating import update_advanced_history
 from .house_assessment import build_house_assessment
 from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
+from .attic_thermal import build_attic_thermal_analysis
 
 from .const import (
     CONF_DEMAND_ENTITY,
     CONF_COMFORT_TARGET_C,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
+    CONF_WEATHER_ENTITY,
+    CONF_WIND_SPEED_ENTITY,
+    CONF_WIND_DIRECTION_ENTITY,
+    CONF_WIND_GUST_ENTITY,
+    CONF_OUTDOOR_HUMIDITY_ENTITY,
+    CONF_DEW_POINT_ENTITY,
+    CONF_OUTDOOR_PRESSURE_ENTITY,
+    CONF_ATTIC_TEMPERATURE_ENTITY,
+    CONF_ATTIC_HUMIDITY_ENTITY,
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
     CONF_ELECTRICITY_BOILER_POWER_ENTITY,
@@ -84,6 +94,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "house_assessment": {},
             "indoor_air_quality": {},
             "thermal_model": {},
+            "weather": {},
+            "attic_thermal": {},
         }
 
     async def async_load_history(self) -> None:
@@ -134,6 +146,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "water_temperature": None,
             "water_temperature_entity": None,
             "efficiency": {},
+            "weather": {},
+            "attic_thermal": {},
         }
         water_entity = self.entry.options.get(CONF_WATER_TEMPERATURE_ENTITY)
         if water_entity:
@@ -442,6 +456,65 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "unit": "°C",
             } if indoor_values else None,
         }
+        attic_temperature_entity = self.entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY)
+        attic_humidity_entity = self.entry.options.get(CONF_ATTIC_HUMIDITY_ENTITY)
+        attic_temperature_state = self.hass.states.get(attic_temperature_entity) if attic_temperature_entity else None
+        attic_humidity_state = self.hass.states.get(attic_humidity_entity) if attic_humidity_entity else None
+        attic_temperature = _as_float(attic_temperature_state.state) if attic_temperature_state else None
+        attic_humidity = _as_float(attic_humidity_state.state) if attic_humidity_state else None
+        if attic_humidity is not None and not 0 <= attic_humidity <= 100:
+            attic_humidity = None
+        upstairs_rooms = [
+            room_data["temperature"] for room_id, room_data in result["rooms"].items()
+            if room_data.get("floor") == "upstairs" and room_data.get("temperature") is not None
+        ]
+        upstairs_average = sum(upstairs_rooms) / len(upstairs_rooms) if upstairs_rooms else None
+
+        weather_entity_id = self.entry.options.get(CONF_WEATHER_ENTITY)
+        weather_state = self.hass.states.get(weather_entity_id) if weather_entity_id else None
+
+        def weather_value(option_key, attribute=None):
+            configured = read_sensor(option_key)
+            if configured and configured.get("value") is not None:
+                return configured
+            if weather_state and attribute:
+                value = _as_float(weather_state.attributes.get(attribute))
+                if value is not None:
+                    return {
+                        "value": value,
+                        "unit": {
+                            "temperature": weather_state.attributes.get("temperature_unit", "°C"),
+                            "humidity": "%",
+                            "pressure": weather_state.attributes.get("pressure_unit"),
+                            "wind_speed": weather_state.attributes.get("wind_speed_unit"),
+                            "wind_bearing": "°",
+                        }.get(attribute),
+                        "entity_id": weather_entity_id,
+                        "source": "weather_entity_attribute",
+                    }
+            return configured
+
+        result["weather"] = {
+            "entity_id": weather_entity_id,
+            "condition": weather_state.state if weather_state else None,
+            "outdoor_temperature": weather_value(CONF_OUTDOOR_TEMPERATURE_ENTITY, "temperature"),
+            "outdoor_humidity": weather_value(CONF_OUTDOOR_HUMIDITY_ENTITY, "humidity"),
+            "pressure": weather_value(CONF_OUTDOOR_PRESSURE_ENTITY, "pressure"),
+            "wind_speed": weather_value(CONF_WIND_SPEED_ENTITY, "wind_speed"),
+            "wind_direction": weather_value(CONF_WIND_DIRECTION_ENTITY, "wind_bearing"),
+            "wind_gust": weather_value(CONF_WIND_GUST_ENTITY),
+            "dew_point": read_sensor(CONF_DEW_POINT_ENTITY),
+            "solar_radiation": read_sensor(CONF_SOLAR_RADIATION_ENTITY),
+        }
+        if result["weather"].get("outdoor_temperature"):
+            weather_outdoor = result["weather"]["outdoor_temperature"]
+            if weather_outdoor.get("value") is not None:
+                readings["outdoor_temperature"] = weather_outdoor
+        if result["weather"].get("solar_radiation"):
+            weather_solar = result["weather"]["solar_radiation"]
+            if weather_solar.get("value") is not None:
+                readings["solar_radiation"] = weather_solar
+
         update_efficiency_history(
             self._history,
             readings,
@@ -451,6 +524,18 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
         )
         result["efficiency"] = efficiency_statistics(self._history, now_local)
+        result["efficiency"]["weather"] = result["weather"]
+        outdoor_temperature_value = result["weather"].get("outdoor_temperature") or readings.get("outdoor_temperature")
+        outdoor_temperature = outdoor_temperature_value.get("value") if outdoor_temperature_value else None
+        result["attic_thermal"] = build_attic_thermal_analysis(
+            attic_temperature,
+            attic_humidity,
+            upstairs_average,
+            outdoor_temperature,
+            self.entry.options.get("house_assessment", {}),
+        )
+        result["attic_thermal"]["temperature_entity"] = attic_temperature_entity
+        result["attic_thermal"]["humidity_entity"] = attic_humidity_entity
         from .thermal_performance import thermal_performance_statistics
         result["efficiency"].update(thermal_performance_statistics(self._history, now_local,
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
@@ -472,6 +557,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["efficiency"],
             result["rooms"],
         )
+        result["house_assessment"]["attic_thermal"] = result["attic_thermal"]
         result["house_assessment"]["cross_system_context"] = {
             "indoor_air_quality_status": result["indoor_air_quality"].get("co2", {}).get("status"),
             "humidity_status": result["indoor_air_quality"].get("humidity", {}).get("status"),

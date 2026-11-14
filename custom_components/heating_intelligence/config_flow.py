@@ -17,6 +17,15 @@ from .const import (
     CONF_ACH,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
+    CONF_WEATHER_ENTITY,
+    CONF_WIND_SPEED_ENTITY,
+    CONF_WIND_DIRECTION_ENTITY,
+    CONF_WIND_GUST_ENTITY,
+    CONF_OUTDOOR_HUMIDITY_ENTITY,
+    CONF_DEW_POINT_ENTITY,
+    CONF_OUTDOOR_PRESSURE_ENTITY,
+    CONF_ATTIC_TEMPERATURE_ENTITY,
+    CONF_ATTIC_HUMIDITY_ENTITY,
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
     CONF_ELECTRICITY_CONSUMPTION_ENTITY,
@@ -106,6 +115,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             optional("window_area_south_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_south_m2")),
             optional("window_area_east_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_east_m2")),
             optional("window_area_west_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_west_m2")),
+            optional("roof_area_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=1000, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("roof_area_m2")),
+            optional("roof_u_value", selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)), current.get("roof_u_value")),
+            optional("attic_floor_area_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=1000, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("attic_floor_area_m2")),
+            optional("attic_floor_u_value", selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)), current.get("attic_floor_u_value")),
         ])
         return self.async_show_form(step_id="house_assessment", data_schema=vol.Schema(fields))
 
@@ -152,6 +165,15 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_RETURN_WATER_TEMPERATURE_ENTITY,
             CONF_OUTDOOR_TEMPERATURE_ENTITY,
             CONF_SOLAR_RADIATION_ENTITY,
+            CONF_WIND_SPEED_ENTITY,
+            CONF_WIND_DIRECTION_ENTITY,
+            CONF_WIND_GUST_ENTITY,
+            CONF_OUTDOOR_HUMIDITY_ENTITY,
+            CONF_DEW_POINT_ENTITY,
+            CONF_OUTDOOR_PRESSURE_ENTITY,
+            CONF_ATTIC_TEMPERATURE_ENTITY,
+            CONF_ATTIC_HUMIDITY_ENTITY,
+            CONF_WEATHER_ENTITY,
             CONF_DELTA_T_ENTITY,
             CONF_GAS_CONSUMPTION_ENTITY,
             CONF_ELECTRICITY_BOILER_POWER_ENTITY,
@@ -197,6 +219,14 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_RETURN_WATER_TEMPERATURE_ENTITY,
                 CONF_OUTDOOR_TEMPERATURE_ENTITY,
                 CONF_SOLAR_RADIATION_ENTITY,
+                CONF_WIND_SPEED_ENTITY,
+                CONF_WIND_DIRECTION_ENTITY,
+                CONF_WIND_GUST_ENTITY,
+                CONF_OUTDOOR_HUMIDITY_ENTITY,
+                CONF_DEW_POINT_ENTITY,
+                CONF_OUTDOOR_PRESSURE_ENTITY,
+                CONF_ATTIC_TEMPERATURE_ENTITY,
+                CONF_ATTIC_HUMIDITY_ENTITY,
                 CONF_DELTA_T_ENTITY,
                 CONF_GAS_CONSUMPTION_ENTITY,
                 CONF_ELECTRICITY_BOILER_POWER_ENTITY,
@@ -204,6 +234,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_AC_ENERGY_ENTITY,
             )
         )
+        weather_field = vol.Optional(CONF_WEATHER_ENTITY, default=current.get(CONF_WEATHER_ENTITY)) if current.get(CONF_WEATHER_ENTITY) else vol.Optional(CONF_WEATHER_ENTITY)
+        schema_fields[weather_field] = selector.EntitySelector(selector.EntitySelectorConfig(domain="weather"))
         boiler_energy_field = optional_sensor_field(
             CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
             current.get(CONF_ELECTRICITY_BOILER_ENTITY),

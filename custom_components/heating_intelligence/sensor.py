@@ -15,6 +15,7 @@ from .const import (
     CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
     CONF_ELECTRICITY_BOILER_ENTITY,
     CONF_AC_POWER_ENTITY, CONF_AC_ENERGY_ENTITY,
+    CONF_ATTIC_TEMPERATURE_ENTITY, CONF_ATTIC_HUMIDITY_ENTITY, CONF_WEATHER_ENTITY,
 )
 from .coordinator import HeatingIntelligenceCoordinator
 from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
@@ -24,6 +25,13 @@ from .insights import build_heating_insights
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [HeatingOverviewSensor(coordinator)]
+    if entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY):
+        entities.append(AtticTemperatureSensor(coordinator))
+        entities.extend(AtticThermalMetricSensor(coordinator, metric) for metric in (
+            "attic_to_outdoor_delta_c", "upstairs_to_attic_delta_c",
+            "estimated_roof_heat_flow_w", "estimated_ceiling_heat_flow_w"))
+    if entry.options.get(CONF_ATTIC_HUMIDITY_ENTITY):
+        entities.append(AtticHumiditySensor(coordinator))
     if entry.options.get("water_temperature_entity"):
         entities.append(WaterTemperatureSensor(coordinator))
     for room in entry.options.get(CONF_ROOMS, []):
@@ -77,11 +85,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     if entry.options.get(CONF_AC_ENERGY_ENTITY):
         entities.append(EfficiencySensor(coordinator, "ac_electricity_today_kwh"))
         entities.append(EfficiencySensor(coordinator, "estimated_ac_delivered_heat_today_kwh"))
-    if entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
+    if entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY) or entry.options.get(CONF_WEATHER_ENTITY):
         entities.append(EfficiencySensor(coordinator, "heating_degree_days"))
     if entry.options.get(CONF_PUMPS) or boiler_energy_configured:
         entities.append(EfficiencySensor(coordinator, "electricity_energy_today_kwh"))
-    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
+    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and (entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY) or entry.options.get(CONF_WEATHER_ENTITY)):
         entities.append(EfficiencySensor(coordinator, "gas_kwh_per_degree_day"))
     if (entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) or entry.options.get(CONF_AC_ENERGY_ENTITY)) and entry.options.get(CONF_DELTA_T_ENTITY):
         entities.extend(EfficiencySensor(coordinator, metric) for metric in (
@@ -117,6 +125,8 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "house_assessment": data.get("house_assessment", {}),
             "indoor_air_quality": data.get("indoor_air_quality", {}),
             "thermal_model": data.get("thermal_model", {}),
+            "weather": data.get("weather", {}),
+            "attic_thermal": data.get("attic_thermal", {}),
             "room_count": len(rooms),
             "heating_rooms": sum(1 for room in rooms.values() if room.get("demand")),
             "average_room_temperature": round(sum(valid_temps) / len(valid_temps), 1) if valid_temps else None,
@@ -139,6 +149,83 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "predictions": data.get("predictions", {}),
             "energy_history": data.get("energy_history", []),
         }
+
+
+
+class AtticTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Temperature measured in the attic above the insulation."""
+
+    _attr_native_unit_of_measurement = "°C"
+    _attr_should_poll = False
+    _attr_icon = "mdi:home-thermometer"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Attic Temperature"
+        self._attr_unique_id = f"{DOMAIN}_attic_temperature"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("attic_thermal", {}).get("attic_temperature")
+
+    @property
+    def available(self):
+        return super().available and self.native_value is not None
+
+
+class AtticHumiditySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Relative humidity measured in the attic."""
+
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_should_poll = False
+    _attr_icon = "mdi:water-percent"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Attic Humidity"
+        self._attr_unique_id = f"{DOMAIN}_attic_humidity"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("attic_thermal", {}).get("attic_humidity")
+
+    @property
+    def available(self):
+        return super().available and self.native_value is not None
+
+
+ATTIC_THERMAL_METRICS = {
+    "attic_to_outdoor_delta_c": ("Attic–Outdoor Temperature Difference", "°C", "mdi:thermometer"),
+    "upstairs_to_attic_delta_c": ("Upstairs–Attic Temperature Difference", "°C", "mdi:thermometer-chevron-down"),
+    "estimated_roof_heat_flow_w": ("Estimated Attic Roof Heat Flow", "W", "mdi:home-thermometer"),
+    "estimated_ceiling_heat_flow_w": ("Estimated Upstairs Ceiling Heat Flow", "W", "mdi:home-thermometer"),
+}
+
+
+class AtticThermalMetricSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Measured attic temperature gradient or conditional heat-flow estimate."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator, metric: str) -> None:
+        super().__init__(coordinator)
+        label, unit, icon = ATTIC_THERMAL_METRICS[metric]
+        self.metric = metric
+        self._attr_name = label
+        self._attr_unique_id = f"{DOMAIN}_{metric}"
+        self._attr_native_unit_of_measurement = unit
+        self._attr_icon = icon
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("attic_thermal", {}).get(self.metric)
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("attic_thermal", {})
 
 
 class WaterTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):

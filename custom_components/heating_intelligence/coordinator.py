@@ -360,6 +360,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             }
         result["indoor_air_quality"] = build_indoor_air_analysis(result["rooms"])
         result["thermal_model"] = build_house_thermal_model(learned_room_models)
+        for room_id, air_assessment in result["indoor_air_quality"].get("rooms", {}).items():
+            if room_id in result["rooms"]:
+                result["rooms"][room_id]["air_quality_assessment"] = air_assessment
         for floor_id in ("ground_floor", "upstairs"):
             floor_data = floor_analysis[floor_id]
             floor_data["demand_hours_today"] = round(sum(float(daily.get("room_demand_" + room["id"], 0.0)) for room in self.entry.options.get(CONF_ROOMS, []) if room.get(CONF_FLOOR, "unassigned") == floor_id) / 3600, 2)

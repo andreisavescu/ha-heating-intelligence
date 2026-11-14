@@ -2012,3 +2012,35 @@ def test_solar_room_response_withholds_when_room_has_no_residual_temperature_res
     room = result["rooms"]["living"]
     assert room["selected_training_lag_minutes"] is None
     assert room["status"] == "insufficient_solar_response_pairs_or_adjustment"
+
+def test_solar_room_response_excludes_unknown_configured_window_state():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(50):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "solar_radiation": float((index * 31) % 97) * 7.0,
+                "solar_radiation_unit": "W/m2",
+                "solar_radiation_age_minutes": 0,
+                "outdoor_temperature": 7.0 + (index % 8) * 0.2,
+                "outdoor_temperature_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {
+                    "temperature": 20.0 + index * 0.01,
+                    "temperature_age_minutes": 0,
+                    "demand": "off",
+                    "demand_age_minutes": 0,
+                    "window": None if index == 20 else "off",
+                    "window_age_minutes": 90 if index == 20 else 0,
+                }
+            },
+        })
+    result = MODULE.build_solar_room_response_analysis(
+        samples,
+        [{"id": "living", "window_entity": "binary_sensor.living_window"}],
+        interval_minutes=30, maximum_lag_intervals=2, minimum_pairs=12,
+    )
+    assert result["excluded_observations"]["living"]["unknown_or_stale_window"] >= 1
+

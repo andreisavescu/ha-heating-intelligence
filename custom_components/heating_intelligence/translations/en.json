@@ -45,7 +45,8 @@
           "area_m2": "Room floor area (m²)",
           "humidity_entity": "Room humidity sensor (%)",
           "enable_co2": "Add a CO2 sensor for this room",
-          "air_changes_per_hour": "Measured room air changes per hour (ACH)"
+          "air_changes_per_hour": "Measured room air changes per hour (ACH)",
+          "window_entity": "Room window contact"
         }
       },
       "room_air_quality": {

@@ -1387,6 +1387,7 @@ def build_solar_room_response_analysis(
         raise ValueError("Invalid solar response limits")
 
     room_ids = [str(room.get("id", "unknown")) for room in rooms]
+    room_configs = {str(room.get("id", "unknown")): room for room in rooms}
     if not room_ids or len(set(room_ids)) != len(room_ids):
         return {"status": "insufficient_room_configuration", "rooms": {}}
 
@@ -1464,7 +1465,7 @@ def build_solar_room_response_analysis(
                 exclusions[room_id]["open_window"] += 1
                 room_intervals[room_id] = None
                 continue
-            if window_invalid and room.get("window_entity"):
+            if window_invalid and room_configs[room_id].get("window_entity"):
                 exclusions[room_id]["unknown_or_stale_window"] += 1
                 room_intervals[room_id] = None
                 continue

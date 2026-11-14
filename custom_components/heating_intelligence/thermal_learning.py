@@ -121,7 +121,7 @@ def build_room_thermal_model(
         result["note"] = "AC electrical input is above the active-use threshold, or its configured power sensor is unavailable; forecast withheld to avoid mixing heating systems."
         return result
     if not window_contact_configured:
-        result["note"] = "Configure a window contact for this room; the model requires verified closed-window periods."
+        result["note"] = "Configure a window contact in Options > Configure room areas, ACH and window contacts; the model requires verified closed-window periods."
         return result
     if not window_state_known:
         result["note"] = "The configured window contact is unavailable; forecast withheld because the closed-window condition cannot be verified."

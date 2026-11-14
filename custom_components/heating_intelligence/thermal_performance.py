@@ -39,11 +39,13 @@ def thermal_performance_statistics(history: dict, now: datetime,
     # across coordinator refreshes and Home Assistant restarts.
     finalised = history.setdefault("thermal_daily_results", {})
     if now.hour >= 2:
-        previous_key = (now.date() - timedelta(days=1)).isoformat()
-        if previous_key not in finalised:
-            finalised[previous_key] = _daily_result(
-                days.get(previous_key, {}), efficiency, area, ac_cop
-            )
+        # Backfill retained completed days once on upgrade, then finalise the
+        # most recent completed day. All later refreshes are idempotent.
+        for completed_key in sorted(key for key in days if key < today_key):
+            if completed_key not in finalised:
+                finalised[completed_key] = _daily_result(
+                    days.get(completed_key, {}), efficiency, area, ac_cop
+                )
 
     finalised_keys = sorted(key for key in finalised if key < today_key)
     daily_key = finalised_keys[-1] if finalised_keys else None
@@ -71,7 +73,7 @@ def thermal_performance_statistics(history: dict, now: datetime,
         return heat, exposure, valid
 
     # Rolling windows continue to use completed calendar-day aggregates.
-    completed_keys = sorted(key for key in days if key < today_key)
+    completed_keys = finalised_keys
     keys7, keys30 = completed_keys[-7:], completed_keys[-30:]
     heat7, exposure7, valid7 = aggregate(keys7)
     heat30, exposure30, valid30 = aggregate(keys30)

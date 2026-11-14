@@ -152,7 +152,7 @@ def thermal_performance_statistics(history: dict, now: datetime,
             },
             "scenarios": scenarios,
             "note": (
-                Scenarios vary boiler efficiency and AC COP; when the meter is in m³, gas conversion is also varied by ±5% around the configured factor. "
+                "Scenarios vary boiler efficiency and AC COP; when the meter is in m³, gas conversion is also varied by ±5% around the configured factor. "
                 "The range is conditional on gas meter energy conversion, measured degree-hours, "
                 "configured envelope area and the assumption that AC energy was used for heating."
             ),

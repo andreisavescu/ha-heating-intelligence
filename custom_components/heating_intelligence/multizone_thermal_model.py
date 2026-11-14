@@ -357,6 +357,46 @@ def build_multizone_observation_model(
         )
     if house_heat_loss is None:
         house_heat_loss = _finite_or_none(profile.get("house_heat_loss_coefficient_w_k"))
+    aggregate_capacity = _finite_or_none(
+        (profile.get("house_effective_rc_calibration") or {}).get(
+            "effective_building_thermal_capacity_wh_per_k"
+        )
+    )
+    if aggregate_capacity is None:
+        aggregate_capacity = _finite_or_none(
+            profile.get("effective_building_thermal_capacity_wh_per_k")
+        )
+    capacity_budget = {
+        "status": "withheld_incomplete_room_volume_coverage",
+        "effective_building_capacity_wh_per_k": round(aggregate_capacity, 2) if aggregate_capacity is not None else None,
+        "configured_air_only_capacity_wh_per_k": round(air_capacity_wh_per_k, 2),
+        "implied_non_air_capacity_wh_per_k": None,
+        "volume_coverage_percent": round(100 * rooms_with_volume / room_count) if room_count else None,
+        "rooms_with_volume": rooms_with_volume,
+        "configured_rooms": room_count,
+        "room_capacity_allocation": None,
+        "note": (
+            "This is an aggregate consistency check only. It does not allocate effective "
+            "capacity to individual rooms; wall, furnishing, floor and slab storage remain "
+            "unresolved. The subtraction is meaningful only when all configured room volumes "
+            "are represented and the effective building estimate describes the same conditioned zone."
+        ),
+    }
+    if rooms_with_volume != room_count or room_count == 0:
+        capacity_budget["status"] = "withheld_incomplete_room_volume_coverage"
+    elif aggregate_capacity is None or aggregate_capacity <= 0:
+        capacity_budget["status"] = "withheld_effective_building_capacity_unavailable"
+    elif aggregate_capacity < air_capacity_wh_per_k:
+        capacity_budget["status"] = "inconsistent_effective_capacity_below_air_only"
+        capacity_budget["note"] += (
+            " The estimated whole-building effective capacity is below the calculated air-only "
+            "capacity; inspect the heat-loss estimate, cooling fit, room volumes and zone boundary."
+        )
+    else:
+        capacity_budget["status"] = "aggregate_non_air_capacity_available"
+        capacity_budget["implied_non_air_capacity_wh_per_k"] = round(
+            aggregate_capacity - air_capacity_wh_per_k, 2
+        )
     envelope_decomposition = {
         "status": "withheld_incomplete_ventilation_coverage",
         "total_house_heat_loss_coefficient_w_k": round(house_heat_loss, 3) if house_heat_loss is not None else None,
@@ -400,6 +440,7 @@ def build_multizone_observation_model(
         "configured_connections": connections,
         "ventilation_paths": ventilation_paths,
         "house_heat_loss_decomposition": envelope_decomposition,
+        "aggregate_capacity_budget": capacity_budget,
         "air_only_thermal_inventory": {
             "status": "partial_configured_volume" if rooms_with_volume < room_count else (
                 "available" if room_count else "no_configured_rooms"

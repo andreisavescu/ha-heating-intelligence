@@ -244,6 +244,8 @@ def test_house_effective_rc_capacity_requires_independent_heat_loss_and_fits_tau
     assert result["status"] == "effective_aggregate_capacity_estimate"
     assert 10 <= result["apparent_time_constant_hours"] <= 14
     assert 3000 <= result["effective_building_thermal_capacity_wh_per_k"] <= 4200
+    assert result["capacity_resampling_sensitivity"]["status"] == "insufficient_history_for_resampling_sensitivity"
+    assert result["capacity_resampling_sensitivity"]["successful_replicates"] == 0
 
 
 def test_house_effective_rc_capacity_is_withheld_without_independent_heat_loss():

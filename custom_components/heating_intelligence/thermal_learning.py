@@ -78,6 +78,7 @@ def _learn_mode(
 def build_room_thermal_model(
     room_history: dict[str, Any], now: datetime, current_temperature: float | None,
     demand: bool, ac_power_sensor_configured: bool = False,
+    external_heating_active: bool = False,
 ) -> dict[str, Any]:
     """Learn heating/coasting rates from persisted room observations and forecast."""
     samples = room_history.get("temperature_samples", [])
@@ -85,20 +86,23 @@ def build_room_thermal_model(
     coasting = _learn_mode(samples, now, False, ac_power_sensor_configured)
     selected = heating if demand else coasting
     result: dict[str, Any] = {
-        "status": selected["status"] if current_temperature is not None else "waiting_for_temperature",
+        "status": "external_heating_active" if external_heating_active else selected["status"] if current_temperature is not None else "waiting_for_temperature",
         "model": "rolling_median_thermal_response",
         "learning_window_days": LEARNING_DAYS,
         "mode": "heating" if demand else "coasting",
         "current_temperature": current_temperature,
         "heating": heating,
         "coasting": coasting,
-        "confidence": selected["confidence"] if current_temperature is not None else 0,
-        "trend_c_per_hour": selected["rate_c_per_hour"] if current_temperature is not None else None,
+        "confidence": selected["confidence"] if current_temperature is not None and not external_heating_active else 0,
+        "trend_c_per_hour": selected["rate_c_per_hour"] if current_temperature is not None and not external_heating_active else None,
         "generated_at": now.isoformat(),
         "forecasts": {},
     }
     for hours in HORIZONS_HOURS:
         result["forecasts"][f"{hours}h"] = None
+    if external_heating_active:
+        result["note"] = "AC electrical input is currently above the active-use threshold; forecast withheld to avoid mixing heating systems."
+        return result
     if current_temperature is None or selected["status"] != "available":
         return result
     rate = selected["rate_c_per_hour"]

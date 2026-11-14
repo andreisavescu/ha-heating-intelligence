@@ -2842,6 +2842,7 @@ def build_multizone_physical_calibration_readiness(
     response_identification: dict[str, Any] | None = None,
     energy_observability: dict[str, Any] | None = None,
     ufh_observability: dict[str, Any] | None = None,
+    water_side_output: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarise which absolute multi-zone parameters are evidenced vs blocked.
 
@@ -2852,6 +2853,11 @@ def build_multizone_physical_calibration_readiness(
     response_identification = response_identification or {}
     energy_observability = energy_observability or {}
     ufh_observability = ufh_observability or {}
+    water_side_output = water_side_output or {}
+    water_output_available = (
+        water_side_output.get("status") == "system_water_side_output_available"
+        and int(water_side_output.get("valid_samples") or 0) > 0
+    )
     room_ids = [str(room.get("id", "unknown")) for room in rooms]
     response_rooms = response_identification.get("rooms") or {}
     energy_meters = energy_observability.get("meters") or {}
@@ -2930,6 +2936,8 @@ def build_multizone_physical_calibration_readiness(
         blockers.append("no_verified_system_energy_meter")
     if not water_flow_channels:
         blockers.append("no_water_flow_measurement_for_water_side_output")
+    elif not water_output_available:
+        blockers.append("water_side_output_unavailable_from_fresh_flow_and_delta_t")
     if not room_heat_output_channels:
         blockers.append("no_independent_room_or_zone_heat_output_measurement")
     blockers.append("no_independent_effective_room_capacity_measurement")
@@ -2952,6 +2960,16 @@ def build_multizone_physical_calibration_readiness(
         ),
         "system_energy_meters_with_verified_deltas": measured_energy_channels,
         "water_flow_measurement_channels": water_flow_channels,
+        "system_water_side_output": {
+            "status": water_side_output.get("status", "not_available"),
+            "valid_samples": int(water_side_output.get("valid_samples") or 0),
+            "coverage_percent": water_side_output.get("coverage_percent"),
+            "median_thermal_output_w": water_side_output.get("median_thermal_output_w"),
+            "integrated_water_side_energy_kwh": water_side_output.get("integrated_water_side_energy_kwh"),
+            "integrated_valid_intervals": int(water_side_output.get("integrated_valid_intervals") or 0),
+            "scope": "system_water_side_only_not_room_delivery",
+            "available": water_output_available,
+        },
         "independent_room_heat_output_channels": room_heat_output_channels,
         "ufh_observability_status": ufh_observability.get("status", "not_available"),
         "absolute_room_parameters_identified": False,
@@ -2959,7 +2977,9 @@ def build_multizone_physical_calibration_readiness(
         "blockers": blockers,
         "rooms": room_coverage,
         "next_required_evidence": [
-            "Calibrated water flow rate paired with supply and return temperatures, or another independently measured delivered-heat source",
+            *([] if water_output_available else [
+                "Calibrated water flow rate paired with fresh supply and return temperatures, or another independently measured delivered-heat source",
+            ]),
             "A defensible method to allocate measured plant heat to individual rooms or zones",
             "Independent effective room thermal capacities, including UFH slab storage where applicable",
             "Held-out validation against measured thermal output, not only room-temperature persistence",

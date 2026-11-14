@@ -17,6 +17,7 @@ from .advanced_diagnostics import build_advanced_diagnostics
 from .prediction_engine import build_predictions
 from .floor_efficiency import build_floor_performance, weather_normalised_efficiency
 from .advanced_heating import update_advanced_history
+from .house_assessment import build_house_assessment
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -419,6 +420,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             local_date,
         )
         result["efficiency"]["weather_normalised"] = weather_model
+        result["house_assessment"] = build_house_assessment(
+            self.entry.options.get("house_assessment", {}),
+            result["efficiency"],
+            result["rooms"],
+        )
         normalised_by_date = {
             item["date"]: item for item in weather_model.get("recent_days", [])
         }

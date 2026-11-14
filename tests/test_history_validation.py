@@ -763,6 +763,8 @@ def test_room_level_excitation_identifiability_detects_independent_demand_patter
     )
     assert result["rooms_with_both_demand_modes"] == 2
     assert result["distinct_simultaneous_demand_patterns"] == 4
+    assert result["demand_design_matrix_rank"] == 2
+    assert result["demand_design_matrix_full_rank"] is True
     assert result["room_specific_input_separation"] == "potentially_excited_but_not_identified"
     assert result["floors"]["ground_floor"]["pump_transitions"] > 0
 
@@ -787,4 +789,6 @@ def test_room_level_excitation_identifiability_withholds_when_demands_are_locked
     )
     assert result["rooms_with_both_demand_modes"] == 2
     assert result["distinct_simultaneous_demand_patterns"] == 2
+    assert result["demand_design_matrix_rank"] == 1
+    assert result["demand_design_matrix_full_rank"] is False
     assert result["room_specific_input_separation"] == "insufficient_independent_room_demand_patterns"

@@ -114,7 +114,7 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
         pumps = data.get("pumps", {})
         return {
             "rooms": rooms,
-            "house_assessment": self.coordinator.entry.options.get("house_assessment", {}),
+            "house_assessment": data.get("house_assessment", {}),
             "room_count": len(rooms),
             "heating_rooms": sum(1 for room in rooms.values() if room.get("demand")),
             "average_room_temperature": round(sum(valid_temps) / len(valid_temps), 1) if valid_temps else None,

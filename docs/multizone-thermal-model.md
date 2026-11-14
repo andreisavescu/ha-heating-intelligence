@@ -131,3 +131,25 @@ observations are not converted into room heat capacity, envelope conductance
 or a fitted time constant. They are exposed to show which rooms have usable
 response history and to guide later calibration using independent heat-input
 and boundary observations.
+
+
+## Recorder history coverage
+
+The coordinator queries the configured room temperature, demand, window,
+CO2 and humidity entities plus configured outdoor, solar, attic, boiler,
+water-temperature, AC and pump entities over a rolling seven-day Recorder
+window. The query runs in the Recorder executor and is refreshed no more
+often than every six hours, not on each ten-second coordinator update.
+
+The result is reduced to per-entity sample counts, numeric sample counts,
+first/last timestamps, observed span and median update interval. Raw state
+history is not copied into the integration's persistent store and is not
+transmitted externally. The dashboard uses this coverage summary to show
+whether sufficient source data exists before parameter identification.
+
+Recorder retention remains controlled by the user's Home Assistant Recorder
+configuration. With the default ten-day detailed-history retention, the
+seven-day window should fit; if entities are excluded from Recorder or
+history retention is shorter, coverage will be incomplete. This stage is
+data-readiness assessment, not yet a claim that the RC parameters have been
+calibrated or independently validated.

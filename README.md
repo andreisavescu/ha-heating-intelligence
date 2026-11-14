@@ -266,3 +266,6 @@ A further Recorder diagnostic pairs verified cumulative gas and AC energy increm
 
 
 The input-to-room response diagnostic now scans concurrent and delayed room-temperature responses (up to two hours at the default 30-minute cadence). Each response interval is admitted only when every configured room has a valid temperature, preventing changing room coverage from shifting the aggregate response metric. Per-room lag scans are reported separately for gas and AC. The strongest observed lag is descriptive only and must not be interpreted as a physical delay or causal effect.
+
+
+The Recorder calibration diagnostics now include a room-level excitation screen. It counts demand-on/off intervals and transitions per room, compares temperature-rate distributions between those modes, measures pairwise demand co-activation, counts distinct simultaneous room-demand patterns, and checks overlap between floor-pump activity and room demand. This is a prerequisite/observability screen only: demand is not delivered heat, pump electricity is not thermal output, and the screen does not identify room-level watts, capacities or conductances.

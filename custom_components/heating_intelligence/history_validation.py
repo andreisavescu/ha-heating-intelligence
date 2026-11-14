@@ -1483,7 +1483,7 @@ def build_solar_room_response_analysis(
                     exclusions[room_id]["invalid_or_stale_solar"] += 1
                 else:
                     exclusions[room_id]["unsupported_solar_unit"] += 1
-        intervals.append(room_intervals)
+        intervals.append({"_timestamp": stamp0, **room_intervals})
 
     room_results = {}
     for room_id, room in zip(room_ids, rooms):
@@ -1496,6 +1496,9 @@ def build_solar_room_response_analysis(
                     continue
                 target_row = intervals[target_index]
                 if target_row is None:
+                    continue
+                elapsed_lag = (target_row["_timestamp"] - source_row["_timestamp"]).total_seconds() / 60
+                if abs(elapsed_lag - lag * interval_minutes) > 1:
                     continue
                 source = source_row.get(room_id)
                 target = target_row.get(room_id)

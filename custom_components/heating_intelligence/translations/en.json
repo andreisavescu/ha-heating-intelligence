@@ -50,6 +50,10 @@
         "title": "Select room",
         "description": "Choose the room whose humidity and CO2 sensors you want to configure."
       },
+      "room_air_quality_config": {
+        "title": "Room air quality",
+        "description": "Configure humidity and optional CO2 sensors for {room_name}. Disable CO2 to remove its sensor."
+      },
       "room_air_quality_co2": {
         "title": "Select CO2 sensor",
         "description": "Choose the CO2 sensor for this room."

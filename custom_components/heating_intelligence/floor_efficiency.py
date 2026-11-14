@@ -118,11 +118,10 @@ def _solve(matrix: list[list[float]], vector: list[float]) -> list[float] | None
 def weather_normalised_efficiency(
     daily: dict[str, dict[str, Any]], today: str, minimum_days: int = 21
 ) -> dict[str, Any]:
-    """Fit a conservative daily gas model against HDD, delta-T and solar.
+    """Fit a weather model on early completed days and validate chronologically.
 
-    The model uses completed days only. It reports residual-adjusted gas use
-    at the dataset's median weather conditions; this is a comparative index,
-    not a physical heat-loss or boiler-efficiency measurement.
+    The holdout is never used for fitting or reference-condition selection.
+    This remains a comparative gas-use index, not a physical H estimate.
     """
     records = []
     for date, values in sorted(daily.items()):
@@ -150,32 +149,48 @@ def weather_normalised_efficiency(
             "note": f"At least {minimum_days} completed days with gas, outdoor temperature, ΔT and solar readings are required.",
             "reference_conditions": None,
             "coefficients": None,
+            "holdout_validation": None,
             "recent_days": [],
         }
 
-    features = [
-        [1.0, item["hdd"], item["delta_t"], item["solar"]]
-        for item in records
-    ]
-    # Small ridge penalty on weather coefficients reduces instability when
-    # HDD and delta-T move together; the intercept remains unpenalised.
-    size = 4
-    matrix = [[sum(row[i] * row[j] for row in features) for j in range(size)] for i in range(size)]
-    vector = [sum(row[i] * item["gas"] for row, item in zip(features, records)) for i in range(size)]
-    for index in range(1, size):
-        matrix[index][index] += 0.05
-    coefficients = _solve(matrix, vector)
+    split = int(len(records) * 0.70)
+    train, holdout = records[:split], records[split:]
+    if len(train) < 12 or len(holdout) < 6:
+        return {
+            "status": "insufficient_train_or_holdout_history",
+            "days_used": len(records),
+            "training_days": len(train),
+            "holdout_days": len(holdout),
+            "minimum_days": minimum_days,
+            "note": "At least 12 chronological training days and 6 later holdout days are required.",
+            "reference_conditions": None,
+            "coefficients": None,
+            "holdout_validation": None,
+            "recent_days": [],
+        }
+
+    def fit_model(items):
+        features = [[1.0, item["hdd"], item["delta_t"], item["solar"]] for item in items]
+        size = 4
+        matrix = [[sum(row[i] * row[j] for row in features) for j in range(size)] for i in range(size)]
+        vector = [sum(row[i] * item["gas"] for row, item in zip(features, items)) for i in range(size)]
+        for index in range(1, size):
+            matrix[index][index] += 0.05
+        return _solve(matrix, vector)
+
+    coefficients = fit_model(train)
     if coefficients is None:
         return {
             "status": "insufficient_variation", "days_used": len(records),
-            "minimum_days": minimum_days, "note": "Weather variables do not vary enough to fit a stable comparison.",
-            "reference_conditions": None, "coefficients": None, "recent_days": [],
+            "minimum_days": minimum_days, "note": "Training weather variables do not vary enough to fit a stable comparison.",
+            "reference_conditions": None, "coefficients": None,
+            "holdout_validation": None, "recent_days": [],
         }
 
     reference = {
-        "heating_degree_days": median(item["hdd"] for item in records),
-        "delta_t_c": median(item["delta_t"] for item in records),
-        "solar_radiation_w_m2": median(item["solar"] for item in records),
+        "heating_degree_days": median(item["hdd"] for item in train),
+        "delta_t_c": median(item["delta_t"] for item in train),
+        "solar_radiation_w_m2": median(item["solar"] for item in train),
     }
 
     def predict(hdd: float, delta_t: float, solar: float) -> float:
@@ -184,6 +199,36 @@ def weather_normalised_efficiency(
     expected_reference = predict(
         reference["heating_degree_days"], reference["delta_t_c"], reference["solar_radiation_w_m2"]
     )
+    holdout_predictions = [
+        predict(item["hdd"], item["delta_t"], item["solar"]) for item in holdout
+    ]
+    holdout_errors = [pred - item["gas"] for pred, item in zip(holdout_predictions, holdout)]
+    holdout_mae = sum(abs(value) for value in holdout_errors) / len(holdout_errors)
+    holdout_rmse = math.sqrt(sum(value * value for value in holdout_errors) / len(holdout_errors))
+    baseline = sum(item["gas"] for item in train) / len(train)
+    baseline_mae = sum(abs(baseline - item["gas"]) for item in holdout) / len(holdout)
+    holdout_mean = sum(item["gas"] for item in holdout) / len(holdout)
+    holdout_total = sum((item["gas"] - holdout_mean) ** 2 for item in holdout)
+    holdout_residual = sum(value * value for value in holdout_errors)
+    holdout_r_squared = (
+        1.0 - holdout_residual / holdout_total if holdout_total > 1e-9 else None
+    )
+    holdout_validation = {
+        "status": "better_than_training_mean_baseline" if holdout_mae < baseline_mae else "not_better_than_training_mean_baseline",
+        "method": "chronological_70_30_holdout",
+        "training_days": len(train),
+        "holdout_days": len(holdout),
+        "training_start": train[0]["date"],
+        "training_end": train[-1]["date"],
+        "holdout_start": holdout[0]["date"],
+        "holdout_end": holdout[-1]["date"],
+        "mae_kwh": round(holdout_mae, 3),
+        "rmse_kwh": round(holdout_rmse, 3),
+        "training_mean_baseline_mae_kwh": round(baseline_mae, 3),
+        "r_squared": round(holdout_r_squared, 3) if holdout_r_squared is not None else None,
+        "note": "The final chronological segment is evaluated without fitting or reference-condition leakage. This is a model diagnostic, not proof of causal weather effects.",
+    }
+
     recent = []
     for item in records[-30:]:
         expected = predict(item["hdd"], item["delta_t"], item["solar"])
@@ -194,15 +239,16 @@ def weather_normalised_efficiency(
             "weather_expected_gas_kwh": round(expected, 2),
             "weather_normalised_gas_kwh": round(max(0.0, adjusted), 2),
             "weather_effect_percent": round((item["gas"] - expected) / expected * 100, 1) if expected > 0 else None,
+            "was_holdout": item["date"] >= holdout[0]["date"],
         })
 
     return {
         "status": "available",
         "days_used": len(records),
         "minimum_days": minimum_days,
-        "reference_conditions": {
-            key: round(value, 2) for key, value in reference.items()
-        },
+        "training_days": len(train),
+        "holdout_days": len(holdout),
+        "reference_conditions": {key: round(value, 2) for key, value in reference.items()},
         "reference_expected_gas_kwh": round(expected_reference, 2),
         "coefficients": {
             "baseline_kwh": round(coefficients[0], 4),
@@ -210,6 +256,8 @@ def weather_normalised_efficiency(
             "per_delta_t_degree": round(coefficients[2], 4),
             "per_solar_w_m2": round(coefficients[3], 6),
         },
+        "holdout_validation": holdout_validation,
         "recent_days": recent,
-        "note": "Comparative regression index adjusted to median observed weather conditions. Not a physical heat-loss coefficient or boiler-efficiency measurement.",
+        "note": "Comparative regression index adjusted to median training-period weather conditions. Not a physical heat-loss coefficient or boiler-efficiency measurement.",
     }
+

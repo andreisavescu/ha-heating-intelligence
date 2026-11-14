@@ -22,7 +22,6 @@ from .house_assessment import build_house_assessment
 from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
-from .pump_stages import update_pump_stage
 from .multizone_thermal_model import build_multizone_observation_model
 from .history_validation import build_recorder_history_summary, build_recorder_room_response
 
@@ -51,8 +50,6 @@ from .const import (
     CONF_AC_POWER_ENTITY,
     CONF_AC_ENERGY_ENTITY,
     CONF_AC_HEATING_COP,
-    CONF_BOILER_BURNER_ENTITY,
-    CONF_BOILER_MODULATION_ENTITY,
     CONF_FLOOR,
     CONF_ACH,
     CONF_PUMPS,
@@ -82,7 +79,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             hass,
             logger=_LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=10),
+            update_interval=timedelta(seconds=30),
         )
         # Keep entities safe during startup or a failed first refresh.
         self.data = {
@@ -250,18 +247,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
 
         configured_pumps = self.entry.options.get(CONF_PUMPS, [])
         changed = False
-        burner_entity = self.entry.options.get(CONF_BOILER_BURNER_ENTITY)
-        burner_state = self.hass.states.get(burner_entity) if burner_entity else None
-        modulation_entity = self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)
-        modulation_state = self.hass.states.get(modulation_entity) if modulation_entity else None
-        boiler_context = {
-            "burner_entity": burner_entity,
-            "burner_state": burner_state.state if burner_state else None,
-            "burner_on": burner_state.state == "on" if burner_state else None,
-            "modulation_entity": modulation_entity,
-            "modulation_percent": _as_float(modulation_state.state) if modulation_state else None,
-        }
-
         for pump in configured_pumps:
             pump_id = pump["id"]
             power_state = self.hass.states.get(pump["power_entity"])
@@ -282,18 +267,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             })
             for key, default in (("daily_runtime_seconds", 0.0), ("daily_cycle_count", 0), ("daily_energy_kwh", 0.0), ("last_energy_reading", None)):
                 history.setdefault(key, default)
-            stage_history = history.setdefault("stage_history", {})
-            stage_data = update_pump_stage(stage_history, power, now_local)
-            candidate_start = stage_history.get("above_pump_threshold_since")
-            if candidate_start and history.get("correlated_candidate_start") != candidate_start:
-                history["correlated_candidate_start"] = candidate_start
-                history["candidate_boiler_context"] = dict(boiler_context)
-            observed_running = stage_data["stage"] == "pump_running"
-            if stage_data.get("pump_started_at") and history.get("correlated_pump_started_at") != stage_data["pump_started_at"]:
-                history["correlated_pump_started_at"] = stage_data["pump_started_at"]
-                history["pump_start_boiler_context"] = dict(
-                    history.get("candidate_boiler_context") or boiler_context
-                )
+            observed_running = None if power is None else power > RUNNING_THRESHOLD_W
             was_running = bool(history.get("running", False))
 
             if observed_running is True and not was_running:
@@ -366,14 +340,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "energy": energy,
                 "energy_unit": energy_state.attributes.get("unit_of_measurement") if energy_state else None,
                 "running": running,
-                "stage": stage_data["stage"],
-                "valve_opened_at": stage_data["valve_opened_at"],
-                "pump_started_at": stage_data["pump_started_at"],
-                "pump_stopped_at": stage_data["pump_stopped_at"],
-                "idle_baseline_w": stage_data["idle_baseline_w"],
-                "valve_level_w": stage_data["valve_level_w"],
-                "detection_basis": stage_data["detection_basis"],
-                "boiler_context_at_pump_start": history.get("pump_start_boiler_context"),
                 "power_source_state": power_state.state if power_state else "missing",
                 "energy_source_state": energy_state.state if energy_state else "missing",
                 "cycle_count": int(history.get("cycle_count", 0)),
@@ -385,51 +351,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "daily_cycle_count": int(history.get("daily_cycle_count", 0)),
                 "daily_energy_kwh": round(float(history.get("daily_energy_kwh", 0)), 4),
             }
-
-        result["boiler_context"] = boiler_context
-        pump_events = []
-        for pump_id, pump_data in result["pumps"].items():
-            for event_key, event_label in (
-                ("valve_opened_at", "valve_opening"),
-                ("pump_started_at", "pump_started"),
-            ):
-                event_time = pump_data.get(event_key)
-                if event_time:
-                    pump_events.append({
-                        "pump_id": pump_id,
-                        "event": event_label,
-                        "timestamp": event_time,
-                        "boiler_burner_on": (
-                            pump_data.get("boiler_context_at_pump_start", {}).get("burner_on")
-                            if event_label == "pump_started" else None
-                        ),
-                    })
-        pump_events.sort(key=lambda item: item["timestamp"])
-        def event_delay(pump_id, first_event, second_event):
-            pump_data = result["pumps"].get(pump_id, {})
-            first = dt_util.parse_datetime(pump_data.get(first_event) or "")
-            second = dt_util.parse_datetime(pump_data.get(second_event) or "")
-            return round((second - first).total_seconds()) if first and second else None
-        downstairs_start = dt_util.parse_datetime(
-            result["pumps"].get("ground_floor", {}).get("pump_started_at") or ""
-        )
-        upstairs_start = dt_util.parse_datetime(
-            result["pumps"].get("upstairs", {}).get("pump_started_at") or ""
-        )
-        result["pump_sequence"] = {
-            "events": pump_events,
-            "downstairs_valve_to_pump_seconds": event_delay(
-                "ground_floor", "valve_opened_at", "pump_started_at"
-            ),
-            "upstairs_valve_to_pump_seconds": event_delay(
-                "upstairs", "valve_opened_at", "pump_started_at"
-            ),
-            "downstairs_to_upstairs_pump_seconds": (
-                round((upstairs_start - downstairs_start).total_seconds())
-                if downstairs_start and upstairs_start else None
-            ),
-            "sampling_interval_seconds": 10,
-        }
 
         result["sync"] = {
             "status": self._history.get("last_sync_result", "unknown"),

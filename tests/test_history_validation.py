@@ -1781,3 +1781,18 @@ def test_solar_room_response_withholds_unsupported_irradiance_units():
     assert result["excluded_observations"]["living"]["unsupported_solar_unit"] > 0
     assert result["rooms"]["living"]["selected_training_lag_minutes"] is None
 
+def test_physical_readiness_surfaces_solar_association_without_promoting_gain_watts():
+    result = MODULE.build_multizone_physical_calibration_readiness(
+        [],
+        [{"id": "living"}],
+        solar_room_response_analysis={
+            "status": "repeatable_solar_response_associations_available",
+            "rooms_with_repeatable_association": ["living"],
+        },
+    )
+    solar = result["solar_room_response_evidence"]
+    assert solar["rooms_with_repeatable_association"] == ["living"]
+    assert solar["solar_gain_w_identified"] is False
+    assert solar["physical_room_parameters_identified"] is False
+    assert result["physical_simulation_ready"] is False
+

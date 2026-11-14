@@ -3936,12 +3936,21 @@ def build_multizone_physical_calibration_readiness(
         key for key, item in energy_meters.items()
         if item.get("measured_energy_kwh") is not None
     ]
+    def has_verified_room_heat_output(channel_key):
+        for sample in samples:
+            channels = sample.get("channels") or {}
+            output = _finite_number_or_none(channels.get(channel_key))
+            age = _finite_number_or_none(channels.get(channel_key + "_age_minutes"))
+            unit = str(channels.get(channel_key + "_unit") or "").strip().lower()
+            if (output is not None and output >= 0
+                    and (age is None or age <= 45.0)
+                    and unit in ("w", "watt", "watts", "kw", "kilowatt", "kilowatts")):
+                return True
+        return False
+
     room_heat_output_channels = [
         key for key in ("room_heat_output_w", "zone_heat_output_w")
-        if any(
-            _finite_number_or_none((sample.get("channels") or {}).get(key)) is not None
-            for sample in samples
-        )
+        if has_verified_room_heat_output(key)
     ]
     water_flow_channels = [
         key for key in ("water_flow_rate", "water_flow_l_min", "water_flow_m3_h")

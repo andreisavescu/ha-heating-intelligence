@@ -976,3 +976,13 @@ def test_thermal_input_response_flags_flat_input_variation():
         "withheld_weak_plant_input_excitation",
         "insufficient_verified_input_response_pairs",
     )
+
+
+def test_pearson_diagnostics_marks_wide_nominal_interval_as_uncertain():
+    diagnostics = MODULE._pearson_diagnostics(
+        list(range(1, 13)),
+        [1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1],
+    )
+    interval = diagnostics["confidence_interval_95"]
+    assert interval is not None
+    assert interval[0] <= 0 <= interval[1]

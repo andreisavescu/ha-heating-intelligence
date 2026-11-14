@@ -20,7 +20,7 @@
           "global_settings": "Global settings",
           "pump_settings": "Pump settings",
           "edit_room": "Change a room's floor",
-          "room_area": "Set room floor areas and measured ACH",
+          "room_area": "Configure room areas, ACH and window contacts",
           "room_air_quality": "Configure room air quality",
           "house_assessment": "House assessment"
         }
@@ -66,14 +66,15 @@
       },
       "room_area": {
         "title": "Select room",
-        "description": "Choose the room whose floor area or measured air changes per hour you want to configure."
+        "description": "Choose a room whose floor area, measured air changes or window contact you want to configure."
       },
       "set_room_area": {
-        "title": "Room area and measured ventilation",
-        "description": "Set floor area and optional measured air changes per hour for {room_name}. Leave unknown values empty.",
+        "title": "Room area, ventilation and window contact",
+        "description": "Set floor area, optional measured ACH and a window contact for {room_name}. Leave unknown values empty.",
         "data": {
           "area_m2": "Room floor area (m²)",
-          "air_changes_per_hour": "Measured room air changes per hour (ACH)"
+          "air_changes_per_hour": "Measured room air changes per hour (ACH)",
+          "window_entity": "Room window contact"
         }
       },
       "remove_room": {

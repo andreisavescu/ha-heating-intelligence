@@ -24,7 +24,7 @@ from .thermal_learning import build_room_thermal_model, build_house_thermal_mode
 from .attic_thermal import build_attic_thermal_analysis
 from .pump_stages import update_pump_stage
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary
+from .history_validation import build_recorder_history_summary, build_recorder_room_response
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -169,6 +169,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 True, False, True, True,
             )
             summary = build_recorder_history_summary(history, start, now)
+            summary["room_response"] = build_recorder_room_response(
+                history,
+                self.entry.options.get(CONF_ROOMS, []),
+                self.entry.options.get(CONF_AC_POWER_ENTITY),
+            )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")
             summary = {

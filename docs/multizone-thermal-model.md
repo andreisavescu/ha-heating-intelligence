@@ -89,7 +89,11 @@ infiltration remains unknown rather than silently assigned a default.
 ## Current implementation boundary
 
 The coordinator now publishes a multi-zone observation inventory under
-`thermal_model.multi_zone`. It includes room-air observations, an attic node
+`thermal_model.multi_zone`. Room configuration also accepts an optional measured room volume
+in m³. When both volume and ACH are supplied, the model estimates a
+ventilation conductance using air density 1.2 kg/m³ and specific heat
+1005 J/(kg·K), with the source and inputs shown explicitly. This path is
+reported separately from conductive envelope links. It includes room-air observations, an attic node
 when configured, an outdoor boundary, floor-level UFH context, and a heating
 plant telemetry summary. A roof conductance is exposed only when both roof
 U-value and roof area are explicitly configured. The attic-floor path is

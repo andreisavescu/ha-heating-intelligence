@@ -188,30 +188,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_add_room(self, user_input=None):
         if user_input is not None:
-            rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
-            slug = re.sub(r"[^a-z0-9_]+", "_", user_input[CONF_NAME].lower()).strip("_")
-            if not slug:
-                slug = f"room_{len(rooms) + 1}"
-            base = slug
-            suffix = 2
-            existing = {room["id"] for room in rooms}
-            while slug in existing:
-                slug = f"{base}_{suffix}"
-                suffix += 1
-            rooms.append({
-                "id": slug,
-                CONF_NAME: user_input[CONF_NAME].strip(),
-                CONF_FLOOR: user_input[CONF_FLOOR],
-                CONF_AREA: float(user_input[CONF_AREA]) if user_input.get(CONF_AREA) not in (None, "") else None,
-                CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY],
-                CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY],
-                CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
-                CONF_HUMIDITY_ENTITY: user_input.get(CONF_HUMIDITY_ENTITY),
-                CONF_CO2_ENTITY: user_input.get(CONF_CO2_ENTITY) if user_input.get(CONF_ENABLE_CO2) else None,
-            })
-            data = dict(self.config_entry.options)
-            data[CONF_ROOMS] = rooms
-            return self.async_create_entry(title="", data=data)
+            self._new_room_input = dict(user_input)
+            if user_input.get(CONF_ENABLE_CO2):
+                return await self.async_step_add_room_co2()
+            return self._save_new_room(None)
 
         schema = vol.Schema({
             vol.Required(CONF_NAME): str,
@@ -222,9 +202,46 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(CONF_WINDOW_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),
             vol.Optional(CONF_HUMIDITY_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_ENABLE_CO2, default=False): selector.BooleanSelector(),
-            vol.Optional(CONF_CO2_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         })
         return self.async_show_form(step_id="add_room", data_schema=schema)
+
+    async def async_step_add_room_co2(self, user_input=None):
+        if user_input is not None:
+            return self._save_new_room(user_input.get(CONF_CO2_ENTITY))
+        return self.async_show_form(
+            step_id="add_room_co2",
+            data_schema=vol.Schema({
+                vol.Required(CONF_CO2_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            }),
+            description_placeholders={"room_name": self._new_room_input[CONF_NAME]},
+        )
+
+    def _save_new_room(self, co2_entity):
+        user_input = self._new_room_input
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        slug = re.sub(r"[^a-z0-9_]+", "_", user_input[CONF_NAME].lower()).strip("_")
+        if not slug:
+            slug = f"room_{len(rooms) + 1}"
+        base = slug
+        suffix = 2
+        existing = {room["id"] for room in rooms}
+        while slug in existing:
+            slug = f"{base}_{suffix}"
+            suffix += 1
+        rooms.append({
+            "id": slug,
+            CONF_NAME: user_input[CONF_NAME].strip(),
+            CONF_FLOOR: user_input[CONF_FLOOR],
+            CONF_AREA: float(user_input[CONF_AREA]) if user_input.get(CONF_AREA) not in (None, "") else None,
+            CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY],
+            CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY],
+            CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
+            CONF_HUMIDITY_ENTITY: user_input.get(CONF_HUMIDITY_ENTITY),
+            CONF_CO2_ENTITY: co2_entity,
+        })
+        data = dict(self.config_entry.options)
+        data[CONF_ROOMS] = rooms
+        return self.async_create_entry(title="", data=data)
 
     async def async_step_room_area(self, user_input=None):
         """Select a room and configure its optional floor area."""

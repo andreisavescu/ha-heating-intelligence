@@ -117,9 +117,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Optional("thermal_mass", default=current.get("thermal_mass", "unknown")): vol.In({"unknown": "Unknown", "light": "Lightweight", "medium": "Medium", "heavy": "High thermal mass"}),
             vol.Optional("boiler_dhw", default=current.get("boiler_dhw", "unknown")): vol.In({"unknown": "Unknown", "yes": "Yes", "no": "No"}),
             vol.Optional("buffer_tank", default=current.get("buffer_tank", "unknown")): vol.In({"unknown": "Unknown", "yes": "Yes", "no": "No"}),
-            vol.Optional("ufh_screed_cm"): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=20, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)),
+            (vol.Optional("ufh_screed_cm", default=current["ufh_screed_cm"]) if current.get("ufh_screed_cm") is not None else vol.Optional("ufh_screed_cm")): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=20, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional("ac_heating", default=current.get("ac_heating", "yes")): vol.In({"unknown": "Unknown", "yes": "Yes", "no": "No"}),
-            vol.Optional("ac_units"): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=20, step=1, mode=selector.NumberSelectorMode.BOX)),
+            (vol.Optional("ac_units", default=current["ac_units"]) if current.get("ac_units") is not None else vol.Optional("ac_units")): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=20, step=1, mode=selector.NumberSelectorMode.BOX)),
         }
         return self.async_show_form(step_id="assessment_heating", data_schema=vol.Schema(fields))
 
@@ -134,7 +134,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         fields = {
             vol.Optional("ventilation_type", default=current.get("ventilation_type", "unknown")): vol.In({"unknown": "Unknown", "natural": "Natural ventilation", "extractor": "Extractor fans", "mvhr": "Mechanical ventilation with heat recovery", "balanced": "Balanced mechanical ventilation"}),
             vol.Optional("daily_window_ventilation", default=current.get("daily_window_ventilation", "unknown")): vol.In({"unknown": "Unknown", "rare": "Rarely", "once": "Once daily", "several": "Several times daily"}),
-            vol.Optional("occupants"): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=20, step=1, mode=selector.NumberSelectorMode.BOX)),
+            (vol.Optional("occupants", default=current["occupants"]) if current.get("occupants") is not None else vol.Optional("occupants")): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=20, step=1, mode=selector.NumberSelectorMode.BOX)),
             vol.Optional("occupancy_pattern", default=current.get("occupancy_pattern", "unknown")): vol.In({"unknown": "Unknown", "home_day": "Usually occupied during daytime", "away_day": "Usually away during daytime", "variable": "Variable"}),
             vol.Optional("internal_gains", default=current.get("internal_gains", "unknown")): vol.In({"unknown": "Unknown", "low": "Low", "typical": "Typical", "high": "High (servers/PCs/appliances)"}),
             vol.Optional("staircase_layout", default=current.get("staircase_layout", "unknown")): vol.In({"unknown": "Unknown", "open": "Open between floors", "closed": "Separated"}),

@@ -665,3 +665,49 @@ def test_thermal_input_energy_withholds_gas_m3_and_meter_resets():
     gas = result["meters"]["gas_consumption"]
     assert gas["measured_energy_kwh"] is None
     assert gas["invalid_intervals"]["unit_not_energy_or_unsupported"] == 7
+
+
+def test_thermal_input_room_response_alignment_pairs_verified_energy_with_room_slopes():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(12):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "gas_consumption": 100.0 + index * (0.1 + index * 0.01),
+                "gas_consumption_age_minutes": 0,
+                "gas_consumption_unit": "kWh",
+                "ac_energy": 20.0 + index * 0.05,
+                "ac_energy_age_minutes": 0,
+                "ac_energy_unit": "kWh",
+            },
+            "rooms": {
+                "living": {"temperature": 20.0 + index * index * 0.01},
+                "bedroom": {"temperature": 19.0 + index * index * 0.005},
+            },
+        })
+    result = MODULE.build_thermal_input_room_response_alignment(
+        samples, [{"id": "living"}, {"id": "bedroom"}], minimum_intervals=8
+    )
+    gas = result["meters"]["gas_consumption"]
+    assert gas["status"] == "input_response_pairs_available"
+    assert gas["paired_intervals"] == 11
+    assert gas["input_power_vs_room_response_pearson_r"] is not None
+    assert result["rooms"]["living"]["paired_intervals"] == 11
+    assert result["capacity_identification_status"] == "withheld_no_room_heat_allocation_or_independent_thermal_output"
+
+
+def test_thermal_input_room_response_alignment_rejects_unsupported_gas_units():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(10):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"gas_consumption": 1.0 + index * 0.1, "gas_consumption_age_minutes": 0, "gas_consumption_unit": "m³"},
+            "rooms": {"living": {"temperature": 20.0 + index * 0.1}},
+        })
+    result = MODULE.build_thermal_input_room_response_alignment(
+        samples, [{"id": "living"}], minimum_intervals=4
+    )
+    assert result["meters"]["gas_consumption"]["paired_intervals"] == 0
+    assert result["meters"]["gas_consumption"]["exclusions"]["unsupported_unit"] == 9

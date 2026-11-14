@@ -810,6 +810,10 @@ def test_thermal_input_room_response_alignment_pairs_verified_energy_with_room_s
     assert gas["status"] == "lagged_input_response_pairs_available"
     assert gas["paired_intervals_at_zero_lag"] == 11
     assert gas["lag_scan"][0]["pearson_r"] is not None
+    assert gas["lag_scan"][0]["confidence_interval_95"] is not None
+    assert gas["lag_scan"][0]["split_half"]["status"] == "same_direction_reasonably_stable"
+    assert gas["plant_input_excitation_status"] == "sufficient_variation_for_association_screen"
+    assert gas["response_stability_status"] == "same_direction_across_history_halves"
     assert result["rooms"]["gas_consumption"]["living"]["paired_intervals_at_zero_lag"] == 11
     assert result["capacity_identification_status"] == "withheld_no_room_heat_allocation_or_independent_thermal_output"
 
@@ -909,3 +913,66 @@ def test_room_level_excitation_identifiability_withholds_when_demands_are_locked
     assert result["demand_design_matrix_rank"] == 1
     assert result["demand_design_matrix_full_rank"] is False
     assert result["room_specific_input_separation"] == "insufficient_independent_room_demand_patterns"
+
+
+def test_pearson_diagnostics_report_uncertainty_and_split_half_sign_reversal():
+    stable = MODULE._pearson_diagnostics(
+        [1, 2, 3, 4, 5, 6, 7, 8],
+        [2, 4, 6, 8, 10, 12, 14, 16],
+    )
+    assert stable["confidence_interval_95"] is not None
+    assert stable["split_half"]["status"] == "same_direction_reasonably_stable"
+
+    reversing = MODULE._pearson_diagnostics(
+        [1, 2, 3, 4, 5, 6, 7, 8],
+        [1, 2, 3, 4, 4, 3, 2, 1],
+    )
+    assert reversing["split_half"]["status"] == "sign_reversal_between_halves"
+
+
+def test_thermal_input_response_withholds_non_repeatable_history_halves():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(20):
+        # First half: rising input and rising temperature response.
+        # Second half: rising input but falling response.
+        response = index * 0.02 if index < 10 else (20 - index) * 0.02
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "gas_consumption": 100.0 + index * index * 0.01,
+                "gas_consumption_age_minutes": 0,
+                "gas_consumption_unit": "kWh",
+            },
+            "rooms": {"living": {"temperature": 20.0 + response * index}},
+        })
+    result = MODULE.build_thermal_input_room_response_alignment(
+        samples, [{"id": "living"}], minimum_intervals=6, maximum_lag_intervals=0,
+    )
+    gas = result["meters"]["gas_consumption"]
+    assert gas["response_stability_status"] == "unstable_sign_between_history_halves"
+    assert gas["evidence_status"] == "withheld_non_repeatable_response"
+
+
+def test_thermal_input_response_flags_flat_input_variation():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(12):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "gas_consumption": 100.0 + index * (0.1000 + (index % 2) * 0.00001),
+                "gas_consumption_age_minutes": 0,
+                "gas_consumption_unit": "kWh",
+            },
+            "rooms": {"living": {"temperature": 20.0 + index * index * 0.01}},
+        })
+    result = MODULE.build_thermal_input_room_response_alignment(
+        samples, [{"id": "living"}], minimum_intervals=8, maximum_lag_intervals=0,
+    )
+    gas = result["meters"]["gas_consumption"]
+    assert gas["plant_input_excitation_status"] == "weak_or_flat_input_variation"
+    assert gas["evidence_status"] in (
+        "withheld_weak_plant_input_excitation",
+        "insufficient_verified_input_response_pairs",
+    )

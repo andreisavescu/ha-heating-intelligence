@@ -53,6 +53,8 @@ from .const import (
     CONF_CO2_ENTITY,
     CONF_ENABLE_CO2,
     CONF_HOUSE_ASSESSMENT,
+    CONF_BOILER_BURNER_ENTITY,
+    CONF_BOILER_MODULATION_ENTITY,
     DOMAIN,
 )
 
@@ -180,6 +182,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
             CONF_AC_POWER_ENTITY,
             CONF_AC_ENERGY_ENTITY,
+            CONF_BOILER_BURNER_ENTITY,
+            CONF_BOILER_MODULATION_ENTITY,
         )
         if user_input is not None:
             data = dict(self.config_entry.options)
@@ -234,6 +238,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_AC_ENERGY_ENTITY,
             )
         )
+        schema_fields[optional_sensor_field(CONF_BOILER_MODULATION_ENTITY)[0]] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+        burner_saved = current.get(CONF_BOILER_BURNER_ENTITY)
+        burner_field = vol.Optional(CONF_BOILER_BURNER_ENTITY, default=burner_saved) if burner_saved else vol.Optional(CONF_BOILER_BURNER_ENTITY)
+        schema_fields[burner_field] = selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor"))
         weather_field = vol.Optional(CONF_WEATHER_ENTITY, default=current.get(CONF_WEATHER_ENTITY)) if current.get(CONF_WEATHER_ENTITY) else vol.Optional(CONF_WEATHER_ENTITY)
         schema_fields[weather_field] = selector.EntitySelector(selector.EntitySelectorConfig(domain="weather"))
         boiler_energy_field = optional_sensor_field(

@@ -780,6 +780,7 @@ def build_multizone_response_identification(
     require_ac_power: bool = False,
     require_boiler_burner_off: bool = False,
     require_boiler_modulation_zero: bool = False,
+    max_predictor_correlation: float = 0.985,
 ) -> dict[str, Any]:
     """Identify normalized passive room-to-room and envelope response rates.
 
@@ -791,6 +792,8 @@ def build_multizone_response_identification(
     """
     if interval_minutes <= 0 or not 0 < train_fraction < 1:
         raise ValueError("Invalid multi-zone identification cadence or split")
+    if not 0 < max_predictor_correlation <= 1:
+        raise ValueError("Maximum predictor correlation must be in (0, 1]")
     room_ids = [str(room.get("id", "unknown")) for room in rooms]
     if len(room_ids) < 2:
         return {
@@ -907,6 +910,9 @@ def build_multizone_response_identification(
             "holdout_mae_c": None,
             "holdout_rmse_c": None,
             "persistence_baseline_mae_c": None,
+            "max_abs_predictor_correlation": None,
+            "predictor_correlations": {},
+            "identifiability_threshold": max_predictor_correlation,
             "excluded_intervals": exclusions,
         }
         if len(train) >= minimum_train_intervals and len(holdout) >= minimum_holdout_intervals:
@@ -919,6 +925,43 @@ def build_multizone_response_identification(
                 for j in range(p)
             ]
             if all(scale > 1e-5 for scale in scales):
+                # Pairwise correlation is a transparent first identifiability
+                # screen: if two physical drivers move together, this dataset
+                # cannot reliably allocate response between them.
+                correlations = {}
+                max_abs_correlation = 0.0
+                for left in range(p):
+                    for right in range(left + 1, p):
+                        left_values = [row[1][left] for row in train]
+                        right_values = [row[1][right] for row in train]
+                        left_mean = means[left]
+                        right_mean = means[right]
+                        numerator = sum(
+                            (a - left_mean) * (b - right_mean)
+                            for a, b in zip(left_values, right_values)
+                        )
+                        denominator = math.sqrt(
+                            sum((a - left_mean) ** 2 for a in left_values)
+                            * sum((b - right_mean) ** 2 for b in right_values)
+                        )
+                        correlation = numerator / denominator if denominator > 1e-12 else 0.0
+                        key = f"{predictors[left]}__{predictors[right]}"
+                        correlations[key] = round(correlation, 4)
+                        max_abs_correlation = max(max_abs_correlation, abs(correlation))
+                result["predictor_correlations"] = correlations
+                result["max_abs_predictor_correlation"] = round(max_abs_correlation, 4)
+                if max_abs_correlation >= max_predictor_correlation:
+                    result["status"] = "non_identifiable_predictor_collinearity"
+                    result["identifiability_note"] = (
+                        "At least two thermal drivers are too strongly correlated in the training "
+                        "history to separate their individual normalized response rates."
+                    )
+                    result["interpretation"] = (
+                        "Coefficients are withheld because the available training history cannot "
+                        "distinguish the correlated envelope and inter-room temperature drivers."
+                    )
+                    room_results[room_id] = result
+                    continue
                 ys = [row[2] for row in train]
                 y_mean = sum(ys) / len(ys)
                 design = [[(row[1][j] - means[j]) / scales[j] for j in range(p)] for row in train]
@@ -969,6 +1012,10 @@ def build_multizone_response_identification(
                     "holdout_rmse_c": round(rmse, 4),
                     "persistence_baseline_mae_c": round(baseline_mae, 4),
                     "nonzero_predictors": sum(value > 1e-5 for value in physical),
+                    "identifiability_note": (
+                        "No severe pairwise predictor collinearity was detected in the training set; "
+                        "this is a screening diagnostic, not proof of full multivariate identifiability."
+                    ),
                     "interpretation": (
                         "Coefficients are non-negative normalized response rates G/C in 1/hour, "
                         "not physical conductances in W/K. Room capacities are not yet independently "
@@ -988,6 +1035,8 @@ def build_multizone_response_identification(
         "method": "nonnegative_multizone_free_coasting_regression",
         "interval_minutes": interval_minutes,
         "train_fraction": train_fraction,
+        "max_predictor_correlation_threshold": max_predictor_correlation,
+        "identifiability_method": "maximum_absolute_pairwise_training_predictor_correlation",
         "rooms": room_results,
         "global_interval_counts": all_interval_counts,
         "units": "1/hour normalized conductance-to-capacity ratios (G/C), not W/K",

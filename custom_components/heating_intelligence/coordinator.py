@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -216,6 +216,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
                 require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
                 require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
+            )
+            summary["multizone_physical_calibration_readiness"] = build_multizone_physical_calibration_readiness(
+                self._calibration_dataset_samples,
+                configured_rooms,
+                summary["multizone_response_identification"],
+                summary["thermal_input_energy_observability"],
+                summary["ufh_slab_observability"],
             )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None

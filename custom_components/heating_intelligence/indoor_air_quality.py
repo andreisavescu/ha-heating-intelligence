@@ -95,9 +95,28 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
     if not observations:
         observations.append("No configured room currently crosses the indicative CO2 or humidity bands.")
 
+    floor_groups: dict[str, list[dict[str, Any]]] = {}
+    for room in rooms.values():
+        floor_groups.setdefault(room.get("floor", "unassigned"), []).append(room)
+    by_floor = {}
+    for floor, floor_rooms in floor_groups.items():
+        floor_co2 = [_number(room.get("co2_ppm")) for room in floor_rooms if room.get("co2_entity")]
+        floor_humidity = [_number(room.get("humidity")) for room in floor_rooms if room.get("humidity_entity")]
+        floor_co2 = [value for value in floor_co2 if value is not None]
+        floor_humidity = [value for value in floor_humidity if value is not None]
+        by_floor[floor] = {
+            "rooms": len(floor_rooms),
+            "co2_rooms_with_readings": len(floor_co2),
+            "average_co2_ppm": round(mean(floor_co2)) if floor_co2 else None,
+            "highest_co2_ppm": round(max(floor_co2)) if floor_co2 else None,
+            "humidity_rooms_with_readings": len(floor_humidity),
+            "average_humidity_percent": round(mean(floor_humidity), 1) if floor_humidity else None,
+        }
+
     return {
         "configured_rooms": len(rooms),
         "rooms": room_assessments,
+        "by_floor": by_floor,
         "co2": {
             "configured_rooms": len(configured_co2),
             "rooms_with_readings": len(valid_co2),

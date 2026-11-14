@@ -335,7 +335,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 window_state_known=window_state_known,
             )
             thermal = thermal_statistics(room_history, now_local)
-            learned_model = build_room_thermal_model(room_history, now_local, temperature_value, demand_active, bool(ac_power_entity), ac_heating_active, window_open, window_state_known)
+            learned_model = build_room_thermal_model(room_history, now_local, temperature_value, demand_active, bool(ac_power_entity), ac_heating_active, window_open, window_state_known, bool(window_id))
             learned_room_models[room_id] = learned_model
             floor = room.get(CONF_FLOOR, "unassigned")
             floor_data = floor_analysis.setdefault(floor, {"active_rooms": 0})

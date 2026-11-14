@@ -1428,3 +1428,61 @@ def test_floor_thermal_output_rejects_pump_power_as_thermal_output_and_stale_val
     assert result["floors"]["ground_floor"]["excluded_samples"]["unsupported_unit"] == 1
     assert result["floors"]["upstairs"]["valid_samples"] == 0
     assert result["floors"]["upstairs"]["excluded_samples"]["missing_or_stale"] == 1
+
+
+def test_floor_room_heat_allocation_inference_requires_independent_repeatable_demands():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    patterns = [(True, False), (False, True), (True, True), (False, False)] * 12
+    for index, (left, right) in enumerate(patterns):
+        output = 1000 + 500 * int(left) + 900 * int(right) + (index % 3) * 5
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "ground_floor_thermal_output": output,
+                "ground_floor_thermal_output_unit": "W",
+                "ground_floor_thermal_output_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {"demand": "on" if left else "off", "demand_age_minutes": 0},
+                "kitchen": {"demand": "on" if right else "off", "demand_age_minutes": 0},
+            },
+        })
+    result = MODULE.build_floor_room_heat_allocation_inference(
+        samples,
+        [{"id": "living", "floor": "ground_floor"}, {"id": "kitchen", "floor": "ground_floor"}],
+        minimum_intervals=24,
+    )
+    floor = result["floors"]["ground_floor"]
+    assert floor["status"] == "repeatable_demand_association_not_physical_room_allocation"
+    assert floor["rooms"]["living"]["demand_associated_marginal_output_w"] == pytest.approx(500, abs=5)
+    assert floor["rooms"]["kitchen"]["demand_associated_marginal_output_w"] == pytest.approx(900, abs=5)
+    assert floor["rooms"]["living"]["not_a_measured_room_heat_share"] is True
+    assert floor["physical_room_allocation_identified"] is False
+    assert result["physical_room_allocation_identified"] is False
+
+
+def test_floor_room_heat_allocation_inference_rejects_collinear_demands():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(40):
+        on = index % 2 == 0
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "ground_floor_thermal_output": 1500 if on else 1000,
+                "ground_floor_thermal_output_unit": "W",
+                "ground_floor_thermal_output_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {"demand": "on" if on else "off", "demand_age_minutes": 0},
+                "kitchen": {"demand": "on" if on else "off", "demand_age_minutes": 0},
+            },
+        })
+    result = MODULE.build_floor_room_heat_allocation_inference(
+        samples,
+        [{"id": "living", "floor": "ground_floor"}, {"id": "kitchen", "floor": "ground_floor"}],
+        minimum_intervals=24,
+    )
+    assert result["floors"]["ground_floor"]["status"] == "insufficient_or_collinear_floor_output_and_room_demand_history"
+    assert result["floors"]["ground_floor"]["rooms"] == {}

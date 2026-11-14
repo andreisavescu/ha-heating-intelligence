@@ -115,7 +115,16 @@ def build_house_thermal_model(
     room_models: dict[str, dict[str, Any]], efficiency: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarise room learning alongside the existing measured house heat-loss model."""
-    available = [model for model in room_models.values() if model.get("status") == "available"]
+    learned = [
+        model for model in room_models.values()
+        if model.get("heating", {}).get("status") == "available"
+        or model.get("coasting", {}).get("status") == "available"
+    ]
+    forecastable = [model for model in room_models.values() if model.get("status") == "available"]
+    confidence_values = [
+        max(model.get("heating", {}).get("confidence", 0), model.get("coasting", {}).get("confidence", 0))
+        for model in learned
+    ]
     efficiency = efficiency or {}
     whole_house = {
         key: efficiency.get(key) for key in (
@@ -129,10 +138,11 @@ def build_house_thermal_model(
         key in whole_house for key in ("heat_loss_u_value_daily", "heat_loss_u_value_7d", "heat_loss_u_value_30d")
     ) else "collecting_data"
     return {
-        "status": "available" if available else "learning",
-        "rooms_modelled": len(available),
-        "rooms_learning": len(room_models) - len(available),
-        "average_confidence": round(sum(item["confidence"] for item in available) / len(available)) if available else None,
+        "status": "available" if learned else "learning",
+        "rooms_modelled": len(learned),
+        "rooms_forecastable": len(forecastable),
+        "rooms_learning": len(room_models) - len(learned),
+        "average_confidence": round(sum(confidence_values) / len(confidence_values)) if confidence_values else None,
         "room_models": room_models,
         "whole_house_observed_performance": whole_house,
         "interpretation": (

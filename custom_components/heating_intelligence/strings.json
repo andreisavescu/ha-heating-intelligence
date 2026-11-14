@@ -55,15 +55,25 @@
       },
       "room_air_quality_config": {
         "title": "Room air quality",
-        "description": "Configure humidity and optional CO2 sensors for {room_name}. Disable CO2 to remove its sensor."
+        "description": "Configure humidity and optional CO2 sensors for {room_name}. Disable CO2 to remove its sensor.",
+        "data": {
+          "humidity_entity": "Room humidity sensor (%)",
+          "enable_co2": "Configure a CO2 sensor for this room"
+        }
       },
       "room_air_quality_co2": {
         "title": "Select CO2 sensor",
-        "description": "Choose the CO2 sensor for this room."
+        "description": "Choose the CO2 sensor for this room.",
+        "data": {
+          "co2_entity": "Room CO2 sensor (ppm)"
+        }
       },
       "add_room_co2": {
         "title": "Add room CO2 sensor",
-        "description": "Select the CO2 sensor for {room_name}. CO2 is optional and only requested when enabled for this room."
+        "description": "Select the CO2 sensor for {room_name}. CO2 is optional and only requested when enabled for this room.",
+        "data": {
+          "co2_entity": "Room CO2 sensor (ppm)"
+        }
       },
       "room_area": {
         "title": "Select room",

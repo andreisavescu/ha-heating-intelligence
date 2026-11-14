@@ -892,6 +892,7 @@ def build_water_side_thermal_output(
         raise ValueError("Specific heat must be positive")
 
     watts = []
+    timestamped_watts = []
     excluded = {
         "missing_or_stale_flow": 0,
         "missing_or_stale_supply_or_return": 0,
@@ -941,8 +942,24 @@ def build_water_side_thermal_output(
         if delta_t <= 0:
             excluded["nonpositive_supply_return_delta"] += 1
             continue
-        watts.append(mass_flow_kg_s * specific_heat_j_kg_k * delta_t)
+        output_w = mass_flow_kg_s * specific_heat_j_kg_k * delta_t
+        watts.append(output_w)
+        try:
+            stamp = datetime.fromisoformat(str(sample.get("timestamp")).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            timestamped_watts.append((stamp, output_w))
+        except (TypeError, ValueError):
+            pass
 
+    timestamped_watts.sort(key=lambda item: item[0])
+    integrated_energy_wh = 0.0
+    integrated_intervals = 0
+    for previous, current in zip(timestamped_watts, timestamped_watts[1:]):
+        elapsed_minutes = (current[0] - previous[0]).total_seconds() / 60
+        if abs(elapsed_minutes - interval_minutes) <= 2:
+            integrated_energy_wh += ((previous[1] + current[1]) / 2 * elapsed_minutes / 60)
+            integrated_intervals += 1
     ordered = sorted(watts)
     def percentile(values, fraction):
         if not values:
@@ -962,6 +979,9 @@ def build_water_side_thermal_output(
         "p90_thermal_output_w": round(percentile(ordered, 0.9), 1) if ordered else None,
         "minimum_thermal_output_w": round(ordered[0], 1) if ordered else None,
         "maximum_thermal_output_w": round(ordered[-1], 1) if ordered else None,
+        "integrated_water_side_energy_kwh": round(integrated_energy_wh / 1000, 4),
+        "integrated_valid_intervals": integrated_intervals,
+        "integration_method": "trapezoidal_between_adjacent_valid_samples_at_configured_cadence",
         "flow_units_observed": sorted(units_seen),
         "excluded_samples": excluded,
         "assumptions": {

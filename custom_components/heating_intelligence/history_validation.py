@@ -656,10 +656,11 @@ def build_recorder_calibration_dataset(
         for state in history.get(entity_id, []):
             stamp = _timestamp(state)
             raw = state.get("state") if isinstance(state, dict) else getattr(state, "state", None)
+            attributes = state.get("attributes", {}) if isinstance(state, dict) else getattr(state, "attributes", {})
+            unit = attributes.get("unit_of_measurement") if isinstance(attributes, dict) else None
             if stamp is not None:
-                # Preserve explicit unknown/unavailable transitions so an older
-                # valid value cannot be carried through an invalid sensor state.
-                points.append((stamp, raw))
+                # Preserve invalid transitions and source units alongside values.
+                points.append((stamp, raw, unit))
         return sorted(points, key=lambda item: item[0])
 
     timelines: dict[str, list[tuple[datetime, Any]]] = {}
@@ -691,7 +692,7 @@ def build_recorder_calibration_dataset(
             value = None
             age_minutes = None
             if index >= 0:
-                point_stamp, raw = points[index]
+                point_stamp, raw, unit = points[index]
                 age = stamp - point_stamp
                 age_minutes = max(0.0, age.total_seconds() / 60)
                 if age <= max_age and raw not in (None, "unknown", "unavailable"):
@@ -707,6 +708,7 @@ def build_recorder_calibration_dataset(
             else:
                 row["channels"][key] = value
                 row["channels"][key + "_age_minutes"] = round(age_minutes, 1) if age_minutes is not None else None
+                row["channels"][key + "_unit"] = unit
                 fresh_global[key] = fresh
 
         available_room_temps = sum(
@@ -891,6 +893,108 @@ def build_ufh_slab_observability(
         "interpretation": (
             "This is an excitation and observability screen only. It does not calibrate UFH slab "
             "capacity or water-side thermal output."
+        ),
+    }
+
+
+
+def build_thermal_input_energy_observability(
+    samples: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    max_age_minutes: float = 45.0,
+    minimum_valid_intervals: int = 4,
+) -> dict[str, Any]:
+    """Derive interval energy only from fresh, monotonic cumulative kWh meters.
+
+    Gas m3 and other non-energy units are intentionally not converted without
+    a configured calorific value / meter calibration. AC COP and boiler
+    efficiency are reported as explicit sensitivity scenarios, not facts.
+    """
+    if interval_minutes <= 0 or max_age_minutes < 0 or minimum_valid_intervals < 1:
+        raise ValueError("Invalid thermal-input observability thresholds")
+    meter_specs = {
+        "gas_consumption": {"accepted_units": {"kwh": 1.0, "kw h": 1.0, "wh": 0.001, "mwh": 1000.0}},
+        "ac_energy": {"accepted_units": {"kwh": 1.0, "kw h": 1.0, "wh": 0.001, "mwh": 1000.0}},
+    }
+    results = {}
+    for channel, spec in meter_specs.items():
+        deltas = []
+        invalid = {"missing_or_stale": 0, "unit_not_energy_or_unsupported": 0, "unit_changed": 0,
+                   "meter_reset_or_decrease": 0, "invalid_interval": 0}
+        previous = None
+        for sample in samples:
+            channels = sample.get("channels") or {}
+            value = _finite_number_or_none(channels.get(channel))
+            age = _finite_number_or_none(channels.get(channel + "_age_minutes"))
+            unit_raw = channels.get(channel + "_unit")
+            unit = str(unit_raw or "").strip().lower().replace(" ", "")
+            if value is None or (age is not None and age > max_age_minutes):
+                invalid["missing_or_stale"] += 1
+                previous = None
+                continue
+            if unit not in spec["accepted_units"]:
+                invalid["unit_not_energy_or_unsupported"] += 1
+                previous = None
+                continue
+            try:
+                stamp = datetime.fromisoformat(str(sample.get("timestamp")).replace("Z", "+00:00"))
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone.utc)
+            except (TypeError, ValueError):
+                invalid["invalid_interval"] += 1
+                previous = None
+                continue
+            current = (stamp, value, unit, spec["accepted_units"][unit])
+            if previous is not None:
+                elapsed = (stamp - previous[0]).total_seconds() / 60
+                if previous[2] != unit:
+                    invalid["unit_changed"] += 1
+                elif not interval_minutes * 0.5 <= elapsed <= interval_minutes * 1.5:
+                    invalid["invalid_interval"] += 1
+                elif value < previous[1]:
+                    invalid["meter_reset_or_decrease"] += 1
+                else:
+                    delta_kwh = (value - previous[1]) * current[3]
+                    if delta_kwh >= 0:
+                        deltas.append((delta_kwh, elapsed))
+            previous = current
+        total_kwh = sum(item[0] for item in deltas)
+        valid_count = len(deltas)
+        results[channel] = {
+            "status": "measured_interval_energy_available" if valid_count >= minimum_valid_intervals else "insufficient_valid_energy_intervals",
+            "meter_type": "cumulative_energy" if valid_count else "unverified_or_unavailable",
+            "source_unit": sorted({str((sample.get("channels") or {}).get(channel + "_unit")) for sample in samples if (sample.get("channels") or {}).get(channel + "_unit")}) or [],
+            "valid_intervals": valid_count,
+            "measured_energy_kwh": round(total_kwh, 4) if valid_count >= minimum_valid_intervals else None,
+            "mean_input_power_kw": round(total_kwh / (sum(item[1] for item in deltas) / 60), 4) if valid_count >= minimum_valid_intervals and sum(item[1] for item in deltas) > 0 else None,
+            "invalid_intervals": invalid,
+        }
+    gas = results["gas_consumption"]
+    if gas["measured_energy_kwh"] is not None:
+        gas["useful_heat_sensitivity_kwh"] = {
+            "boiler_efficiency_0_80": round(gas["measured_energy_kwh"] * 0.80, 4),
+            "boiler_efficiency_0_90": round(gas["measured_energy_kwh"] * 0.90, 4),
+            "boiler_efficiency_0_98": round(gas["measured_energy_kwh"] * 0.98, 4),
+        }
+    ac = results["ac_energy"]
+    if ac["measured_energy_kwh"] is not None:
+        ac["delivered_heat_sensitivity_kwh"] = {
+            "cop_2": round(ac["measured_energy_kwh"] * 2.0, 4),
+            "cop_3": round(ac["measured_energy_kwh"] * 3.0, 4),
+            "cop_5": round(ac["measured_energy_kwh"] * 5.0, 4),
+        }
+    return {
+        "status": "measured_energy_channels_available" if any(
+            item["measured_energy_kwh"] is not None for item in results.values()
+        ) else "no_verified_energy_input",
+        "interval_minutes": interval_minutes,
+        "meters": results,
+        "interpretation": (
+            "Only fresh monotonic cumulative meters with explicit energy units are integrated. "
+            "Gas volume units such as m3 are withheld until calorific value and meter basis are configured. "
+            "Boiler efficiency and AC COP ranges are sensitivity scenarios, not measured efficiencies. "
+            "Gas/AC heat estimates are system-level input proxies, not room-specific heat delivery; "
+            "they cannot identify slab or room capacity without heat allocation and independent validation."
         ),
     }
 

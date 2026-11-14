@@ -25,6 +25,8 @@ _PERFORMANCE_KEYS = (
     "heat_loss_coefficient_w_k", "heat_loss_u_value_daily",
     "heat_loss_u_value_7d", "heat_loss_u_value_30d",
     "gas_kwh_per_degree_day", "weather_normalised",
+    "thermal_model_daily_date", "thermal_model_valid_days_7d",
+    "thermal_model_valid_days_30d", "thermal_model_degree_hours_today",
 )
 
 
@@ -168,6 +170,13 @@ def build_house_assessment(
             "configured_room_area_m2": configured_area,
         },
         "measured_performance": performance,
+        "measurement_assumptions": {
+            "boiler_efficiency": efficiency.get("thermal_model_boiler_efficiency_assumption"),
+            "ac_heating_cop": efficiency.get("thermal_model_ac_heating_cop_assumption"),
+            "envelope_area_m2": efficiency.get("thermal_model_envelope_area_m2"),
+            "valid_days_7d": efficiency.get("thermal_model_valid_days_7d"),
+            "valid_days_30d": efficiency.get("thermal_model_valid_days_30d"),
+        },
         "performance_status": performance_status,
         "performance_data_quality": (
             "30_day" if efficiency.get("heat_loss_u_value_30d") is not None

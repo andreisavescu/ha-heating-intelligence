@@ -88,6 +88,23 @@ def test_rejects_invalid_capacity_and_connection():
 
 
 
+def test_simulation_readiness_lists_unidentified_room_parameters_and_links():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "living": {"temperature": 21.0, "volume_m3": 100.0, "air_changes_per_hour": 0.5},
+            "bedroom": {"temperature": 20.0, "volume_m3": 50.0, "air_changes_per_hour": 0.6},
+        },
+        weather={"outdoor_temperature": {"value": 5.0}},
+    )
+    readiness = result["simulation_readiness"]
+    assert readiness["status"] == "withheld_missing_physical_parameters"
+    assert "effective_thermal_capacity_missing" in readiness["blockers"]
+    assert "interzone_conductances_not_identified" in readiness["blockers"]
+    assert len(readiness["unidentified_interzone_pairs"]) == 1
+    assert readiness["rooms"]["room:living"]["capacity_status"] == "air_only_capacity_only"
+    assert readiness["rooms"]["room:living"]["effective_room_capacity_wh_per_k"] is None
+
+
 def test_room_volume_provides_air_only_capacity_and_ventilation_conductance():
     result = MODEL.build_multizone_observation_model(
         {

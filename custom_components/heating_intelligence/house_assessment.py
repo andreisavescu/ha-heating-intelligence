@@ -1,23 +1,19 @@
-"""Explainable whole-house building profile and performance assessment.
-
-This module deliberately separates profile completeness from measured thermal
-performance. It does not infer U-values or an EPC rating from incomplete inputs.
-"""
+"""Explainable whole-house building profile and measured-performance assessment."""
 from __future__ import annotations
 
 from typing import Any
 
 _SECTIONS = {
     "envelope": (
-        "wall_construction", "roof_type", "floor_construction",
-        "construction_year", "wall_insulation_cm", "roof_insulation_cm",
-        "floor_insulation_cm", "window_glazing", "window_frame",
-        "main_orientation", "shading", "window_area_north_m2",
-        "window_area_south_m2", "window_area_east_m2", "window_area_west_m2",
+        "wall_construction", "roof_type", "floor_construction", "construction_year",
+        "wall_insulation_cm", "roof_insulation_cm", "floor_insulation_cm",
+        "window_glazing", "window_frame", "main_orientation", "shading",
+        "window_area_north_m2", "window_area_south_m2",
+        "window_area_east_m2", "window_area_west_m2",
     ),
     "heating": (
-        "boiler_model", "heating_distribution", "boiler_dhw",
-        "buffer_tank", "ufh_screed_cm", "ac_heating", "ac_units",
+        "boiler_model", "heating_distribution", "boiler_dhw", "buffer_tank",
+        "ufh_screed_cm", "ac_heating", "ac_units",
     ),
     "ventilation_occupancy": (
         "ventilation_type", "daily_window_ventilation", "occupants",
@@ -35,9 +31,17 @@ _PERFORMANCE_KEYS = (
 def _known(value: Any) -> bool:
     if value is None or value == "":
         return False
-    if isinstance(value, str) and value.lower() in {"unknown", "unspecified", "n/a"}:
+    if isinstance(value, str) and value.strip().lower() in {"unknown", "unspecified", "n/a", "none"}:
         return False
     return True
+
+
+def _number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and abs(number) != float("inf") else None
 
 
 def _section_result(profile: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:
@@ -56,52 +60,54 @@ def build_house_assessment(
     efficiency: dict[str, Any] | None,
     rooms: dict[str, dict[str, Any]] | None,
 ) -> dict[str, Any]:
-    """Build a transparent profile-completeness and measured-performance view."""
+    """Build a transparent profile, room-coverage and measured-performance view."""
     profile = profile or {}
     efficiency = efficiency or {}
     rooms = rooms or {}
 
-    sections = {
-        name: _section_result(profile, fields)
-        for name, fields in _SECTIONS.items()
-    }
+    sections = {name: _section_result(profile, fields) for name, fields in _SECTIONS.items()}
     all_fields = tuple(field for fields in _SECTIONS.values() for field in fields)
     known_count = sum(sections[name]["known_fields"] for name in sections)
     profile_percent = round(100 * known_count / len(all_fields)) if all_fields else 0
 
-    # These are observations about entered inputs, not inferred material
-    # properties. In particular insulation thickness is not converted to U.
     observations: list[str] = []
-    wall_insulation = profile.get("wall_insulation_cm")
-    if _known(wall_insulation):
+    wall = _number(profile.get("wall_insulation_cm"))
+    roof = _number(profile.get("roof_insulation_cm"))
+    floor = _number(profile.get("floor_insulation_cm"))
+    if wall is not None:
         observations.append(
-            f"Wall insulation thickness recorded as {float(wall_insulation):g} cm; "
-            "thermal transmittance still depends on the complete wall build-up."
+            f"Recorded wall insulation thickness: {wall:g} cm. Actual wall U-value also depends on material layers, thermal bridges and workmanship."
         )
+    if roof is not None:
+        observations.append(f"Recorded roof insulation thickness: {roof:g} cm.")
+    else:
+        observations.append("Roof insulation thickness is not recorded; the envelope profile is incomplete.")
+    if floor is not None:
+        observations.append(f"Recorded floor insulation thickness: {floor:g} cm.")
+    else:
+        observations.append("Floor insulation thickness is not recorded; the envelope profile is incomplete.")
     if _known(profile.get("window_glazing")):
-        observations.append(
-            f"Window glazing recorded as {profile['window_glazing']}."
-        )
+        observations.append(f"Window glazing: {profile['window_glazing']}; this is descriptive and is not converted into a window U-value.")
+    if _known(profile.get("main_orientation")):
+        observations.append(f"Main glazing orientation recorded as {profile['main_orientation']}.")
+    if _known(profile.get("shading")):
+        observations.append(f"Solar shading recorded as {profile['shading']}.")
     if _known(profile.get("ventilation_type")):
-        observations.append(
-            f"Ventilation type recorded as {profile['ventilation_type']}."
-        )
-    if not _known(profile.get("roof_insulation_cm")):
-        observations.append("Roof insulation is not specified; envelope assessment is incomplete.")
-    if not _known(profile.get("floor_insulation_cm")):
-        observations.append("Floor insulation is not specified; envelope assessment is incomplete.")
+        observations.append(f"Ventilation arrangement recorded as {profile['ventilation_type']}.")
+    construction_year = _number(profile.get("construction_year"))
+    if construction_year is not None:
+        observations.append(f"Construction year recorded as {int(construction_year)}; no regulatory or retrofit standard is assumed from year alone.")
+    if _known(profile.get("staircase_layout")):
+        observations.append(f"Inter-floor staircase connection recorded as {profile['staircase_layout']}.")
 
-    configured_room_areas = [
-        float(room["area"]) for room in rooms.values()
-        if _known(room.get("area")) and float(room["area"]) > 0
+    room_areas = [
+        area for room in rooms.values()
+        if (area := _number(room.get("area_m2", room.get("area")))) is not None and area > 0
     ]
-    room_area_total = round(sum(configured_room_areas), 2)
+    configured_area = round(sum(room_areas), 2)
+    room_count = len(rooms)
 
-    performance = {
-        key: efficiency.get(key)
-        for key in _PERFORMANCE_KEYS
-        if efficiency.get(key) is not None
-    }
+    performance = {key: efficiency.get(key) for key in _PERFORMANCE_KEYS if efficiency.get(key) is not None}
     if efficiency.get("heat_loss_u_value_30d") is not None:
         performance_status = "30_day_estimate_available"
     elif efficiency.get("heat_loss_u_value_7d") is not None:
@@ -112,23 +118,43 @@ def build_house_assessment(
         performance_status = "collecting_data"
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "profile_completeness_percent": profile_percent,
         "profile_known_fields": known_count,
         "profile_total_fields": len(all_fields),
         "sections": sections,
         "observations": observations,
+        "building_characteristics": {
+            "wall_insulation_cm": wall,
+            "roof_insulation_cm": roof,
+            "floor_insulation_cm": floor,
+            "window_glazing": profile.get("window_glazing"),
+            "main_orientation": profile.get("main_orientation"),
+            "shading": profile.get("shading"),
+            "ventilation_type": profile.get("ventilation_type"),
+            "heating_distribution": profile.get("heating_distribution"),
+            "ufh_screed_cm": _number(profile.get("ufh_screed_cm")),
+            "occupants": _number(profile.get("occupants")),
+            "internal_gains": profile.get("internal_gains"),
+        },
         "room_coverage": {
-            "configured_rooms": len(rooms),
-            "rooms_with_area": len(configured_room_areas),
-            "configured_room_area_m2": room_area_total,
+            "configured_rooms": room_count,
+            "rooms_with_area": len(room_areas),
+            "room_area_coverage_percent": round(100 * len(room_areas) / room_count) if room_count else None,
+            "configured_room_area_m2": configured_area,
         },
         "measured_performance": performance,
         "performance_status": performance_status,
+        "performance_data_quality": (
+            "30_day" if efficiency.get("heat_loss_u_value_30d") is not None
+            else "7_day" if efficiency.get("heat_loss_u_value_7d") is not None
+            else "daily" if efficiency.get("heat_loss_u_value_daily") is not None
+            else "insufficient_history"
+        ),
         "interpretation": (
-            "Profile completeness describes how much building information is known; "
-            "it is not an energy-efficiency score. Thermal-performance estimates use "
-            "meter and temperature observations plus configured boiler-efficiency "
-            "and AC-COP assumptions. They are not certified U-values or an EPC rating."
+            "Profile completeness measures how much building information is known; it is not an efficiency score. "
+            "Thermal performance is estimated independently from completed-day energy and temperature observations, "
+            "using configured boiler-efficiency and AC-COP assumptions. Insulation thickness and construction labels "
+            "are not enough to derive certified U-values or an EPC rating."
         ),
     }

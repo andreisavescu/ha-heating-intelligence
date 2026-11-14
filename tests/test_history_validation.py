@@ -1457,6 +1457,11 @@ def test_floor_room_heat_allocation_inference_requires_independent_repeatable_de
     assert floor["status"] == "repeatable_demand_association_not_physical_room_allocation"
     assert floor["rooms"]["living"]["demand_associated_marginal_output_w"] == pytest.approx(500, abs=5)
     assert floor["rooms"]["kitchen"]["demand_associated_marginal_output_w"] == pytest.approx(900, abs=5)
+    holdout = floor["chronological_holdout_validation"]
+    assert holdout["training_intervals"] + holdout["holdout_intervals"] == floor["valid_intervals"]
+    assert holdout["holdout_intervals"] > 0
+    assert holdout["improved_over_training_mean_baseline"] is True
+    assert holdout["holdout_rmse_w"] < holdout["training_mean_baseline_rmse_w"]
     assert floor["rooms"]["living"]["not_a_measured_room_heat_share"] is True
     assert floor["physical_room_allocation_identified"] is False
     assert result["physical_room_allocation_identified"] is False

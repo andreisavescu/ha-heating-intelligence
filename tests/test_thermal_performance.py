@@ -28,6 +28,24 @@ def test_daily_heat_loss_uses_previous_completed_day():
     assert result["heat_loss_u_value_daily"] == round(900 / 361.26, 4)
 
 
+def test_heat_loss_assumption_sensitivity_reports_nine_scenarios():
+    now = datetime(2026, 11, 13, 12, tzinfo=timezone.utc)
+    days = {}
+    for offset in range(7):
+        date = (now.date() - timedelta(days=6-offset)).isoformat()
+        days[date] = {
+            "gas_kwh": 10.0,
+            "ac_electricity_kwh": 2.0,
+            "delta_t_degree_hours": 30.0,
+        }
+    result = THERMAL.thermal_performance_statistics({"efficiency_daily": days}, now)
+    sensitivity = result["heat_loss_assumption_sensitivity_7d"]
+    assert sensitivity["status"] == "assumption_sensitivity_available"
+    assert sensitivity["scenario_count"] == 9
+    assert sensitivity["heat_loss_coefficient_range_w_k"]["minimum"] < sensitivity["heat_loss_coefficient_range_w_k"]["maximum"]
+    assert result["heat_loss_assumption_sensitivity_30d"]["status"] == "insufficient_completed_day_history"
+
+
 def test_rolling_heat_loss_requires_sufficient_days():
     now = datetime(2026, 11, 13, 12, tzinfo=timezone.utc)
     days = {}

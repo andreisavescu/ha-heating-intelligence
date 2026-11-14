@@ -1365,6 +1365,258 @@ def build_floor_room_demand_lag_analysis(
     }
 
 
+
+def build_solar_room_response_analysis(
+    samples: list[dict[str, Any]],
+    rooms: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    max_age_minutes: float = 45.0,
+    maximum_lag_intervals: int = 4,
+    minimum_pairs: int = 24,
+) -> dict[str, Any]:
+    """Screen room-temperature response to solar variation, without estimating watts.
+
+    Solar irradiance is paired with later room-temperature slopes. A chronological
+    training/holdout split selects and checks the lag; available outdoor-temperature
+    and room-demand covariates are partialled out. Window-open intervals and cadence
+    gaps are excluded. Correlation is not a solar-gain coefficient or causal proof.
+    """
+    if interval_minutes <= 0 or max_age_minutes < 0:
+        raise ValueError("Invalid solar response thresholds")
+    if maximum_lag_intervals < 0 or maximum_lag_intervals > 12 or minimum_pairs < 12:
+        raise ValueError("Invalid solar response limits")
+
+    room_ids = [str(room.get("id", "unknown")) for room in rooms]
+    if not room_ids or len(set(room_ids)) != len(room_ids):
+        return {"status": "insufficient_room_configuration", "rooms": {}}
+
+    parsed = []
+    for sample in samples:
+        try:
+            stamp = datetime.fromisoformat(str(sample.get("timestamp", "")).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            parsed.append((stamp.astimezone(timezone.utc), sample))
+        except (TypeError, ValueError):
+            continue
+    parsed.sort(key=lambda item: item[0])
+
+    exclusions = {
+        room_id: {
+            "invalid_or_stale_solar": 0,
+            "unsupported_solar_unit": 0,
+            "invalid_or_stale_temperature": 0,
+            "open_window": 0,
+            "invalid_or_stale_demand": 0,
+            "invalid_cadence": 0,
+        } for room_id in room_ids
+    }
+    intervals = []
+    for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
+        elapsed = (stamp1 - stamp0).total_seconds() / 60
+        if abs(elapsed - interval_minutes) > 1:
+            intervals.append(None)
+            for room_id in room_ids:
+                exclusions[room_id]["invalid_cadence"] += 1
+            continue
+        first_channels = first.get("channels") or {}
+        solar = _finite_number_or_none(first_channels.get("solar_radiation"))
+        solar_age = _finite_number_or_none(first_channels.get("solar_radiation_age_minutes"))
+        solar_unit = str(first_channels.get("solar_radiation_unit") or "").strip().lower().replace(" ", "")
+        solar_scales = {"w/m2": 1.0, "w/m²": 1.0, "kw/m2": 1000.0, "kw/m²": 1000.0}
+        if solar is None or solar < 0 or (solar_age is not None and solar_age > max_age_minutes):
+            solar_w_m2 = None
+        elif solar_unit in solar_scales:
+            solar_w_m2 = solar * solar_scales[solar_unit]
+        else:
+            solar_w_m2 = None
+        response_channels = second.get("channels") or {}
+        outdoor = _finite_number_or_none(response_channels.get("outdoor_temperature"))
+        outdoor_age = _finite_number_or_none(response_channels.get("outdoor_temperature_age_minutes"))
+        if outdoor_age is not None and outdoor_age > max_age_minutes:
+            outdoor = None
+        room_intervals = {}
+        first_rooms, second_rooms = first.get("rooms") or {}, second.get("rooms") or {}
+        for room_id in room_ids:
+            left, right = first_rooms.get(room_id, {}), second_rooms.get(room_id, {})
+            t0 = _finite_number_or_none(left.get("temperature"))
+            t1 = _finite_number_or_none(right.get("temperature"))
+            age0 = _finite_number_or_none(left.get("temperature_age_minutes"))
+            age1 = _finite_number_or_none(right.get("temperature_age_minutes"))
+            if (t0 is None or t1 is None
+                    or (age0 is not None and age0 > max_age_minutes)
+                    or (age1 is not None and age1 > max_age_minutes)):
+                exclusions[room_id]["invalid_or_stale_temperature"] += 1
+                room_intervals[room_id] = None
+                continue
+            window_open = False
+            window_invalid = False
+            for state in (left, right):
+                if "window" in state:
+                    window = _switch_state(state.get("window"))
+                    age = _finite_number_or_none(state.get("window_age_minutes"))
+                    if window is True and (age is None or age <= max_age_minutes):
+                        window_open = True
+                    elif window is None or (age is not None and age > max_age_minutes):
+                        window_invalid = True
+            if window_open:
+                exclusions[room_id]["open_window"] += 1
+                room_intervals[room_id] = None
+                continue
+            demand = _switch_state(right.get("demand"))
+            demand_age = _finite_number_or_none(right.get("demand_age_minutes"))
+            if demand is None or (demand_age is not None and demand_age > max_age_minutes):
+                exclusions[room_id]["invalid_or_stale_demand"] += 1
+                demand_value = None
+            else:
+                demand_value = float(demand)
+            room_intervals[room_id] = {
+                "slope": (t1 - t0) / (elapsed / 60),
+                "solar_w_m2": solar_w_m2,
+                "solar_valid": solar_w_m2 is not None,
+                "outdoor_c": outdoor,
+                "demand": demand_value,
+                "window_unknown": window_invalid,
+            }
+            if solar_w_m2 is None:
+                if solar is None or solar < 0 or (solar_age is not None and solar_age > max_age_minutes):
+                    exclusions[room_id]["invalid_or_stale_solar"] += 1
+                else:
+                    exclusions[room_id]["unsupported_solar_unit"] += 1
+        intervals.append(room_intervals)
+
+    room_results = {}
+    for room_id, room in zip(room_ids, rooms):
+        lag_results = []
+        for lag in range(maximum_lag_intervals + 1):
+            pairs = []
+            for index, source_row in enumerate(intervals):
+                target_index = index + lag
+                if source_row is None or target_index >= len(intervals):
+                    continue
+                target_row = intervals[target_index]
+                if target_row is None:
+                    continue
+                source = source_row.get(room_id)
+                target = target_row.get(room_id)
+                if not source or not target or not source["solar_valid"]:
+                    continue
+                if source["solar_w_m2"] is None or target["slope"] is None:
+                    continue
+                pairs.append({
+                    "solar": source["solar_w_m2"],
+                    "slope": target["slope"],
+                    "outdoor": target["outdoor_c"],
+                    "demand": target["demand"],
+                })
+            split = int(len(pairs) * 0.7)
+            training, holdout = pairs[:split], pairs[split:]
+            candidate_covariates = ("outdoor", "demand")
+            covariates = [
+                name for name in candidate_covariates
+                if training and sum(item[name] is not None for item in training) / len(training) >= 0.7
+            ]
+            train_complete = [item for item in training if all(item[name] is not None for name in covariates)]
+            holdout_complete = [item for item in holdout if all(item[name] is not None for name in covariates)]
+            train_adjusted = _partial_correlation_diagnostics(
+                [item["solar"] for item in train_complete],
+                [item["slope"] for item in train_complete],
+                {name: [item[name] for item in train_complete] for name in covariates},
+            ) if covariates else {
+                "status": "withheld_no_adjustment_covariates",
+                "partial_pearson_r": None,
+                "confidence_interval_95": None,
+                "covariates": [],
+            }
+            holdout_adjusted = _partial_correlation_diagnostics(
+                [item["solar"] for item in holdout_complete],
+                [item["slope"] for item in holdout_complete],
+                {name: [item[name] for item in holdout_complete] for name in covariates},
+            ) if covariates else {
+                "status": "withheld_no_adjustment_covariates",
+                "partial_pearson_r": None,
+                "confidence_interval_95": None,
+                "covariates": [],
+            }
+            lag_results.append({
+                "lag_intervals": lag,
+                "lag_minutes": lag * interval_minutes,
+                "paired_intervals": len(pairs),
+                "training_intervals": len(training),
+                "holdout_intervals": len(holdout),
+                "adjustment_covariates": covariates,
+                "training_adjusted_status": train_adjusted["status"],
+                "training_partial_pearson_r": train_adjusted.get("partial_pearson_r"),
+                "training_complete_cases": train_adjusted.get("paired_intervals", len(train_complete)),
+                "holdout_adjusted_status": holdout_adjusted["status"],
+                "holdout_partial_pearson_r": holdout_adjusted.get("partial_pearson_r"),
+                "holdout_complete_cases": holdout_adjusted.get("paired_intervals", len(holdout_complete)),
+                "holdout_same_direction": (
+                    train_adjusted.get("partial_pearson_r") is not None
+                    and holdout_adjusted.get("partial_pearson_r") is not None
+                    and train_adjusted["partial_pearson_r"] * holdout_adjusted["partial_pearson_r"] > 0
+                ),
+            })
+        eligible = [
+            item for item in lag_results
+            if item["paired_intervals"] >= minimum_pairs
+            and item["training_adjusted_status"] == "adjusted_association_available"
+            and item["holdout_adjusted_status"] == "adjusted_association_available"
+            and item["training_partial_pearson_r"] is not None
+            and item["holdout_partial_pearson_r"] is not None
+        ]
+        eligible.sort(key=lambda item: abs(item["training_partial_pearson_r"]), reverse=True)
+        selected = eligible[0] if eligible else None
+        runner_up = eligible[1] if len(eligible) > 1 else None
+        ambiguous = bool(
+            selected and runner_up
+            and abs(selected["training_partial_pearson_r"]) - abs(runner_up["training_partial_pearson_r"]) <= 0.05
+        )
+        repeatable = bool(selected and selected["holdout_same_direction"] and not ambiguous)
+        room_results[room_id] = {
+            "status": (
+                "repeatable_adjusted_solar_response_association_only" if repeatable
+                else "solar_response_association_ambiguous_or_unstable" if selected
+                else "insufficient_solar_response_pairs_or_adjustment"
+            ),
+            "selected_training_lag_minutes": selected["lag_minutes"] if selected else None,
+            "training_partial_pearson_r": selected["training_partial_pearson_r"] if selected else None,
+            "holdout_partial_pearson_r": selected["holdout_partial_pearson_r"] if selected else None,
+            "holdout_same_direction": selected["holdout_same_direction"] if selected else None,
+            "neighbouring_lag_peak_ambiguous": ambiguous if selected else None,
+            "lag_scan": lag_results,
+            "configured_window_area_m2": _finite_number_or_none(room.get("window_area_m2")),
+            "window_orientation": room.get("window_orientation"),
+            "solar_gain_w": None,
+            "interpretation": (
+                "Adjusted solar/temperature timing association only. Global irradiance and room "
+                "temperature do not identify orientation-specific transmitted solar heat; no solar "
+                "gain in watts, glazing coefficient or room thermal parameter is estimated."
+            ),
+        }
+
+    repeatable_rooms = [
+        room_id for room_id, item in room_results.items()
+        if item["status"] == "repeatable_adjusted_solar_response_association_only"
+    ]
+    return {
+        "status": "repeatable_solar_response_associations_available" if repeatable_rooms else "no_repeatable_solar_response_associations",
+        "rooms_with_repeatable_association": repeatable_rooms,
+        "rooms": room_results,
+        "excluded_observations": exclusions,
+        "maximum_lag_minutes": maximum_lag_intervals * interval_minutes,
+        "solar_gain_w_identified": False,
+        "physical_room_parameters_identified": False,
+        "note": (
+            "Solar response scans use a chronological 70/30 split and adjust for adequately "
+            "covered outdoor-temperature and room-demand covariates. Open-window intervals and "
+            "cadence gaps are excluded. This is observational evidence, not a solar heat-gain "
+            "coefficient, transmitted watts, room heat delivery or proof of causality."
+        ),
+    }
+
+
+
 def build_water_side_thermal_output(
     samples: list[dict[str, Any]],
     interval_minutes: int = 30,

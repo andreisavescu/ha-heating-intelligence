@@ -143,3 +143,24 @@ def test_ventilation_conductance_requires_explicit_room_volume_and_ach():
     assert path["conductance_w_per_k"] == 16.75
     assert path["source"] == "configured_room_volume_and_ach"
     assert result["coverage"]["rooms_with_volume_and_ach"] == 1
+
+
+def test_solar_and_internal_gains_remain_context_without_calibrated_gain_watts():
+    result = MODEL.build_multizone_observation_model(
+        {},
+        {"outdoor_temperature": {"value": 4}, "solar_radiation": {"value": 420}},
+        {},
+        {
+            "window_area_south_m2": 12.0,
+            "window_glazing": "double",
+            "main_orientation": "south",
+            "shading": "external blinds",
+            "internal_gains": "normal",
+        },
+    )
+    gains = result["gain_context"]
+    assert gains["solar_radiation_w_m2"] == 420
+    assert gains["window_area_by_orientation_m2"] == {"south": 12.0}
+    assert gains["solar_gain_w"] is None
+    assert gains["internal_gain_w"] is None
+    assert gains["status"] == "context_only_missing_solar_transmittance_and_orientation_model"

@@ -79,7 +79,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             hass,
             logger=_LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=30),
+            update_interval=timedelta(seconds=10),
         )
         # Keep entities safe during startup or a failed first refresh.
         self.data = {

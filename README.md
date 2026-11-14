@@ -260,3 +260,6 @@ The UFH observability screen now uses aligned Recorder history for each manifold
 
 
 Recorder calibration now preserves each energy meter's `unit_of_measurement` and derives interval energy only from fresh, monotonic cumulative meters with explicit energy units. Gas volume units (for example m³) are not converted without a configured calorific value and meter basis. For verified gas kWh and AC electricity kWh it reports delivered-heat sensitivity scenarios (boiler efficiency 0.80/0.90/0.98 and AC COP 2/3/5); these are assumptions, not measured efficiencies. The results remain whole-system input proxies and are not allocated to individual rooms or UFH slabs.
+
+
+A further Recorder diagnostic pairs verified cumulative gas and AC energy increments with concurrent room-temperature rates on the same 30-minute intervals. It reports whole-house input-power versus average room-response association and separate per-room statistical associations for each meter. These are observational correlations only: they do not allocate gas or AC heat to rooms, identify causal response, or estimate room/slab capacities. Meter unit, freshness, monotonicity and interval checks are applied before a pair is accepted.

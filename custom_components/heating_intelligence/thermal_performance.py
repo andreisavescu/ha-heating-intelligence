@@ -72,6 +72,66 @@ def thermal_performance_statistics(history: dict, now: datetime,
             valid += exposure_value > 0
         return heat, exposure, valid
 
+    # Recalculate the measured-performance H estimate across explicit
+    # fuel-to-useful-heat assumptions. This is a sensitivity envelope, not
+    # an assertion that any scenario is the true plant efficiency.
+    def assumption_sensitivity(keys, minimum_days, minimum_exposure):
+        selected = [days.get(key, {}) for key in keys]
+        valid = [
+            item for item in selected
+            if item.get("gas_kwh") is not None
+            and item.get("delta_t_degree_hours") is not None
+            and float(item.get("delta_t_degree_hours") or 0) > 0
+        ]
+        exposure = sum(max(0.0, float(item.get("delta_t_degree_hours") or 0)) for item in valid)
+        if len(keys) < minimum_days or len(valid) < minimum_days or exposure < minimum_exposure or area <= 0:
+            return {
+                "status": "insufficient_completed_day_history",
+                "valid_days": len(valid),
+                "required_days": minimum_days,
+                "scenario_count": 0,
+                "heat_loss_coefficient_range_w_k": None,
+                "u_value_range_w_m2_k": None,
+                "scenarios": [],
+            }
+        scenarios = []
+        for boiler_assumption in (0.80, 0.90, 0.98):
+            for cop_assumption in (2.0, 3.0, 5.0):
+                delivered = sum(
+                    max(0.0, float(item.get("gas_kwh", 0.0) or 0.0)) * boiler_assumption
+                    + max(0.0, float(item.get("ac_electricity_kwh", 0.0) or 0.0)) * cop_assumption
+                    for item in valid
+                )
+                coefficient = delivered * 1000.0 / exposure
+                scenarios.append({
+                    "boiler_efficiency_assumption": boiler_assumption,
+                    "ac_cop_assumption": cop_assumption,
+                    "heat_loss_coefficient_w_k": round(coefficient, 2),
+                    "u_value_w_m2_k": round(coefficient / area, 4),
+                })
+        coefficients = [item["heat_loss_coefficient_w_k"] for item in scenarios]
+        u_values = [item["u_value_w_m2_k"] for item in scenarios]
+        return {
+            "status": "assumption_sensitivity_available",
+            "valid_days": len(valid),
+            "required_days": minimum_days,
+            "scenario_count": len(scenarios),
+            "heat_loss_coefficient_range_w_k": {
+                "minimum": min(coefficients),
+                "maximum": max(coefficients),
+            },
+            "u_value_range_w_m2_k": {
+                "minimum": min(u_values),
+                "maximum": max(u_values),
+            },
+            "scenarios": scenarios,
+            "note": (
+                "Nine explicit boiler-efficiency and AC-COP combinations. "
+                "The range is conditional on gas meter energy conversion, measured degree-hours, "
+                "configured envelope area and the assumption that AC energy was used for heating."
+            ),
+        }
+
     # Rolling windows continue to use completed calendar-day aggregates.
     completed_keys = finalised_keys
     keys7, keys30 = completed_keys[-7:], completed_keys[-30:]
@@ -92,6 +152,8 @@ def thermal_performance_statistics(history: dict, now: datetime,
         "thermal_model_daily_solar_radiation_average": daily.get("solar_radiation_average"),
         "heat_loss_u_value_7d": round(u7, 4) if u7 is not None else None,
         "heat_loss_u_value_30d": round(u30, 4) if u30 is not None else None,
+        "heat_loss_assumption_sensitivity_7d": assumption_sensitivity(keys7, 5, 120),
+        "heat_loss_assumption_sensitivity_30d": assumption_sensitivity(keys30, 20, 400),
         "thermal_model_degree_hours_today": round(float(today.get("delta_t_degree_hours", 0.0) or 0.0), 2),
         "thermal_model_valid_days_7d": valid7,
         "thermal_model_valid_days_30d": valid30,

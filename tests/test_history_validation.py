@@ -394,6 +394,10 @@ def test_multizone_identification_recovers_normalized_passive_response_and_holds
         minimum_holdout_intervals=8,
     )
     assert result["status"] == "room_response_identification_available"
+    house_validation = result["house_level_holdout_validation"]
+    assert house_validation["rooms_validated"] == 2
+    assert house_validation["holdout_room_intervals"] > 0
+    assert house_validation["weighted_mae_c"] < house_validation["persistence_baseline_weighted_mae_c"]
     for room_id in ("living", "bedroom"):
         room = result["rooms"][room_id]
         assert room["normalized_rates_per_hour"] is not None

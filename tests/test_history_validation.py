@@ -624,3 +624,44 @@ def test_ufh_observability_withholds_when_pump_history_is_missing():
     )
     assert result["floors"]["ground_floor"]["status"] == "insufficient_pump_excitation_or_history"
     assert result["floors"]["ground_floor"]["slab_capacity_wh_per_k"] is None
+
+
+def test_thermal_input_energy_uses_only_monotonic_cumulative_kwh_meters():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(7):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "gas_consumption": 100.0 + index * 0.2,
+                "gas_consumption_age_minutes": 0,
+                "gas_consumption_unit": "kWh",
+                "ac_energy": 20.0 + index * 0.1,
+                "ac_energy_age_minutes": 0,
+                "ac_energy_unit": "kWh",
+            },
+        })
+    result = MODULE.build_thermal_input_energy_observability(samples)
+    assert result["status"] == "measured_energy_channels_available"
+    assert result["meters"]["gas_consumption"]["measured_energy_kwh"] == 1.2
+    assert result["meters"]["gas_consumption"]["useful_heat_sensitivity_kwh"]["boiler_efficiency_0_90"] == 1.08
+    assert result["meters"]["ac_energy"]["measured_energy_kwh"] == 0.6
+    assert result["meters"]["ac_energy"]["delivered_heat_sensitivity_kwh"]["cop_3"] == 1.8
+
+
+def test_thermal_input_energy_withholds_gas_m3_and_meter_resets():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index, value in enumerate((10.0, 10.2, 10.4, 10.6, 10.8, 1.0, 1.2)):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "gas_consumption": value,
+                "gas_consumption_age_minutes": 0,
+                "gas_consumption_unit": "m³",
+            },
+        })
+    result = MODULE.build_thermal_input_energy_observability(samples)
+    gas = result["meters"]["gas_consumption"]
+    assert gas["measured_energy_kwh"] is None
+    assert gas["invalid_intervals"]["unit_not_energy_or_unsupported"] == 7

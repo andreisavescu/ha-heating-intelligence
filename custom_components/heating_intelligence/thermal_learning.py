@@ -86,7 +86,7 @@ def build_room_thermal_model(
     coasting = _learn_mode(samples, now, False, ac_power_sensor_configured)
     selected = heating if demand else coasting
     result: dict[str, Any] = {
-        "status": "external_heating_active" if external_heating_active else selected["status"] if current_temperature is not None else "waiting_for_temperature",
+        "status": "external_heat_filter_active" if external_heating_active else selected["status"] if current_temperature is not None else "waiting_for_temperature",
         "model": "rolling_median_thermal_response",
         "learning_window_days": LEARNING_DAYS,
         "mode": "heating" if demand else "coasting",
@@ -101,7 +101,7 @@ def build_room_thermal_model(
     for hours in HORIZONS_HOURS:
         result["forecasts"][f"{hours}h"] = None
     if external_heating_active:
-        result["note"] = "AC electrical input is currently above the active-use threshold; forecast withheld to avoid mixing heating systems."
+        result["note"] = "AC electrical input is above the active-use threshold, or its configured power sensor is unavailable; forecast withheld to avoid mixing heating systems."
         return result
     if current_temperature is None:
         result["note"] = "Current room temperature is unavailable."

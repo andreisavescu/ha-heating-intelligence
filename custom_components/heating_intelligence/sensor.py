@@ -177,6 +177,7 @@ class AtticHumiditySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     """Relative humidity measured in the attic."""
 
     _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_should_poll = False
     _attr_icon = "mdi:water-percent"
 

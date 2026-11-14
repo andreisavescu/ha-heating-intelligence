@@ -87,6 +87,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             return marker, selector_or_type
 
         fields = dict([
+            optional("wall_construction", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "brick", "concrete", "timber", "mixed"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("wall_construction")),
+            optional("roof_type", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "pitched", "flat"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("roof_type")),
+            optional("floor_construction", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "slab_on_ground", "suspended", "mixed"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("floor_construction")),
             optional("construction_year", selector.NumberSelector(selector.NumberSelectorConfig(min=1850, max=2035, step=1, mode=selector.NumberSelectorMode.BOX)), current.get("construction_year")),
             optional("wall_insulation_cm", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=60, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)), current.get("wall_insulation_cm", 15.0)),
             optional("roof_insulation_cm", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)), current.get("roof_insulation_cm")),
@@ -95,6 +98,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             optional("window_frame", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "uPVC", "wood", "aluminium", "composite"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("window_frame")),
             optional("main_orientation", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "north", "south", "east", "west"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("main_orientation", "south")),
             optional("shading", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "none", "partial", "significant"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("shading")),
+            optional("window_area_north_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_north_m2")),
+            optional("window_area_south_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_south_m2")),
+            optional("window_area_east_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_east_m2")),
+            optional("window_area_west_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_west_m2")),
         ])
         return self.async_show_form(step_id="house_assessment", data_schema=vol.Schema(fields))
 

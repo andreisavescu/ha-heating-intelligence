@@ -1,3 +1,10 @@
+## 0.14.4 — manifold pump stage visibility
+
+- Add a dedicated valve/pump stage panel to each manifold card in the Lovelace overview, including current detected stage, valve-open time, inferred pump-start time, valve-to-pump delay, idle baseline and valve actuator signature.
+- Add diagnostic sensors to each manifold device for detected stage, valve opening timestamp, inferred pump-start timestamp, valve-to-pump delay, idle power baseline and valve actuator power level.
+- Preserve existing pump power, energy, runtime, cycle and running-state entities.
+- Stage detection remains an electrical-signature estimate, not a direct measurement of water flow.
+
 ## 0.14.3 — manifold pump-stage diagnostics and daily thermal finalisation
 
 - Distinguish the initial manifold valve-actuator electrical signature from the later sustained pump electrical signature.

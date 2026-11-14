@@ -1,3 +1,13 @@
+## 0.15.0 — multi-zone thermal model foundation and Recorder history coverage
+
+- Add a Home Assistant-independent lumped RC network solver with bounded integration steps and numerical validation.
+- Map configured room temperatures, demand/window states, CO₂, humidity and ACH alongside outdoor weather, attic, UFH floor context, boiler water temperatures, burner/modulation and pump telemetry.
+- Accept optional measured room volume and estimate ventilation conductance only when both room volume and ACH are configured.
+- Expose roof conductance only when roof U-value and area are explicitly configured.
+- Surface existing learned room heating/coasting rates, confidence and sample counts as calibration evidence; do not misrepresent temperature slopes as physical heat capacities or envelope U-values.
+- Query up to seven days of configured Home Assistant Recorder history locally every six hours and show per-entity data coverage for calibration planning. Raw history remains in Recorder and is not copied into integration storage or sent externally.
+- Keep the physical simulation withheld until required thermal capacities and conductive links are identified. Solar/internal gains and UFH/plant heat output remain uncalculated where calibrated inputs are missing.
+
 ## 0.14.4 — manifold pump stage visibility
 
 - Add a dedicated valve/pump stage panel to each manifold card in the Lovelace overview, including current detected stage, valve-open time, inferred pump-start time, valve-to-pump delay, idle baseline and valve actuator signature.
@@ -29,7 +39,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.14.0 development)
+## Current scope (0.15.0 development)
 
 - Editable multi-step house profile for envelope construction, insulation, glazing/orientation/shading, heating plant, thermal mass, ventilation, occupancy and internal gains. Profile completeness is reported separately from measured thermal performance; no U-values or EPC rating are inferred from insulation thickness alone.
 - Optional per-room humidity and CO2 sensor configuration, native live Home Assistant sensors, combined room-level interpretation and whole-house/floor coverage, averages, highest-CO2 room and humidity exception summaries. Room setup also accepts optional measured ACH values from ventilation/CO2-decay experiments; existing rooms can add or change ACH and window contacts in the room-area settings flow.

@@ -506,6 +506,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "dew_point": read_sensor(CONF_DEW_POINT_ENTITY),
             "solar_radiation": read_sensor(CONF_SOLAR_RADIATION_ENTITY),
         }
+        if result["weather"].get("outdoor_temperature"):
+            weather_outdoor = result["weather"]["outdoor_temperature"]
+            if weather_outdoor.get("value") is not None:
+                readings["outdoor_temperature"] = weather_outdoor
+        if result["weather"].get("solar_radiation"):
+            weather_solar = result["weather"]["solar_radiation"]
+            if weather_solar.get("value") is not None:
+                readings["solar_radiation"] = weather_solar
+
         update_efficiency_history(
             self._history,
             readings,

@@ -4,6 +4,7 @@ from __future__ import annotations
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers import entity_registry as er
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -25,6 +26,16 @@ from .insights import build_heating_insights
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
+    # Remove orphaned entities from the retired valve/pump-stage diagnostics.
+    registry = er.async_get(hass)
+    retired_metrics = (
+        "_stage", "_valve_opened_at", "_pump_started_at",
+        "_valve_to_pump_delay", "_idle_baseline_w", "_valve_level_w",
+    )
+    for registered in list(registry.entities.values()):
+        if registered.config_entry_id == entry.entry_id and registered.unique_id.startswith(f"{DOMAIN}_"):
+            if registered.unique_id.endswith(retired_metrics):
+                registry.async_remove(registered.entity_id)
     entities = [HeatingOverviewSensor(coordinator)]
     if entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY):
         entities.append(AtticTemperatureSensor(coordinator))
@@ -407,58 +418,6 @@ class EfficiencySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("efficiency", {}).get(self.metric)
-
-PUMP_STAGE_METRICS = {
-    "stage": ("Detected Electrical Stage", None, "mdi:state-machine"),
-    "valve_opened_at": ("Valve Opening Detected", "timestamp", "mdi:valve-open"),
-    "pump_started_at": ("Pump Stage Started", "timestamp", "mdi:pump"),
-    "valve_to_pump_delay": ("Valve-to-Pump Delay", "s", "mdi:timer-outline"),
-    "idle_baseline_w": ("Idle Power Baseline", "W", "mdi:flash"),
-    "valve_level_w": ("Valve Actuator Power Level", "W", "mdi:flash-outline"),
-}
-
-
-class PumpStageDiagnosticSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
-    """Read-only electrical-signature diagnostics for one manifold pump."""
-
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_should_poll = False
-
-    def __init__(self, coordinator, pump_id: str, pump_name: str, metric: str) -> None:
-        super().__init__(coordinator)
-        self.pump_id = pump_id
-        self.pump_name = pump_name
-        self.metric = metric
-        label, unit, icon = PUMP_STAGE_METRICS[metric]
-        self._attr_name = f"{pump_name} {label}"
-        self._attr_unique_id = f"{DOMAIN}_{pump_id}_{metric}"
-        self._attr_icon = icon
-        if unit == "timestamp":
-            self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        elif unit:
-            self._attr_native_unit_of_measurement = unit
-            self._attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def native_value(self):
-        pump = self.coordinator.data.get("pumps", {}).get(self.pump_id, {})
-        if self.metric == "valve_to_pump_delay":
-            valve = dt_util.parse_datetime(pump.get("valve_opened_at") or "")
-            started = dt_util.parse_datetime(pump.get("pump_started_at") or "")
-            return round((started - valve).total_seconds()) if valve and started else None
-        value = pump.get(self.metric)
-        if self.metric in ("valve_opened_at", "pump_started_at"):
-            return dt_util.parse_datetime(value or "")
-        return value
-
-    @property
-    def extra_state_attributes(self):
-        pump = self.coordinator.data.get("pumps", {}).get(self.pump_id, {})
-        return {
-            "detection_basis": pump.get("detection_basis"),
-            "power_source_state": pump.get("power_source_state"),
-        }
-
 
 class PumpPowerSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "W"

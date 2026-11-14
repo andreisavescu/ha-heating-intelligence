@@ -344,6 +344,11 @@ class HeatingIntelligenceCard extends HTMLElement {
             <div class="metric"><span>Lookback</span><strong>${this._fmt(attrs.thermal_model?.historical_validation?.window_hours, "h", 0)}</strong></div>
           </div>
           <div class="subtle">${this._esc(attrs.thermal_model?.historical_validation?.note || "Recorder history is queried locally every six hours; raw samples remain in Home Assistant.")}</div>
+          <div class="subtle">Historical room-response estimates: ${Object.values(attrs.thermal_model?.historical_validation?.room_response || {}).filter(item => item.heating?.status === "available" || item.coasting?.status === "available").length} rooms have sufficient Recorder intervals. These are independent historical slopes, not calibrated RC parameters.</div>
+          <div class="subtle">${Object.entries(attrs.thermal_model?.historical_validation?.room_response || {}).map(([id, item]) => {
+            const room = (attrs.rooms || {})[id] || {};
+            return `${this._esc(room.name || id)}: heat ${this._fmt(item.heating?.rate_c_per_hour, "°C/h", 2)} (${item.heating?.valid_intervals || 0}) · coast ${this._fmt(item.coasting?.rate_c_per_hour, "°C/h", 2)} (${item.coasting?.valid_intervals || 0})`;
+          }).join(" | ") || "Waiting for sufficient clean Recorder intervals."}</div>
           <div class="subsection-title">Multi-zone physical model</div>
           <div class="overview">
             <div class="metric"><span>Observation mapping</span><strong>${this._esc(attrs.thermal_model?.multi_zone?.status || "Waiting")}</strong></div>

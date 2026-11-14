@@ -337,6 +337,35 @@ class HeatingIntelligenceCard extends HTMLElement {
             }).join("") || '<p class="subtle">The model starts learning from retained room-temperature history.</p>'}
           </div>
           <div class="subtle">${this._esc(attrs.thermal_model?.interpretation || "")}</div>
+          <div class="subsection-title">Historical data for calibration</div>
+          <div class="overview">
+            <div class="metric"><span>Recorder history</span><strong>${this._esc(attrs.thermal_model?.historical_validation?.status || "Waiting")}</strong></div>
+            <div class="metric"><span>Samples / entities</span><strong>${attrs.thermal_model?.historical_validation?.total_samples ?? 0} / ${attrs.thermal_model?.historical_validation?.entities_with_history ?? 0}</strong></div>
+            <div class="metric"><span>Lookback</span><strong>${this._fmt(attrs.thermal_model?.historical_validation?.window_hours, "h", 0)}</strong></div>
+          </div>
+          <div class="subtle">${this._esc(attrs.thermal_model?.historical_validation?.note || "Recorder history is queried locally every six hours; raw samples remain in Home Assistant.")}</div>
+          <div class="subtle">Historical room-response estimates: ${Object.values(attrs.thermal_model?.historical_validation?.room_response || {}).filter(item => item.heating?.status === "available" || item.coasting?.status === "available").length} rooms have sufficient Recorder intervals. These are independent historical slopes, not calibrated RC parameters.</div>
+          <div class="subtle">${Object.entries(attrs.thermal_model?.historical_validation?.room_response || {}).map(([id, item]) => {
+            const room = (attrs.rooms || {})[id] || {};
+            return `${this._esc(room.name || id)}: heat ${this._fmt(item.heating?.rate_c_per_hour, "°C/h", 2)} (${item.heating?.valid_intervals || 0}) · coast ${this._fmt(item.coasting?.rate_c_per_hour, "°C/h", 2)} (${item.coasting?.valid_intervals || 0})`;
+          }).join(" | ") || "Waiting for sufficient clean Recorder intervals."}</div>
+          <div class="subsection-title">Multi-zone physical model</div>
+          <div class="overview">
+            <div class="metric"><span>Observation mapping</span><strong>${this._esc(attrs.thermal_model?.multi_zone?.status || "Waiting")}</strong></div>
+            <div class="metric"><span>Simulation</span><strong>${this._esc(attrs.thermal_model?.multi_zone?.simulation_status || "Not available")}</strong></div>
+            <div class="metric"><span>Room temperature coverage</span><strong>${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_temperature ?? 0} / ${attrs.thermal_model?.multi_zone?.coverage?.configured_rooms ?? 0}</strong></div>
+            <div class="metric"><span>CO₂ / humidity / ACH</span><strong>${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_co2 ?? 0} / ${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_humidity ?? 0} / ${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_ach ?? 0} rooms</strong></div>
+            <div class="metric"><span>UFH floor observations</span><strong>${attrs.thermal_model?.multi_zone?.coverage?.ufh_floor_nodes ?? 0}</strong></div>
+            <div class="metric"><span>Ventilation paths identified</span><strong>${attrs.thermal_model?.multi_zone?.ventilation_paths?.length ?? 0}</strong><div class="subtle">${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_volume_and_ach ?? 0} rooms with volume + ACH</div></div>
+            <div class="metric"><span>Water supply / return</span><strong>${this._fmt(attrs.thermal_model?.multi_zone?.plant?.supply_water_temperature_c)} / ${this._fmt(attrs.thermal_model?.multi_zone?.plant?.return_water_temperature_c)}</strong></div>
+          </div>
+          <div class="subtle">Room response evidence: ${Object.values(attrs.thermal_model?.multi_zone?.nodes || {}).filter(node => node.kind === "room_air" && node.thermal_response_evidence?.status === "observed_response_available").length} / ${attrs.thermal_model?.multi_zone?.coverage?.configured_rooms ?? 0} rooms have learned heating/coasting rates.</div>
+          <div class="subtle">${Object.entries(attrs.thermal_model?.multi_zone?.nodes || {}).filter(([id, node]) => node.kind === "room_air" && node.thermal_response_evidence?.status === "observed_response_available").map(([id, node]) => `${this._esc(node.name || id)}: heat ${this._fmt(node.thermal_response_evidence.heating_rate_c_per_hour, "°C/h", 2)} · coast ${this._fmt(node.thermal_response_evidence.coasting_rate_c_per_hour, "°C/h", 2)} · confidence ${Math.max(node.thermal_response_evidence.heating_confidence || 0, node.thermal_response_evidence.coasting_confidence || 0)}%`).join(" | ") || "Collecting clean room response history."}</div>
+          <div class="subtle">Thermal capacities awaiting identification: ${(attrs.thermal_model?.multi_zone?.missing_parameters?.thermal_capacities || []).map(id => this._esc(id)).join(", ") || "None"}.</div>
+          <div class="subtle">Room envelope/inter-zone links awaiting calibration: ${(attrs.thermal_model?.multi_zone?.missing_parameters?.room_envelope_and_interzone_conductances || []).map(id => this._esc(id)).join(", ") || "None"}.</div>
+          <div class="subtle">${this._esc(attrs.thermal_model?.multi_zone?.plant?.note || "Plant telemetry is observational; heat output is not inferred from pump electricity.")}</div>
+          <div class="subtle">Solar / internal gains: ${this._esc(attrs.thermal_model?.multi_zone?.gain_context?.status || "Not assessed")} · radiation ${this._fmt(attrs.thermal_model?.multi_zone?.gain_context?.solar_radiation_w_m2, "W/m²", 0)} · ${this._esc(attrs.thermal_model?.multi_zone?.gain_context?.note || "")}</div>
+
         </div>
         <div class="section"><div class="section-title">Today's heating activity</div>
           <div class="overview">

@@ -76,12 +76,15 @@ def build_house_assessment(
     wall = _number(profile.get("wall_insulation_cm"))
     roof = _number(profile.get("roof_insulation_cm"))
     floor = _number(profile.get("floor_insulation_cm"))
-    if _known(profile.get("wall_insulation_material")):
-        observations.append(f"Wall insulation material recorded as {profile[\"wall_insulation_material\"]}.")
-    if _known(profile.get("roof_insulation_material")):
-        observations.append(f"Roof insulation material recorded as {profile[\"roof_insulation_material\"]}.")
-    if _known(profile.get("floor_insulation_material")):
-        observations.append(f"Floor insulation material recorded as {profile[\"floor_insulation_material\"]}.")
+    wall_material = profile.get("wall_insulation_material")
+    roof_material = profile.get("roof_insulation_material")
+    floor_material = profile.get("floor_insulation_material")
+    if _known(wall_material):
+        observations.append(f"Wall insulation material recorded as {wall_material}.")
+    if _known(roof_material):
+        observations.append(f"Roof insulation material recorded as {roof_material}.")
+    if _known(floor_material):
+        observations.append(f"Floor insulation material recorded as {floor_material}.")
     if wall is not None:
         observations.append(
             f"Recorded wall insulation thickness: {wall:g} cm. Actual wall U-value also depends on material layers, thermal bridges and workmanship."

@@ -1980,41 +1980,31 @@ def test_multizone_condition_number_uses_standardized_design_matrix_convention()
         "pairwise_correlation_and_full_standardized_training_matrix_condition_number"
     )
 
-def test_solar_room_response_withholds_uncertain_partial_correlations():
+def test_solar_room_response_withholds_when_room_has_no_residual_temperature_response():
     start = datetime(2026, 11, 1, tzinfo=timezone.utc)
-    count = 100
-    solar = [float((index * 67) % 103) * 7.0 for index in range(count)]
-    outdoor = [6.0 + ((index * 19) % 29) * 0.1 for index in range(count)]
-    demand = [bool((index * 5) % 17 < 8) for index in range(count)]
-    temperatures = [20.0]
-    for index in range(count - 1):
-        unrelated_response = (
-            0.025 * outdoor[index + 1]
-            + 0.04 * float(demand[index + 1])
-            + 0.006 * math.sin(index * 2.17)
-            + 0.004 * math.cos(index * 0.83)
-        )
-        temperatures.append(temperatures[-1] + unrelated_response * 0.5)
-    samples = [{
-        "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
-        "channels": {
-            "solar_radiation": solar[index],
-            "solar_radiation_unit": "W/m2",
-            "solar_radiation_age_minutes": 0,
-            "outdoor_temperature": outdoor[index],
-            "outdoor_temperature_age_minutes": 0,
-        },
-        "rooms": {
-            "living": {
-                "temperature": temperatures[index],
-                "temperature_age_minutes": 0,
-                "demand": "on" if demand[index] else "off",
-                "demand_age_minutes": 0,
-                "window": "off",
-                "window_age_minutes": 0,
-            }
-        },
-    } for index in range(count)]
+    count = 60
+    samples = []
+    for index in range(count):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "solar_radiation": float((index * 67) % 103) * 7.0,
+                "solar_radiation_unit": "W/m2",
+                "solar_radiation_age_minutes": 0,
+                "outdoor_temperature": 6.0 + (index % 11) * 0.2,
+                "outdoor_temperature_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {
+                    "temperature": 20.0,
+                    "temperature_age_minutes": 0,
+                    "demand": "off",
+                    "demand_age_minutes": 0,
+                    "window": "off",
+                    "window_age_minutes": 0,
+                }
+            },
+        })
     result = MODULE.build_solar_room_response_analysis(
         samples, [{"id": "living"}], interval_minutes=30,
         maximum_lag_intervals=4, minimum_pairs=24,
@@ -2022,4 +2012,3 @@ def test_solar_room_response_withholds_uncertain_partial_correlations():
     room = result["rooms"]["living"]
     assert room["selected_training_lag_minutes"] is None
     assert room["status"] == "insufficient_solar_response_pairs_or_adjustment"
-

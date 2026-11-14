@@ -1,0 +1,70 @@
+"""Tests for Home Assistant observation mapping into the multi-zone model."""
+import importlib.util
+from pathlib import Path
+
+ROOT = Path(__file__).parents[1]
+SPEC = importlib.util.spec_from_file_location(
+    "multizone_thermal_model",
+    ROOT / "custom_components" / "heating_intelligence" / "multizone_thermal_model.py",
+)
+MODEL = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODEL)
+
+
+def test_maps_room_air_quality_and_weather_without_inventing_capacity():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "living": {
+                "name": "Living room",
+                "floor": "ground_floor",
+                "temperature": 21.4,
+                "temperature_entity": "sensor.living_temperature",
+                "demand": True,
+                "demand_state_known": True,
+                "window_open": False,
+                "window_state_known": True,
+                "area_m2": 35.0,
+                "air_changes_per_hour": 0.45,
+                "co2_ppm": 612,
+                "humidity": 48.0,
+            }
+        },
+        {"outdoor_temperature": {"value": 7.0, "entity_id": "sensor.outdoor"}},
+    )
+    room = result["nodes"]["room:living"]
+    assert room["temperature_c"] == 21.4
+    assert room["co2_ppm"] == 612
+    assert room["humidity_percent"] == 48.0
+    assert room["configured_ach"] == 0.45
+    assert room["thermal_capacity_wh_per_k"] is None
+    assert result["simulation_status"] == "withheld_missing_physical_parameters"
+    assert result["coverage"]["room_temperature_coverage_percent"] == 100
+
+
+def test_attic_roof_path_requires_explicit_u_value_and_area():
+    result = MODEL.build_multizone_observation_model(
+        {},
+        {"outdoor_temperature": {"value": 5}},
+        {"attic_temperature": 10, "temperature_entity": "sensor.attic"},
+        {"roof_u_value": 0.18, "roof_area_m2": 120, "attic_floor_u_value": 0.25, "attic_floor_area_m2": 90},
+    )
+    assert result["nodes"]["attic:air"]["temperature_c"] == 10
+    assert result["configured_connections"] == [{
+        "from": "attic:air",
+        "to": "boundary:outdoors",
+        "path": "roof",
+        "conductance_w_per_k": 21.6,
+        "source": "configured_u_value_times_area",
+        "status": "configured",
+    }]
+    assert result["pending_paths"][0]["status"] == "awaiting_upstairs_zone_coupling"
+
+
+def test_missing_sensor_values_are_reported_not_replaced_with_defaults():
+    result = MODEL.build_multizone_observation_model(
+        {"bedroom": {"name": "Bedroom", "temperature": None, "co2_ppm": None, "humidity": None}},
+        {"outdoor_temperature": {"value": None}},
+    )
+    assert result["nodes"]["room:bedroom"]["temperature_c"] is None
+    assert result["coverage"]["room_temperature_coverage_percent"] == 0
+    assert result["simulation_status"] == "withheld_missing_physical_parameters"

@@ -336,3 +336,7 @@ The UFH pump response diagnostic uses pump electrical power only to mark circula
 - Solar irradiance is checked in W/m² (or converted from kW/m²) before applying the low-solar threshold; explicitly unsupported units are excluded rather than compared numerically.
 - Exclusion counts distinguish stale measurements from missing states, active heating and high solar conditions.
 - These checks improve the validity of normalized G/C evidence; they do not convert the fit into absolute conductances or thermal capacities.
+### Multi-zone fit conditioning and bootstrap safeguards
+- Report the conventional 2-norm condition number of the standardized training design matrix (square root of the Gram-matrix eigenvalue ratio), alongside pairwise correlations and matrix rank.
+- Apply the same full-rank and condition-number gate to every deterministic moving-block bootstrap resample; non-identifiable resamples are rejected and counted instead of contributing arbitrary coefficient allocations.
+- The bootstrap range remains a resampling sensitivity diagnostic, not a formal confidence interval.

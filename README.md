@@ -325,4 +325,9 @@ Multi-zone chronological holdout scoring now includes per-room residual diagnost
 
 ### UFH response observability safeguards
 The UFH pump response diagnostic uses pump electrical power only to mark circulation state. A floor interval is accepted only when every configured room on that floor has a fresh temperature; an incomplete room set resets the adjacent-interval comparison rather than averaging whichever sensors happen to be available. Explicitly open-window intervals are excluded, and missing or irregular 30-minute cadence is not bridged. The diagnostic reports per-room and complete-floor temperature-rate summaries for pump-on and pump-off periods. These remain observed temperature responses: they are not thermal output, slab temperature, room heat delivery or slab capacity. A floor with no configured rooms is reported separately rather than treated as an empty response dataset.
-
+### Room-level solar response diagnostics
+- Add a per-room 0–120 minute solar-irradiance/temperature-slope lag scan using fresh Recorder values and exact 30-minute cadence.
+- Select the lag on the chronological training segment and check the same adjusted association on the later holdout; adjust for sufficiently covered outdoor temperature and room demand.
+- Exclude explicitly open-window intervals, stale temperatures/irradiance and cadence gaps; reject unsupported irradiance units.
+- Surface configured per-room window area/orientation as context only. No solar gain watts, glazing transmittance, or absolute room RC parameters are inferred.
+- Include the evidence in the physical-readiness audit without changing the rule that physical simulation remains withheld until independent capacities, delivered-heat allocation and output validation exist.

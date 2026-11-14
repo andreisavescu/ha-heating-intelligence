@@ -1833,7 +1833,8 @@ def test_multizone_identification_excludes_stale_room_temperatures_and_states():
     start = datetime(2026, 11, 1, tzinfo=timezone.utc)
     samples = []
     for index in range(80):
-        age = 90 if index == 35 else 0
+        temp_age = 90 if index == 35 else 0
+        state_age = 90 if index == 45 else 0
         samples.append({
             "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
             "channels": {
@@ -1843,11 +1844,11 @@ def test_multizone_identification_excludes_stale_room_temperatures_and_states():
             "rooms": {
                 "living": {
                     "temperature": 21.0 - index * 0.01,
-                    "temperature_age_minutes": age,
+                    "temperature_age_minutes": temp_age,
                     "demand": "off",
-                    "demand_age_minutes": age,
+                    "demand_age_minutes": state_age,
                     "window": "off",
-                    "window_age_minutes": age,
+                    "window_age_minutes": state_age,
                 },
                 "bedroom": {
                     "temperature": 20.0 - index * 0.008,

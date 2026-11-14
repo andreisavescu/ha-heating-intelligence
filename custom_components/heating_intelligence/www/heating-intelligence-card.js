@@ -301,6 +301,7 @@ class HeatingIntelligenceCard extends HTMLElement {
             <div class="metric"><span>Humidity coverage</span><strong>${attrs.indoor_air_quality?.humidity?.rooms_with_readings ?? 0} / ${attrs.indoor_air_quality?.humidity?.configured_rooms ?? 0} rooms</strong><div class="subtle">${attrs.indoor_air_quality?.humidity?.coverage_percent ?? "—"}% with live readings</div></div>
           </div>
           <div class="subtle">${(attrs.indoor_air_quality?.observations || []).map(item => this._esc(item)).join(" ")}</div>
+          <div class="pumps">${Object.entries(attrs.indoor_air_quality?.by_floor || {}).map(([floor,value]) => `<div class="metric"><span>${this._esc(floor.replaceAll("_"," "))}</span><strong>CO₂ ${this._fmt(value.average_co2_ppm, "ppm", 0)} · humidity ${this._fmt(value.average_humidity_percent, "%", 1)}</strong><div class="subtle">CO₂ readings: ${value.co2_rooms_with_readings ?? 0} · humidity readings: ${value.humidity_rooms_with_readings ?? 0} · highest CO₂: ${this._fmt(value.highest_co2_ppm, "ppm", 0)}</div></div>`).join("")}</div>
           <div class="subtle">${this._esc(attrs.indoor_air_quality?.interpretation || "")}</div>
         </div>
         <div class="section"><div class="section-title">Self-learning thermal model</div>

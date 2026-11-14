@@ -278,3 +278,6 @@ The normalized free-coasting multi-zone regression now includes deterministic mo
 
 
 The multi-zone response fit also compares normalized coefficients across three contiguous chronological sections of the training segment. Each section must have sufficient observations, nontrivial predictor excitation, a full-rank standardized predictor matrix and an acceptable condition number before its coefficients are included. Per-predictor minimum, median, maximum, median absolute deviation and relative range are reported. The final chronological holdout is excluded. This is a descriptive temporal-stability diagnostic, not a confidence interval or proof of physical parameter constancy.
+
+
+The aggregate house effective-capacity estimate now reports a deterministic moving-block resampling sensitivity range when at least 40 cooling-response intervals are available. It resamples contiguous four-interval blocks and reports 5th/50th/95th percentiles of the implied aggregate capacity. With shorter histories, the range is withheld. These are sensitivity diagnostics, not formal confidence intervals, and do not include uncertainty in the heat-loss coefficient or unmeasured gains.

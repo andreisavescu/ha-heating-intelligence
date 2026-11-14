@@ -1260,6 +1260,75 @@ def _partial_correlation_diagnostics(
 
 
 
+
+def _partial_correlation_block_sensitivity(
+    xs: list[float],
+    ys: list[float],
+    covariates: dict[str, list[float]],
+    minimum_pairs: int = 40,
+    replicates: int = 80,
+    block_length: int = 4,
+) -> dict[str, Any]:
+    """Deterministic moving-block sensitivity for adjusted association."""
+    n = len(xs)
+    result = {
+        "status": "insufficient_history_for_block_sensitivity",
+        "method": "deterministic_moving_block_resampling",
+        "block_length_intervals": min(block_length, n) if n else None,
+        "requested_replicates": replicates if n >= minimum_pairs else 0,
+        "successful_replicates": 0,
+        "lower_5_percentile_partial_r": None,
+        "median_partial_r": None,
+        "upper_95_percentile_partial_r": None,
+        "note": (
+            "This is a moving-block sensitivity range, not a confidence interval. "
+            "It does not correct for serial dependence in the nominal Fisher interval "
+            "or account for unmeasured confounding."
+        ),
+    }
+    if n < minimum_pairs or len(ys) != n:
+        return result
+    block = min(block_length, max(1, n // 4))
+    values = []
+    for replicate in range(replicates):
+        selected = []
+        block_number = 0
+        while len(selected) < n:
+            max_start = n - block
+            start_index = (replicate * 37 + block_number * 17) % (max_start + 1)
+            selected.extend(range(start_index, start_index + block))
+            block_number += 1
+        selected = selected[:n]
+        sample_covariates = {
+            name: [series[index] for index in selected]
+            for name, series in covariates.items()
+        }
+        fitted = _partial_correlation_diagnostics(
+            [xs[index] for index in selected],
+            [ys[index] for index in selected],
+            sample_covariates,
+        )
+        value = fitted.get("partial_pearson_r")
+        if fitted.get("status") == "adjusted_association_available" and value is not None:
+            values.append(value)
+    result["successful_replicates"] = len(values)
+    if len(values) < max(20, replicates // 2):
+        result["status"] = "insufficient_successful_block_replicates"
+        return result
+    values.sort()
+    lower = values[int(0.05 * (len(values) - 1))]
+    middle = values[int(0.50 * (len(values) - 1))]
+    upper = values[int(0.95 * (len(values) - 1))]
+    result.update({
+        "status": "block_sensitivity_available",
+        "lower_5_percentile_partial_r": round(lower, 4),
+        "median_partial_r": round(middle, 4),
+        "upper_95_percentile_partial_r": round(upper, 4),
+    })
+    return result
+
+
+
 def build_thermal_input_room_response_alignment(
     samples: list[dict[str, Any]],
     rooms: list[dict[str, Any]],
@@ -1422,10 +1491,21 @@ def build_thermal_input_room_response_alignment(
                 name: [item[2][name] for item in adjusted_pairs]
                 for name in selected_covariates
             }
+            adjusted_xs = [item[0] for item in adjusted_pairs]
+            adjusted_ys = [item[1] for item in adjusted_pairs]
             adjusted_diagnostics = _partial_correlation_diagnostics(
-                [item[0] for item in adjusted_pairs],
-                [item[1] for item in adjusted_pairs],
-                adjusted_covariate_values,
+                adjusted_xs, adjusted_ys, adjusted_covariate_values,
+            )
+            adjusted_diagnostics["block_sensitivity"] = (
+                _partial_correlation_block_sensitivity(
+                    adjusted_xs, adjusted_ys, adjusted_covariate_values,
+                )
+                if adjusted_covariates and adjusted_diagnostics["status"] == "adjusted_association_available"
+                else {
+                    "status": "withheld_no_adjustment_model",
+                    "method": "deterministic_moving_block_resampling",
+                    "successful_replicates": 0,
+                }
             )
             input_mean = sum(xs) / len(xs) if xs else 0.0
             input_std = math.sqrt(sum((value - input_mean) ** 2 for value in xs) / len(xs)) if xs else 0.0

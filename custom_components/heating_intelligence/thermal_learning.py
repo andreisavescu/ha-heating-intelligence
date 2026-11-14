@@ -14,6 +14,7 @@ HORIZONS_HOURS = (1, 3, 6, 12)
 
 
 def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> dict[str, Any]:
+    """Learn only from adjacent samples in the same mode with windows closed."""
     cutoff = now.astimezone(timezone.utc) - timedelta(days=LEARNING_DAYS)
     points = []
     for item in samples:
@@ -22,26 +23,31 @@ def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> d
             temperature = float(item["temperature"])
         except (KeyError, TypeError, ValueError):
             continue
-        if stamp >= cutoff and stamp <= now.astimezone(timezone.utc):
-            if bool(item.get("demand")) == demand and not item.get("window_open"):
-                points.append((stamp, temperature))
+        if cutoff <= stamp <= now.astimezone(timezone.utc):
+            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open"))))
     points.sort(key=lambda point: point[0])
+
+    eligible = [point for point in points if point[2] == demand and not point[3]]
     rates = []
     for first, second in zip(points, points[1:]):
         minutes = (second[0] - first[0]).total_seconds() / 60
-        if MIN_INTERVAL_MINUTES <= minutes <= MAX_INTERVAL_MINUTES:
+        if (
+            first[2] == demand and second[2] == demand
+            and not first[3] and not second[3]
+            and MIN_INTERVAL_MINUTES <= minutes <= MAX_INTERVAL_MINUTES
+        ):
             rates.append((second[1] - first[1]) / (minutes / 60))
-    span = (points[-1][0] - points[0][0]).total_seconds() / 3600 if len(points) > 1 else 0
+    span = (eligible[-1][0] - eligible[0][0]).total_seconds() / 3600 if len(eligible) > 1 else 0
     if len(rates) < MIN_INTERVALS or span < MIN_SPAN_HOURS:
         return {
             "status": "learning",
             "confidence": 0,
-            "sample_count": len(points),
+            "sample_count": len(eligible),
             "valid_intervals": len(rates),
             "span_hours": round(span, 1),
             "rate_c_per_hour": None,
             "noise_c_per_hour": None,
-            "note": f"Needs at least {MIN_INTERVALS} valid intervals spanning {MIN_SPAN_HOURS:g} hours.",
+            "note": f"Needs at least {MIN_INTERVALS} valid consecutive intervals spanning {MIN_SPAN_HOURS:g} hours.",
         }
     rate = median(rates)
     noise = median([abs(value - rate) for value in rates])
@@ -49,12 +55,12 @@ def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> d
     return {
         "status": "available",
         "confidence": max(5, min(95, confidence)),
-        "sample_count": len(points),
+        "sample_count": len(eligible),
         "valid_intervals": len(rates),
         "span_hours": round(span, 1),
         "rate_c_per_hour": round(rate, 3),
         "noise_c_per_hour": round(noise, 3),
-        "note": "Median temperature-change rate from closed-window samples in this heating mode, learned over a rolling 30-day window.",
+        "note": "Median temperature-change rate from consecutive closed-window observations in this heating mode, learned over a rolling 30-day window.",
     }
 
 
@@ -102,6 +108,7 @@ def build_room_thermal_model(
 
 
 def build_house_thermal_model(room_models: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Summarise independent room models without averaging their temperatures."""
     available = [model for model in room_models.values() if model.get("status") == "available"]
     return {
         "status": "available" if available else "learning",

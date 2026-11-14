@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from bisect import bisect_right
 import math
 from typing import Any
 
@@ -48,12 +49,11 @@ def _timeline(history: dict[str, list[Any]], entity_id: str | None):
 
 
 def _latest_at(points, stamp):
-    selected = None
-    for point_time, value in points:
-        if point_time > stamp:
-            break
-        selected = value
-    return selected
+    if not points:
+        return None
+    times = [point[0] for point in points]
+    index = bisect_right(times, stamp) - 1
+    return points[index][1] if index >= 0 else None
 
 
 def _switch_state(value):

@@ -111,7 +111,10 @@
           "window_area_north_m2": "North-facing window area (m²)",
           "window_area_south_m2": "South-facing window area (m²)",
           "window_area_east_m2": "East-facing window area (m²)",
-          "window_area_west_m2": "West-facing window area (m²)"
+          "window_area_west_m2": "West-facing window area (m²)",
+          "wall_insulation_material": "External wall insulation material",
+          "roof_insulation_material": "Roof/attic insulation material",
+          "floor_insulation_material": "Ground-floor insulation material"
         }
       },
       "assessment_heating": {

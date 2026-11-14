@@ -39,6 +39,9 @@ from .const import (
     CONF_WATER_TEMPERATURE_ENTITY,
     CONF_RETURN_WATER_TEMPERATURE_ENTITY,
     CONF_WINDOW_ENTITY,
+    CONF_HUMIDITY_ENTITY,
+    CONF_CO2_ENTITY,
+    CONF_ENABLE_CO2,
     DOMAIN,
 )
 
@@ -203,6 +206,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY],
                 CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY],
                 CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
+                CONF_HUMIDITY_ENTITY: user_input.get(CONF_HUMIDITY_ENTITY),
+                CONF_CO2_ENTITY: user_input.get(CONF_CO2_ENTITY) if user_input.get(CONF_ENABLE_CO2) else None,
             })
             data = dict(self.config_entry.options)
             data[CONF_ROOMS] = rooms
@@ -215,6 +220,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Required(CONF_DEMAND_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig()),
             vol.Required(CONF_TEMPERATURE_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_WINDOW_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),
+            vol.Optional(CONF_HUMIDITY_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_ENABLE_CO2, default=False): selector.BooleanSelector(),
+            vol.Optional(CONF_CO2_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         })
         return self.async_show_form(step_id="add_room", data_schema=schema)
 

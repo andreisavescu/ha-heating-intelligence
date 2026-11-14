@@ -324,3 +324,71 @@ def test_calibration_dataset_rejects_invalid_cadence():
         assert "Invalid calibration dataset" in str(err)
     else:
         raise AssertionError("Invalid cadence should be rejected")
+
+
+def test_multizone_identification_recovers_normalized_passive_response_and_holds_out_late_data():
+    import math
+
+    samples = []
+    room_a, room_b = 22.0, 19.0
+    for index in range(151):
+        outside = 5.0 + 4.0 * math.sin(index * 0.19) + 1.5 * math.sin(index * 0.047)
+        samples.append({
+            "timestamp": (datetime(2026, 11, 1, tzinfo=timezone.utc) + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "outdoor_temperature": outside,
+                "solar_radiation": 0.0,
+                "ac_power": 0.0,
+            },
+            "rooms": {
+                "living": {"temperature": room_a, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": room_b, "demand": "off", "window": "off"},
+            },
+        })
+        if index < 150:
+            next_a = room_a + 0.5 * (0.035 * (outside - room_a) + 0.018 * (room_b - room_a))
+            next_b = room_b + 0.5 * (0.028 * (outside - room_b) + 0.012 * (room_a - room_b))
+            room_a, room_b = next_a, next_b
+
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}],
+        interval_minutes=30,
+        minimum_train_intervals=24,
+        minimum_holdout_intervals=8,
+    )
+    assert result["status"] == "room_response_identification_available"
+    for room_id in ("living", "bedroom"):
+        room = result["rooms"][room_id]
+        assert room["normalized_rates_per_hour"] is not None
+        assert room["training_intervals"] >= 24
+        assert room["holdout_intervals"] >= 8
+        assert room["normalized_rates_per_hour"]["envelope"] >= 0
+        assert room["normalized_rates_per_hour"]["bedroom" if room_id == "living" else "living"] >= 0
+        assert room["holdout_mae_c"] < room["persistence_baseline_mae_c"]
+        assert "not physical conductances" in room["interpretation"]
+
+
+def test_multizone_identification_withholds_when_solar_or_room_state_is_unavailable():
+    samples = []
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    for index in range(80):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"outdoor_temperature": 5.0, "solar_radiation": None},
+            "rooms": {
+                "living": {"temperature": 21.0 - index * 0.01, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": 20.0 - index * 0.01, "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples, [{"id": "living"}, {"id": "bedroom"}],
+    )
+    assert result["status"] == "insufficient_or_non_identifiable_history"
+    assert result["rooms"]["living"]["eligible_intervals"] == 0
+    assert result["rooms"]["living"]["excluded_intervals"]["solar_missing_or_high"] > 0
+
+
+def test_multizone_identification_requires_multiple_rooms():
+    result = MODULE.build_multizone_response_identification([], [{"id": "only_room"}])
+    assert result["status"] == "insufficient_zones"

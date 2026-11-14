@@ -693,7 +693,7 @@ def test_thermal_input_room_response_alignment_pairs_verified_energy_with_room_s
     assert gas["status"] == "input_response_pairs_available"
     assert gas["paired_intervals"] == 11
     assert gas["input_power_vs_room_response_pearson_r"] is not None
-    assert result["rooms"]["living"]["paired_intervals"] == 11
+    assert result["rooms"]["gas_consumption"]["living"]["paired_intervals"] == 11
     assert result["capacity_identification_status"] == "withheld_no_room_heat_allocation_or_independent_thermal_output"
 
 

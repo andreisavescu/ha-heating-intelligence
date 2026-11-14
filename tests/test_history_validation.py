@@ -392,3 +392,52 @@ def test_multizone_identification_withholds_when_solar_or_room_state_is_unavaila
 def test_multizone_identification_requires_multiple_rooms():
     result = MODULE.build_multizone_response_identification([], [{"id": "only_room"}])
     assert result["status"] == "insufficient_zones"
+
+
+def test_multizone_identification_requires_configured_ac_and_boiler_off_telemetry():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(40):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0,
+                "solar_radiation": 0.0,
+                "ac_power": None,
+                "boiler_burner": "on",
+                "boiler_modulation": 20.0,
+            },
+            "rooms": {
+                "living": {"temperature": 21.0 - index * 0.02, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": 20.0 - index * 0.01, "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}],
+        require_ac_power=True,
+        require_boiler_burner_off=True,
+        require_boiler_modulation_zero=True,
+    )
+    room = result["rooms"]["living"]
+    assert room["eligible_intervals"] == 0
+    assert room["excluded_intervals"]["ac_heating_active_or_unavailable"] > 0
+    assert room["excluded_intervals"]["boiler_active_or_unavailable"] == 0
+
+
+def test_multizone_global_candidate_count_is_not_multiplied_by_room_count():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(5):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"outdoor_temperature": 5.0, "solar_radiation": 0.0},
+            "rooms": {
+                "living": {"temperature": 21.0 - index * 0.1, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": 20.0 - index * 0.1, "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples, [{"id": "living"}, {"id": "bedroom"}],
+    )
+    assert result["global_interval_counts"]["candidate"] == 4

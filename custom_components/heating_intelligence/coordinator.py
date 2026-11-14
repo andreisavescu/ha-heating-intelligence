@@ -309,7 +309,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             co2_status = ("good" if co2_value < 800 else "elevated" if co2_value < 1200 else "high" if co2_value < 2000 else "very_high") if co2_value is not None else None
             demand_state = demand.state if demand else None
             demand_active = demand_is_active(demand_state)
-            demand_state_known = bool(demand and demand_state not in ("unknown", "unavailable"))
+            demand_state_known = bool(demand and demand_state != "unknown")
             room_history = update_room_history(
                 self._history,
                 room_id,

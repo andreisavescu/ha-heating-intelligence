@@ -517,3 +517,68 @@ def test_multizone_identification_reports_correlation_diagnostics_when_fit_is_us
         assert room["max_abs_predictor_correlation"] is not None
         assert room["predictor_correlations"]
         assert room["identifiability_threshold"] == 0.985
+
+
+
+def test_multizone_identification_rejects_joint_collinearity_not_visible_pairwise():
+    samples = []
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    # Three predictors: x3 is the sum of x1 and x2. Pairwise correlations
+    # remain below the 0.985 threshold, but the complete matrix is singular.
+    for index in range(180):
+        x1 = math.sin(index * 0.17) + 0.3 * math.sin(index * 0.071)
+        x2 = math.sin(index * 0.31 + 0.8) + 0.2 * math.sin(index * 0.053)
+        x3 = x1 + x2
+        outside = 8.0 + x1
+        living = 20.0 + 0.1 * x2
+        bedroom = 19.0 + 0.1 * x3
+        third = 18.0 + 0.1 * (x1 - x2)
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"outdoor_temperature": outside, "solar_radiation": 0.0},
+            "rooms": {
+                "living": {"temperature": living, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": bedroom, "demand": "off", "window": "off"},
+                "third": {"temperature": third, "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}, {"id": "third"}],
+        minimum_train_intervals=20,
+        minimum_holdout_intervals=5,
+        max_predictor_correlation=0.99999,
+    )
+    room = result["rooms"]["living"]
+    assert room["status"] == "non_identifiable_predictor_matrix"
+    assert room["normalized_rates_per_hour"] is None
+    assert room["predictor_matrix_rank"] < len(room["predictors"])
+    assert room["predictor_condition_number"] is None or room["predictor_condition_number"] > 1_000_000
+
+
+def test_multizone_identification_reports_full_matrix_condition_diagnostics():
+    samples = []
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    living, bedroom = 21.0, 20.0
+    for index in range(180):
+        outside = 4.0 + 2.5 * math.sin(index / 13.0) + 0.8 * math.sin(index / 4.1)
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"outdoor_temperature": outside, "solar_radiation": 0.0},
+            "rooms": {
+                "living": {"temperature": living, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": bedroom, "demand": "off", "window": "off"},
+            },
+        })
+        if index < 179:
+            living, bedroom = (
+                living + 0.5 * (0.035 * (outside - living) + 0.018 * (bedroom - living)),
+                bedroom + 0.5 * (0.028 * (outside - bedroom) + 0.012 * (living - bedroom)),
+            )
+    result = MODULE.build_multizone_response_identification(
+        samples, [{"id": "living"}, {"id": "bedroom"}],
+        minimum_train_intervals=24, minimum_holdout_intervals=8,
+    )
+    room = result["rooms"]["living"]
+    assert room["predictor_matrix_rank"] == len(room["predictors"])
+    assert room["predictor_condition_number"] is not None

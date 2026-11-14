@@ -233,7 +233,7 @@ def build_house_assessment(
             else "insufficient_history"
         ),
         "interpretation": (
-            "Profile completeness measures how much building information is known; it is not an efficiency score. "
+            "Profile completeness measures how much building information is known; it is not an energy-efficiency score. "
             "Thermal performance is estimated independently from completed-day energy and temperature observations, "
             "using configured boiler-efficiency and AC-COP assumptions. Insulation thickness and construction labels "
             "are not enough to derive certified U-values or an EPC rating."

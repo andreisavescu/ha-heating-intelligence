@@ -114,3 +114,50 @@ def test_recorder_room_response_withholds_unknown_window_or_demand():
     assert result["bedroom"]["heating"]["status"] == "learning"
     assert result["bedroom"]["heating"]["valid_intervals"] == 0
     assert result["bedroom"]["excluded_samples"]["unknown_mode"] > 0
+
+
+
+def test_preliminary_calibration_estimates_apparent_cooling_time_constant():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {
+        "sensor.outdoor": [{"state": "5", "last_changed": (end - timedelta(hours=10)).isoformat()}],
+        "sensor.room": [],
+        "binary_sensor.demand": [{"state": "off", "last_changed": (end - timedelta(hours=10)).isoformat()}],
+        "binary_sensor.window": [{"state": "off", "last_changed": (end - timedelta(hours=10)).isoformat()}],
+    }
+    for index in range(21):
+        hours = index * 0.5
+        temp = 5 + 15 * (2.718281828 ** (-hours / 12))
+        stamp = end - timedelta(hours=10 - hours)
+        history["sensor.room"].append({"state": str(temp), "last_changed": stamp.isoformat()})
+    result = MODULE.build_preliminary_room_calibration(
+        history,
+        [{"id": "living", "temperature_entity": "sensor.room",
+          "demand_entity": "binary_sensor.demand", "window_entity": "binary_sensor.window"}],
+        "sensor.outdoor",
+    )
+    room = result["rooms"]["living"]
+    assert room["status"] == "preliminary_estimate"
+    assert room["valid_intervals"] >= 8
+    assert 8 <= room["apparent_time_constant_hours"] <= 16
+    assert "not" in room["interpretation"]
+
+
+def test_preliminary_calibration_withholds_when_window_state_is_unknown():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {
+        "sensor.outdoor": [{"state": "5", "last_changed": (end - timedelta(hours=2)).isoformat()}],
+        "sensor.room": [
+            {"state": str(20 - i * 0.1), "last_changed": (end - timedelta(hours=2) + timedelta(minutes=30*i)).isoformat()}
+            for i in range(5)
+        ],
+        "binary_sensor.demand": [{"state": "off", "last_changed": (end - timedelta(hours=2)).isoformat()}],
+        "binary_sensor.window": [],
+    }
+    result = MODULE.build_preliminary_room_calibration(
+        history,
+        [{"id": "room", "temperature_entity": "sensor.room",
+          "demand_entity": "binary_sensor.demand", "window_entity": "binary_sensor.window"}],
+        "sensor.outdoor",
+    )
+    assert result["rooms"]["room"]["status"] == "insufficient_or_non_identifiable_data"

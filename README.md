@@ -6,6 +6,26 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
+## Current scope (0.14.0 development)
+
+- Editable multi-step house profile for envelope construction, insulation, glazing/orientation/shading, heating plant, thermal mass, ventilation, occupancy and internal gains. Profile completeness is reported separately from measured thermal performance; no U-values or EPC rating are inferred from insulation thickness alone.
+- Optional per-room humidity and CO2 sensor configuration, native live Home Assistant sensors, combined room-level interpretation and whole-house/floor coverage, averages, highest-CO2 room and humidity exception summaries. Room setup also accepts optional measured ACH values from ventilation/CO2-decay experiments; existing rooms can add or change ACH and window contacts in the room-area settings flow.
+- Rolling self-learning room thermal-response model. It learns separate heating and coasting temperature-change rates from non-overlapping, same-mode intervals with a configured window contact confirming closed windows, over a rolling 30-day window. It reports sample sufficiency and confidence and produces 1/3/6/12-hour projections when enough data exists. The overview combines these room models with the existing measured whole-house heat-loss estimates.
+- The overview card exposes the house profile, measured thermal-performance status, whole-house and floor air analysis (including entered room ACH), and learned room model. All outputs remain read-only and descriptive; occupancy, solar gains, thermal storage and operating changes can affect observed rates.
+
+### 0.14.0 model interpretation
+
+- House-profile completeness is a count of populated optional fields, not a rating of building quality. Insulation thickness and construction labels are never converted directly into U-values.
+- Whole-house heat-loss estimates retain their explicit assumptions (boiler seasonal efficiency, AC heating COP and configured envelope area) and report the number of valid completed days used.
+- CO2 bands are indicative: below 800 ppm, 800–1199 ppm, 1200–1999 ppm and 2000 ppm or higher. Humidity bands are below 30%, 30–60% and above 60%. Room exceptions remain visible even when the whole-house average is lower.
+- Each thermal mode needs at least six valid non-overlapping intervals spanning two hours, with a valid room demand state and a configured, available window contact confirming the windows are closed. The integration treats the configured demand entity being unavailable as no demand; a missing entity or an "unknown" state is not considered valid. When an AC power sensor is configured, intervals with input above 50 W, intervals while that sensor is unavailable, and legacy samples that predate AC-state tracking are excluded from room-rate learning until enough clean history is collected. The model learns from the rolling last 30 days and reports "learning" rather than inventing a forecast when evidence is insufficient. Forecasts assume the current demand mode and closed windows continue; they are withheld while the window is open or its contact is unavailable, and while detected AC electrical input is active or unverified. Solar gains and occupancy can still influence the learned rates.
+
+
+## Current scope (0.14.0)
+
+- Optional per-room relative humidity and CO2 sensors, configurable when adding a room or later from options.
+- Live room humidity and CO2 readings exposed as native Home Assistant sensors and shown with indicative comfort/ventilation bands in the card.
+
 ## Current scope (0.13.2)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.

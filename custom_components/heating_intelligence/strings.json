@@ -20,7 +20,9 @@
           "global_settings": "Global settings",
           "pump_settings": "Pump settings",
           "edit_room": "Change a room's floor",
-          "room_area": "Set room floor areas"
+          "room_area": "Configure room areas, ACH and window contacts",
+          "room_air_quality": "Configure room air quality",
+          "house_assessment": "House assessment"
         }
       },
       "global_settings": {
@@ -38,20 +40,52 @@
       },
       "add_room": {
         "title": "Add a room",
-        "description": "Select the room's floor, thermostat demand relay and temperature sensor. Floor area is optional. The window contact is optional.",
+        "description": "Select the room's floor, thermostat demand relay and temperature sensor. Floor area, measured air changes and window contact are optional.",
         "data": {
-          "area_m2": "Room floor area (m²)"
+          "area_m2": "Room floor area (m²)",
+          "humidity_entity": "Room humidity sensor (%)",
+          "enable_co2": "Add a CO2 sensor for this room",
+          "air_changes_per_hour": "Measured room air changes per hour (ACH)",
+          "window_entity": "Room window contact"
+        }
+      },
+      "room_air_quality": {
+        "title": "Select room",
+        "description": "Choose the room whose humidity and CO2 sensors you want to configure."
+      },
+      "room_air_quality_config": {
+        "title": "Room air quality",
+        "description": "Configure humidity and optional CO2 sensors for {room_name}. Disable CO2 to remove its sensor.",
+        "data": {
+          "humidity_entity": "Room humidity sensor (%)",
+          "enable_co2": "Configure a CO2 sensor for this room"
+        }
+      },
+      "room_air_quality_co2": {
+        "title": "Select CO2 sensor",
+        "description": "Choose the CO2 sensor for this room.",
+        "data": {
+          "co2_entity": "Room CO2 sensor (ppm)"
+        }
+      },
+      "add_room_co2": {
+        "title": "Add room CO2 sensor",
+        "description": "Select the CO2 sensor for {room_name}. CO2 is optional and only requested when enabled for this room.",
+        "data": {
+          "co2_entity": "Room CO2 sensor (ppm)"
         }
       },
       "room_area": {
         "title": "Select room",
-        "description": "Choose the room whose floor area you want to configure."
+        "description": "Choose a room whose floor area, measured air changes or window contact you want to configure."
       },
       "set_room_area": {
-        "title": "Room floor area",
-        "description": "Set the floor area for {room_name}. Leave empty if unknown.",
+        "title": "Room area, ventilation and window contact",
+        "description": "Set floor area, optional measured ACH and a window contact for {room_name}. Leave unknown values empty.",
         "data": {
-          "area_m2": "Room floor area (m²)"
+          "area_m2": "Room floor area (m²)",
+          "air_changes_per_hour": "Measured room air changes per hour (ACH)",
+          "window_entity": "Room window contact"
         }
       },
       "remove_room": {
@@ -68,6 +102,56 @@
       "edit_room_floor": {
         "title": "Change room floor",
         "description": "Set the floor for {room_name}. The currently saved floor is selected by default."
+      },
+      "house_assessment": {
+        "title": "Building and envelope",
+        "description": "Enter known building details. Your known defaults are prefilled; leave unknown values blank. You can revisit and change every answer.",
+        "data": {
+          "construction_year": "Construction year",
+          "wall_insulation_cm": "External wall insulation thickness (cm)",
+          "roof_insulation_cm": "Roof/attic insulation thickness (cm)",
+          "floor_insulation_cm": "Ground-floor insulation thickness (cm)",
+          "window_glazing": "Window glazing",
+          "window_frame": "Window frame material",
+          "main_orientation": "Main solar-exposed orientation",
+          "shading": "External shading",
+          "wall_construction": "External wall construction",
+          "roof_type": "Roof type",
+          "floor_construction": "Ground-floor construction",
+          "window_area_north_m2": "North-facing window area (m²)",
+          "window_area_south_m2": "South-facing window area (m²)",
+          "window_area_east_m2": "East-facing window area (m²)",
+          "window_area_west_m2": "West-facing window area (m²)",
+          "wall_insulation_material": "External wall insulation material",
+          "roof_insulation_material": "Roof/attic insulation material",
+          "floor_insulation_material": "Ground-floor insulation material"
+        }
+      },
+      "assessment_heating": {
+        "title": "Heating system and thermal mass",
+        "description": "Describe the heat source, distribution and thermal storage. Defaults reflect known system details but can be changed.",
+        "data": {
+          "boiler_model": "Boiler make/model",
+          "heating_distribution": "Heat distribution",
+          "boiler_dhw": "Does the boiler also produce domestic hot water?",
+          "buffer_tank": "Buffer tank or hydraulic separator",
+          "ufh_screed_cm": "Underfloor-heating screed thickness (cm)",
+          "ac_heating": "Are air conditioners used for heating?",
+          "ac_units": "Number of AC units",
+          "thermal_mass": "Overall building thermal mass"
+        }
+      },
+      "assessment_occupancy": {
+        "title": "Ventilation and internal gains",
+        "description": "These inputs help distinguish building heat loss from ventilation, occupancy and internal heat gains. Unknown answers are fine.",
+        "data": {
+          "ventilation_type": "Ventilation system",
+          "daily_window_ventilation": "Window-opening frequency",
+          "occupants": "Number of occupants",
+          "occupancy_pattern": "Typical occupancy pattern",
+          "internal_gains": "Internal heat gains from equipment/appliances",
+          "staircase_layout": "Staircase between floors"
+        }
       }
     },
     "abort": {

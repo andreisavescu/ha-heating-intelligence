@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -17,6 +18,9 @@ from .advanced_diagnostics import build_advanced_diagnostics
 from .prediction_engine import build_predictions
 from .floor_efficiency import build_floor_performance, weather_normalised_efficiency
 from .advanced_heating import update_advanced_history
+from .house_assessment import build_house_assessment
+from .indoor_air_quality import build_indoor_air_analysis
+from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -35,12 +39,15 @@ from .const import (
     CONF_AC_ENERGY_ENTITY,
     CONF_AC_HEATING_COP,
     CONF_FLOOR,
+    CONF_ACH,
     CONF_PUMPS,
     CONF_ROOMS,
     CONF_TEMPERATURE_ENTITY,
     CONF_WATER_TEMPERATURE_ENTITY,
     CONF_RETURN_WATER_TEMPERATURE_ENTITY,
     CONF_WINDOW_ENTITY,
+    CONF_HUMIDITY_ENTITY,
+    CONF_CO2_ENTITY,
     DOMAIN,
 )
 
@@ -74,6 +81,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "daily": {},
             "floor_analysis": {},
             "efficiency": {},
+            "house_assessment": {},
+            "indoor_air_quality": {},
+            "thermal_model": {},
         }
 
     async def async_load_history(self) -> None:
@@ -258,7 +268,22 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "pump_cycles": sum(p.get("daily_cycle_count", 0) for p in result["pumps"].values()),
         }
 
+        ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
+        ac_power_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
+        ac_power_value = _as_float(ac_power_state.state) if ac_power_state else None
+        ac_power_unit = (ac_power_state.attributes.get("unit_of_measurement") or "") if ac_power_state else ""
+        if ac_power_value is not None:
+            if ac_power_unit.lower() == "kw":
+                ac_power_value *= 1000
+            elif ac_power_unit == "MW":
+                ac_power_value *= 1_000_000
+            elif ac_power_unit == "mW":
+                ac_power_value /= 1000
+        # Exclude room samples while the configured AC electrical input indicates active use.
+        ac_heating_active = bool(ac_power_entity) and (ac_power_value is None or ac_power_value > 50)
+
         prediction_rooms = {}
+        learned_room_models = {}
         floor_analysis = {
             "ground_floor": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("ground_floor", {}).get("running")), "pump_power_w": result["pumps"].get("ground_floor", {}).get("power")},
             "upstairs": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("upstairs", {}).get("running")), "pump_power_w": result["pumps"].get("upstairs", {}).get("power")},
@@ -270,8 +295,21 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             temperature = self.hass.states.get(room[CONF_TEMPERATURE_ENTITY])
             window_id = room.get(CONF_WINDOW_ENTITY)
             window = self.hass.states.get(window_id) if window_id else None
+            humidity_id = room.get(CONF_HUMIDITY_ENTITY)
+            humidity_state = self.hass.states.get(humidity_id) if humidity_id else None
+            co2_id = room.get(CONF_CO2_ENTITY)
+            co2_state = self.hass.states.get(co2_id) if co2_id else None
+            humidity_value = _as_float(humidity_state.state) if humidity_state else None
+            co2_value = _as_float(co2_state.state) if co2_state else None
+            if humidity_value is not None and not 0 <= humidity_value <= 100:
+                humidity_value = None
+            if co2_value is not None and co2_value < 0:
+                co2_value = None
+            humidity_status = ("low" if humidity_value < 30 else "high" if humidity_value > 60 else "comfortable") if humidity_value is not None else None
+            co2_status = ("good" if co2_value < 800 else "elevated" if co2_value < 1200 else "high" if co2_value < 2000 else "very_high") if co2_value is not None else None
             demand_state = demand.state if demand else None
             demand_active = demand_is_active(demand_state)
+            demand_state_known = bool(demand and demand_state != "unknown")
             room_history = update_room_history(
                 self._history,
                 room_id,
@@ -283,6 +321,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             stats = room_statistics(room_history, now_local)
             window_open = bool(window and window.state == "on")
+            window_state_known = bool(window_id and window and window.state not in ("unknown", "unavailable"))
             if room_history.get("window_open_demand_date") != local_date:
                 room_history["window_open_demand_date"] = local_date
                 room_history["window_open_demand_seconds_today"] = 0.0
@@ -292,9 +331,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 ) + elapsed
             temperature_value = _as_float(temperature.state) if temperature else None
             record_temperature_sample(
-                room_history, now_local, temperature_value, demand_active, window_open
+                room_history, now_local, temperature_value, demand_active, window_open,
+                external_heating=ac_heating_active,
+                window_state_known=window_state_known,
+                demand_state_known=demand_state_known,
             )
             thermal = thermal_statistics(room_history, now_local)
+            learned_model = build_room_thermal_model(room_history, now_local, temperature_value, demand_active, bool(ac_power_entity), ac_heating_active, window_open, window_state_known, bool(window_id), demand_state_known)
+            learned_room_models[room_id] = learned_model
             floor = room.get(CONF_FLOOR, "unassigned")
             floor_data = floor_analysis.setdefault(floor, {"active_rooms": 0})
             daily_key = "room_demand_" + room_id
@@ -310,6 +354,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["rooms"][room_id] = {
                 "floor": floor,
                 "area_m2": _as_float(room.get("area_m2")),
+                "air_changes_per_hour": _as_float(room.get(CONF_ACH)),
                 "floor_label": {"ground_floor": "Downstairs", "upstairs": "Upstairs", "unassigned": "Unassigned"}.get(floor, floor),
                 "id": room_id,
                 "name": room["name"],
@@ -318,6 +363,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "demand": demand_active,
                 **stats,
                 **thermal,
+                "thermal_model": learned_model,
                 "window_open_demand_seconds_today": round(float(room_history.get("window_open_demand_seconds_today", 0))),
                 "temperature_history": [
                     {"time": sample.get("time"), "temperature": sample.get("temperature"),
@@ -326,12 +372,24 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 ],
                 "temperature_entity": room[CONF_TEMPERATURE_ENTITY],
                 "temperature": temperature_value,
+                "humidity_entity": humidity_id,
+                "humidity": humidity_value,
+                "humidity_status": humidity_status,
+                "co2_entity": co2_id,
+                "co2_ppm": co2_value,
+                "co2_status": co2_status,
                 "window_entity": window_id,
                 "window_state": window.state if window else None,
                 "window_open": window_open,
+                "window_state_known": window_state_known,
+                "demand_state_known": demand_state_known,
                 "daily_demand_seconds": round(demand_seconds),
                 "demand_history": [{"start": item.get("start"), "end": item.get("end"), "duration_seconds": item.get("duration_seconds")} for item in room_history.get("cycles", []) if item.get("start") and item.get("end")][-500:] + ([{"start": room_history.get("cycle_start"), "end": now_local.isoformat(), "duration_seconds": max(0, (now_local - dt_util.parse_datetime(room_history["cycle_start"])).total_seconds()), "active": True}] if room_history.get("last_demand") is True and room_history.get("cycle_start") else []),
             }
+        result["indoor_air_quality"] = build_indoor_air_analysis(result["rooms"])
+        for room_id, air_assessment in result["indoor_air_quality"].get("rooms", {}).items():
+            if room_id in result["rooms"]:
+                result["rooms"][room_id]["air_quality_assessment"] = air_assessment
         for floor_id in ("ground_floor", "upstairs"):
             floor_data = floor_analysis[floor_id]
             floor_data["demand_hours_today"] = round(sum(float(daily.get("room_demand_" + room["id"], 0.0)) for room in self.entry.options.get(CONF_ROOMS, []) if room.get(CONF_FLOOR, "unassigned") == floor_id) / 3600, 2)
@@ -403,6 +461,24 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             local_date,
         )
         result["efficiency"]["weather_normalised"] = weather_model
+        result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
+        result["thermal_model"]["ac_heating_filter"] = (
+            "sensor_unavailable" if ac_power_entity and ac_power_value is None
+            else "active" if ac_heating_active
+            else "inactive" if ac_power_entity else "not_configured"
+        )
+        result["house_assessment"] = build_house_assessment(
+            self.entry.options.get("house_assessment", {}),
+            result["efficiency"],
+            result["rooms"],
+        )
+        result["house_assessment"]["cross_system_context"] = {
+            "indoor_air_quality_status": result["indoor_air_quality"].get("co2", {}).get("status"),
+            "humidity_status": result["indoor_air_quality"].get("humidity", {}).get("status"),
+            "thermal_model_status": result["thermal_model"].get("status"),
+            "thermal_model_rooms": result["thermal_model"].get("rooms_modelled", 0),
+            "measured_performance_status": result["house_assessment"].get("performance_status"),
+        }
         normalised_by_date = {
             item["date"]: item for item in weather_model.get("recent_days", [])
         }
@@ -461,6 +537,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
 
 def _as_float(value):
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    return number if math.isfinite(number) else None

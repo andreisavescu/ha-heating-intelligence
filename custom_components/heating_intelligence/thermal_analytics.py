@@ -11,7 +11,8 @@ MAX_SAMPLES = 60000
 
 def record_temperature_sample(
     room: dict[str, Any], now: datetime, temperature: float | None,
-    demand: bool, window_open: bool,
+    demand: bool, window_open: bool, external_heating: bool = False,
+    window_state_known: bool = True, demand_state_known: bool = True,
 ) -> None:
     """Retain sparse raw observations for later thermal analysis."""
     if temperature is None:
@@ -22,12 +23,15 @@ def record_temperature_sample(
     last_time = datetime.fromisoformat(last["time"]) if last else None
     changed_enough = last is None or abs(float(last["temperature"]) - temperature) >= 0.15
     due = last_time is None or (stamp - last_time).total_seconds() >= SAMPLE_INTERVAL_SECONDS
-    if changed_enough or due or (last and (last["demand"] != demand or last["window_open"] != window_open)):
+    if changed_enough or due or (last and (last["demand"] != demand or last["window_open"] != window_open or last.get("external_heating", False) != external_heating or last.get("window_state_known", True) != window_state_known or last.get("demand_state_known", True) != demand_state_known)):
         samples.append({
             "time": stamp.isoformat(),
             "temperature": round(temperature, 3),
             "demand": bool(demand),
             "window_open": bool(window_open),
+            "external_heating": bool(external_heating),
+            "window_state_known": bool(window_state_known),
+            "demand_state_known": bool(demand_state_known),
         })
     cutoff = stamp - timedelta(days=RETENTION_DAYS)
     room["temperature_samples"] = [

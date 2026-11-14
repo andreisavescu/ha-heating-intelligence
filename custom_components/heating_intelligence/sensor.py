@@ -1,7 +1,7 @@
 """Heating Intelligence sensors."""
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -28,6 +28,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(WaterTemperatureSensor(coordinator))
     for room in entry.options.get(CONF_ROOMS, []):
         entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
+        if room.get("humidity_entity"):
+            entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "humidity"))
+        if room.get("co2_entity"):
+            entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "co2_ppm"))
         entities.extend(
             RoomAnalyticsSensor(coordinator, room["id"], room["name"], metric)
             for metric in ROOM_ANALYTICS_METRICS
@@ -110,6 +114,9 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
         pumps = data.get("pumps", {})
         return {
             "rooms": rooms,
+            "house_assessment": data.get("house_assessment", {}),
+            "indoor_air_quality": data.get("indoor_air_quality", {}),
+            "thermal_model": data.get("thermal_model", {}),
             "room_count": len(rooms),
             "heating_rooms": sum(1 for room in rooms.values() if room.get("demand")),
             "average_room_temperature": round(sum(valid_temps) / len(valid_temps), 1) if valid_temps else None,
@@ -481,3 +488,34 @@ class PumpDailyCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity
     @property
     def native_value(self):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("daily_cycle_count", 0)
+
+
+class RoomAirQualitySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Live room humidity or CO2 measurement."""
+
+    _attr_should_poll = False
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.metric = metric
+        self._attr_name = f"{room_name} {'Humidity' if metric == 'humidity' else 'CO2'}"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+        self._attr_native_unit_of_measurement = "%" if metric == "humidity" else "ppm"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:water-percent" if metric == "humidity" else "mdi:molecule-co2"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get(self.metric)
+
+    @property
+    def extra_state_attributes(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        key = "humidity_status" if self.metric == "humidity" else "co2_status"
+        return {
+            "air_quality_status": room.get(key),
+            "room_air_assessment": room.get("air_quality_assessment", {}),
+            "co2_ppm": room.get("co2_ppm"),
+            "relative_humidity_percent": room.get("humidity"),
+        }

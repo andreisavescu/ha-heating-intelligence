@@ -475,3 +475,145 @@ def _finite_number_or_none(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def build_house_effective_rc_calibration(
+    history: dict[str, list[Any]],
+    rooms: list[dict[str, Any]],
+    outdoor_temperature_entity: str | None,
+    heat_loss_coefficient_w_k: float | None,
+    solar_radiation_entity: str | None = None,
+    solar_exclusion_threshold_w_m2: float = 50.0,
+    outdoor_max_age_minutes: float = 90.0,
+) -> dict[str, Any]:
+    """Combine independently estimated house heat loss and night cooling tau.
+
+    The result is an aggregate effective C=H*tau estimate, not a room-level
+    physical capacity. It is withheld without a positive measured-performance
+    heat-loss coefficient and clean low-solar, demand-off, closed-window data.
+    """
+    outdoor = _timeline(history, outdoor_temperature_entity)
+    solar = _timeline(history, solar_radiation_entity)
+    heat_loss = _finite_number_or_none(heat_loss_coefficient_w_k)
+    if heat_loss is None or heat_loss <= 0:
+        return {
+            "status": "withheld_heat_loss_coefficient_unavailable",
+            "effective_building_thermal_capacity_wh_per_k": None,
+            "heat_loss_coefficient_w_k": None,
+            "apparent_time_constant_hours": None,
+            "valid_intervals": 0,
+            "note": "A separately estimated positive whole-house heat-loss coefficient is required; room cooling slopes alone cannot identify absolute capacity.",
+        }
+    room_data = []
+    for room in rooms:
+        entity = room.get("temperature_entity")
+        if not entity:
+            continue
+        points = []
+        for state in history.get(entity, []):
+            stamp, temp = _timestamp(state), _state_value(state)
+            if stamp is not None and temp is not None:
+                points.append((stamp, temp))
+        points.sort(key=lambda item: item[0])
+        if points:
+            room_data.append((room, points, _timeline(history, room.get("demand_entity")),
+                              _timeline(history, room.get("window_entity"))))
+    if not room_data or not outdoor:
+        return {
+            "status": "insufficient_history",
+            "effective_building_thermal_capacity_wh_per_k": None,
+            "heat_loss_coefficient_w_k": round(heat_loss, 2),
+            "apparent_time_constant_hours": None,
+            "valid_intervals": 0,
+            "note": "Indoor and outdoor Recorder history are required.",
+        }
+
+    # Use the union of indoor sample times, with area-weighted latest room
+    # readings. A room contributes only when its temperature is recent and
+    # both demand and window states are explicitly known and inactive.
+    stamps = sorted({stamp for _, points, _, _ in room_data for stamp, _ in points})
+    aggregate = []
+    exclusions = {
+        "insufficient_room_coverage": 0, "demand_or_window_not_confirmed": 0,
+        "outdoor_missing_or_stale": 0, "solar_gain_period": 0,
+    }
+    total_weight = sum(
+        max(0.0, _finite_number_or_none(room.get("area_m2")) or 0.0)
+        for room, _, _, _ in room_data
+    )
+    for stamp in stamps:
+        weighted_temp = weight_sum = 0.0
+        eligible = 0
+        for room, points, demand, windows in room_data:
+            idx = bisect_right(points, stamp, key=lambda item: item[0]) - 1
+            if idx < 0 or (stamp - points[idx][0]).total_seconds() > 90 * 60:
+                continue
+            if _switch_state(_latest_at(demand, stamp)) is not False or _switch_state(_latest_at(windows, stamp)) is not False:
+                continue
+            weight = _finite_number_or_none(room.get("area_m2"))
+            weight = weight if weight is not None and weight > 0 else 1.0
+            weighted_temp += points[idx][1] * weight
+            weight_sum += weight
+            eligible += 1
+        if eligible < max(1, math.ceil(len(room_data) * 0.7)) or weight_sum <= 0:
+            exclusions["insufficient_room_coverage"] += 1
+            continue
+        outdoor_idx = bisect_right(outdoor, stamp, key=lambda item: item[0]) - 1
+        if outdoor_idx < 0 or (stamp - outdoor[outdoor_idx][0]).total_seconds() > outdoor_max_age_minutes * 60:
+            exclusions["outdoor_missing_or_stale"] += 1
+            continue
+        if solar:
+            solar_idx = bisect_right(solar, stamp, key=lambda item: item[0]) - 1
+            if solar_idx >= 0:
+                solar_value = _finite_number_or_none(solar[solar_idx][1])
+                if solar_value is not None and solar_value > solar_exclusion_threshold_w_m2:
+                    exclusions["solar_gain_period"] += 1
+                    continue
+        aggregate.append((stamp, weighted_temp / weight_sum, float(outdoor[outdoor_idx][1])))
+
+    observations = []
+    for first, second in zip(aggregate, aggregate[1:]):
+        stamp0, temp0, outside0 = first
+        stamp1, temp1, outside1 = second
+        hours = (stamp1 - stamp0).total_seconds() / 3600
+        delta = (temp0 + temp1 - outside0 - outside1) / 2
+        if 1 / 6 <= hours <= 1.0 and delta >= 1.0:
+            observations.append((delta, (temp1 - temp0) / hours))
+    n = len(observations)
+    slope = intercept = r_squared = tau = capacity = None
+    status = "insufficient_clean_cooling_history"
+    if n >= 12:
+        xs, ys = [item[0] for item in observations], [item[1] for item in observations]
+        x_bar, y_bar = sum(xs) / n, sum(ys) / n
+        sxx = sum((x - x_bar) ** 2 for x in xs)
+        if sxx > 1e-9:
+            slope = sum((x - x_bar) * (y - y_bar) for x, y in zip(xs, ys)) / sxx
+            intercept = y_bar - slope * x_bar
+            residual = sum((y - (intercept + slope * x)) ** 2 for x, y in observations)
+            total = sum((y - y_bar) ** 2 for y in ys)
+            r_squared = max(0.0, min(1.0, 1 - residual / total)) if total > 1e-9 else None
+            if slope < -1e-5:
+                tau = -1 / slope
+                capacity = heat_loss * tau
+                status = "effective_aggregate_capacity_estimate"
+            else:
+                status = "non_identifiable_cooling_response"
+    return {
+        "status": status,
+        "method": "area_weighted_night_cooling_tau_times_independent_house_heat_loss",
+        "effective_building_thermal_capacity_wh_per_k": round(capacity, 1) if capacity is not None else None,
+        "heat_loss_coefficient_w_k": round(heat_loss, 2),
+        "apparent_time_constant_hours": round(tau, 2) if tau is not None else None,
+        "decay_slope_per_hour": round(slope, 6) if slope is not None else None,
+        "intercept_c_per_hour": round(intercept, 6) if intercept is not None else None,
+        "fit_r_squared": round(r_squared, 3) if r_squared is not None else None,
+        "valid_intervals": n,
+        "rooms_included": len(room_data),
+        "exclusions": exclusions,
+        "interpretation": (
+            "Aggregate effective capacity is H_house multiplied by the fitted whole-house cooling time constant. "
+            "It is conditional on the independent energy-derived H estimate and assumes the selected low-solar "
+            "periods have negligible unmeasured gains. It must not be distributed to rooms or UFH slabs as a "
+            "physical capacity; inter-zone exchange and internal gains remain unresolved."
+        ),
+    }

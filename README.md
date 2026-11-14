@@ -6,6 +6,7 @@
 - Expose roof conductance only when roof U-value and area are explicitly configured.
 - Surface existing learned room heating/coasting rates, confidence and sample counts as calibration evidence; do not misrepresent temperature slopes as physical heat capacities or envelope U-values.
 - Query up to seven days of configured Home Assistant Recorder history locally every six hours and show per-entity data coverage for calibration planning. Raw history remains in Recorder and is not copied into integration storage or sent externally.
+- Build a transient 30-minute aligned calibration dataset from room temperatures, demand/window states, weather, solar, attic, gas, boiler, AC, water-temperature and configured pump telemetry. Last-known values are carried forward only up to 45 minutes; explicit `unknown`/`unavailable` states invalidate the value. Report per-channel freshness and core/room-state coverage. Aligned rows remain in coordinator memory for subsequent fitting and are not persisted.
 - Keep the physical simulation withheld until required thermal capacities and conductive links are identified. Solar/internal gains and UFH/plant heat output remain uncalculated where calibrated inputs are missing.
 
 ## 0.14.4 — manifold pump stage visibility

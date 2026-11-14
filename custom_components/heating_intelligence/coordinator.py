@@ -228,6 +228,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 summary["multizone_response_identification"],
                 summary["thermal_input_energy_observability"],
                 summary["ufh_slab_observability"],
+                summary["water_side_thermal_output"],
             )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None

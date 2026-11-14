@@ -20,7 +20,8 @@
           "global_settings": "Global settings",
           "pump_settings": "Pump settings",
           "edit_room": "Change a room's floor",
-          "room_area": "Set room floor areas"
+          "room_area": "Set room floor areas",
+          "room_air_quality": "Configure room air quality"
         }
       },
       "global_settings": {
@@ -44,6 +45,14 @@
           "humidity_entity": "Room humidity sensor (%)",
           "enable_co2": "Add a CO2 sensor for this room"
         }
+      },
+      "room_air_quality": {
+        "title": "Select room",
+        "description": "Choose the room whose humidity and CO2 sensors you want to configure."
+      },
+      "room_air_quality_co2": {
+        "title": "Select CO2 sensor",
+        "description": "Choose the CO2 sensor for this room."
       },
       "add_room_co2": {
         "title": "Add room CO2 sensor",

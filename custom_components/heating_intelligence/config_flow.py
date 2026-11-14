@@ -384,7 +384,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=data)
 
     async def async_step_room_area(self, user_input=None):
-        """Select a room and configure its optional floor area."""
+        """Select a room to configure floor area, measured ACH and window contact."""
         rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
         if not rooms:
             return self.async_abort(reason="no_rooms")
@@ -398,6 +398,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def async_step_set_room_area(self, user_input=None):
+        """Save the selected room area, measured ACH and window contact."""
         rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
         room = next((item for item in rooms if item["id"] == self._area_room_id), None)
         if room is None:

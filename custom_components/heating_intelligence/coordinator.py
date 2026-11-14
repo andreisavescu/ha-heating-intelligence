@@ -236,9 +236,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             house_u = _as_float(efficiency.get("heat_loss_u_value_7d"))
             envelope_area = _as_float(efficiency.get("thermal_model_envelope_area_m2"))
             house_heat_loss = house_u * envelope_area if house_u and envelope_area else None
+            h_sensitivity = (
+                (efficiency.get("heat_loss_assumption_sensitivity_30d") or {}).get("heat_loss_coefficient_range_w_k")
+                or (efficiency.get("heat_loss_assumption_sensitivity_7d") or {}).get("heat_loss_coefficient_range_w_k")
+            )
             summary["house_effective_rc_calibration"] = build_house_effective_rc_calibration(
                 history, configured_rooms, outdoor_entity, house_heat_loss,
                 self.entry.options.get(CONF_SOLAR_RADIATION_ENTITY),
+                heat_loss_sensitivity_range_w_k=h_sensitivity,
             )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")

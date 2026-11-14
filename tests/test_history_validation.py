@@ -1598,3 +1598,56 @@ def test_floor_room_demand_lag_scan_withholds_constant_or_missing_demand():
     assert room["status"] == "insufficient_or_constant_demand_output_pairs"
     assert room["selected_training_lag_minutes"] is None
 
+def test_ufh_observability_rejects_partial_room_temperature_coverage():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(14):
+        rooms = {
+            "living": {"temperature": 20.0 + index * 0.05},
+            "kitchen": {"temperature": 19.0 + index * 0.04},
+        }
+        if index == 7:
+            rooms["kitchen"]["temperature"] = None
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"pump:ground_floor:power": 40.0 if index < 7 else 0.0},
+            "rooms": rooms,
+        })
+    result = MODULE.build_ufh_slab_observability(
+        samples,
+        [{"id": "living", "floor": "ground_floor"}, {"id": "kitchen", "floor": "ground_floor"}],
+    )
+    floor = result["floors"]["ground_floor"]
+    assert floor["excluded_observations"]["incomplete_room_temperature"] == 1
+    assert floor["pump_on_intervals"] == 6
+    assert floor["pump_off_intervals"] == 5
+    assert floor["room_response"]["living"]["pump_on_intervals"] == 6
+    assert floor["room_response"]["kitchen"]["pump_off_intervals"] == 5
+
+
+def test_ufh_observability_excludes_open_window_intervals_and_does_not_bridge_gap():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(16):
+        rooms = {
+            "living": {
+                "temperature": 20.0 + index * 0.1,
+                "window": "on" if index == 6 else "off",
+                "window_age_minutes": 0,
+            }
+        }
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"pump:ground_floor:power": 40.0 if index < 8 else 0.0},
+            "rooms": rooms,
+        })
+    result = MODULE.build_ufh_slab_observability(
+        samples, [{"id": "living", "floor": "ground_floor"}]
+    )
+    floor = result["floors"]["ground_floor"]
+    assert floor["excluded_observations"]["open_window"] == 1
+    assert floor["pump_on_intervals"] == 6
+    assert floor["pump_off_intervals"] == 7
+    assert floor["room_response"]["living"]["median_temperature_rate_pump_on_c_per_hour"] == 0.2
+    assert floor["thermal_output_w"] is None
+

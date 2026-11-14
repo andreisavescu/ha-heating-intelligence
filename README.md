@@ -306,3 +306,11 @@ The plant-input/room-response diagnostic now also captures outdoor temperature, 
 
 
 Multi-zone chronological holdout scoring now includes per-room residual diagnostics: mean bias, residual dispersion, maximum absolute error, lag-one residual correlation, residual drift per day, and a timestamp/cadence audit of the held-out segment. When at least 20 holdout intervals are available, deterministic moving-block resampling reports 5th/50th/95th percentile MAE and RMSE sensitivity ranges. These are descriptive diagnostics and resampling sensitivity, not formal confidence intervals. The house-level validation summary also counts rooms that beat or fail to beat persistence and rooms with residual diagnostics. Predictive holdout performance does not identify absolute thermal parameters: the per-room result explicitly continues to withhold physical parameter identification until independent room capacity and room-level heat input are available.
+
+
+### Explicit absolute-parameter readiness report
+- Recorder diagnostics now produce a per-room physical-calibration readiness report alongside normalized multi-zone response identification.
+- The report combines room temperature/state coverage, configured volume/ACH, normalized response fit status, chronological holdout error, coefficient resampling stability and temporal stability.
+- It lists verified system-level energy meters separately from water-flow and room/zone heat-output channels. It does not treat pump electrical power or supply-return delta-T without flow as delivered heat.
+- Absolute room capacities, W/K conductances and physical simulation readiness remain explicitly false until independent room capacity, measured thermal output and a defensible room-level heat allocation exist.
+- The report includes the concrete additional evidence required to proceed. It is a readiness/diagnostic layer, not a new parameter estimator and does not manufacture missing measurements.

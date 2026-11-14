@@ -1100,6 +1100,48 @@ def build_thermal_input_energy_observability(
 
 
 
+
+def _pearson_diagnostics(xs: list[float], ys: list[float]) -> dict[str, Any]:
+    """Return Pearson r, Fisher interval and a chronological split-half check."""
+    def correlation(left, right):
+        if len(left) < 2:
+            return None
+        mean_left, mean_right = sum(left) / len(left), sum(right) / len(right)
+        var_left = sum((value - mean_left) ** 2 for value in left)
+        var_right = sum((value - mean_right) ** 2 for value in right)
+        if var_left <= 1e-12 or var_right <= 1e-12:
+            return None
+        return sum((a - mean_left) * (b - mean_right) for a, b in zip(left, right)) / math.sqrt(var_left * var_right)
+
+    r = correlation(xs, ys)
+    interval = None
+    if r is not None and len(xs) > 3:
+        bounded = max(-0.999999, min(0.999999, r))
+        z = 0.5 * math.log((1 + bounded) / (1 - bounded))
+        margin = 1.96 / math.sqrt(len(xs) - 3)
+        interval = [round(math.tanh(z - margin), 4), round(math.tanh(z + margin), 4)]
+    midpoint = len(xs) // 2
+    first = correlation(xs[:midpoint], ys[:midpoint]) if midpoint >= 4 else None
+    second = correlation(xs[midpoint:], ys[midpoint:]) if len(xs) - midpoint >= 4 else None
+    split_status = "insufficient_split_half_pairs"
+    if first is not None and second is not None:
+        if first * second > 0 and abs(first - second) <= 0.5:
+            split_status = "same_direction_reasonably_stable"
+        elif first * second < 0:
+            split_status = "sign_reversal_between_halves"
+        else:
+            split_status = "material_split_half_change"
+    return {
+        "confidence_interval_95": interval,
+        "split_half": {
+            "first_half_pearson_r": round(first, 4) if first is not None else None,
+            "second_half_pearson_r": round(second, 4) if second is not None else None,
+            "status": split_status,
+        },
+    }
+
+
+
 def build_thermal_input_room_response_alignment(
     samples: list[dict[str, Any]],
     rooms: list[dict[str, Any]],
@@ -1218,11 +1260,18 @@ def build_thermal_input_room_response_alignment(
                     room_pairs[room_id].append((input_power, response_row["room_slopes"][room_id]))
             xs, ys = [x for x, _ in pairs], [y for _, y in pairs]
             correlation = pearson(xs, ys)
+            diagnostics = _pearson_diagnostics(xs, ys)
+            input_mean = sum(xs) / len(xs) if xs else 0.0
+            input_std = math.sqrt(sum((value - input_mean) ** 2 for value in xs) / len(xs)) if xs else 0.0
             lag_results.append({
                 "lag_intervals": lag,
                 "lag_minutes": lag * interval_minutes,
                 "paired_intervals": len(pairs),
                 "pearson_r": round(correlation, 4) if correlation is not None else None,
+                "confidence_interval_95": diagnostics["confidence_interval_95"],
+                "split_half": diagnostics["split_half"],
+                "input_power_range_w": round(max(xs) - min(xs), 3) if xs else None,
+                "input_power_std_w": round(input_std, 3) if xs else None,
                 "mean_input_power_w": round(sum(xs) / len(xs), 2) if len(pairs) >= minimum_intervals else None,
                 "mean_aggregate_room_temperature_rate_c_per_hour": round(sum(ys) / len(ys), 4) if len(pairs) >= minimum_intervals else None,
                 "rooms": {room_id: {
@@ -1235,12 +1284,53 @@ def build_thermal_input_room_response_alignment(
             })
         valid_lags = [item for item in lag_results if item["paired_intervals"] >= minimum_intervals and item["pearson_r"] is not None]
         best_lag = max(valid_lags, key=lambda item: abs(item["pearson_r"])) if valid_lags else None
+        ranked_lags = sorted(valid_lags, key=lambda item: abs(item["pearson_r"]), reverse=True)
+        lag_peak_status = "insufficient_valid_lags"
+        if ranked_lags:
+            lag_peak_status = (
+                "distinct_descriptive_peak"
+                if len(ranked_lags) == 1 or abs(ranked_lags[0]["pearson_r"]) - abs(ranked_lags[1]["pearson_r"]) >= 0.05
+                else "ambiguous_neighbouring_lag_peaks"
+            )
+        stability_statuses = [
+            item["split_half"]["status"] for item in valid_lags
+            if item["split_half"]["status"] != "insufficient_split_half_pairs"
+        ]
+        if "sign_reversal_between_halves" in stability_statuses:
+            response_stability = "unstable_sign_between_history_halves"
+        elif stability_statuses and all(value == "same_direction_reasonably_stable" for value in stability_statuses):
+            response_stability = "same_direction_across_history_halves"
+        elif stability_statuses:
+            response_stability = "mixed_or_changing_response"
+        else:
+            response_stability = "insufficient_split_half_history"
+        zero_lag = lag_results[0]
+        enough_input_excitation = (
+            zero_lag["paired_intervals"] >= minimum_intervals
+            and (zero_lag["input_power_range_w"] or 0.0) > 1.0
+            and (zero_lag["input_power_std_w"] or 0.0) > 0.25
+        )
+        if not valid_lags:
+            evidence_status = "insufficient_verified_input_response_pairs"
+        elif not enough_input_excitation:
+            evidence_status = "withheld_weak_plant_input_excitation"
+        elif response_stability != "same_direction_across_history_halves":
+            evidence_status = "withheld_non_repeatable_response"
+        elif lag_peak_status != "distinct_descriptive_peak":
+            evidence_status = "descriptive_lag_ambiguous"
+        else:
+            evidence_status = "repeatable_descriptive_association_only"
         results[key] = {
             "status": "lagged_input_response_pairs_available" if valid_lags else "insufficient_verified_input_response_pairs",
+            "evidence_status": evidence_status,
+            "plant_input_excitation_status": "sufficient_variation_for_association_screen" if enough_input_excitation else "weak_or_flat_input_variation",
+            "response_stability_status": response_stability,
+            "lag_peak_status": lag_peak_status,
             "paired_intervals_at_zero_lag": lag_results[0]["paired_intervals"],
             "lag_scan": lag_results,
             "strongest_observed_lag_minutes": best_lag["lag_minutes"] if best_lag else None,
             "strongest_observed_lag_pearson_r": best_lag["pearson_r"] if best_lag else None,
+            "strongest_observed_lag_confidence_interval_95": best_lag["confidence_interval_95"] if best_lag else None,
             "exclusions": exclusions[key],
         }
         room_results[key] = {
@@ -1261,10 +1351,12 @@ def build_thermal_input_room_response_alignment(
         "note": (
             "Lag scans pair verified whole-system gas/AC input power with room temperature rates "
             "from the same or a later interval. All configured rooms must have temperatures for "
-            "each response interval. The strongest observed lag is descriptive, not a causal delay "
-            "estimate; repeated lag testing, thermal storage, controls, weather, gains and "
-            "distribution losses can confound correlations. No heat is allocated to rooms and "
-            "absolute room or slab capacities remain unidentifiable from these associations."
+            "each response interval. Fisher intervals and chronological split-half checks "
+            "quantify uncertainty and repeatability; flat plant input, sign reversals and "
+            "ambiguous neighbouring lag peaks are withheld from repeatable-association status. "
+            "The strongest lag remains descriptive, not causal: thermal storage, controls, "
+            "weather, gains and distribution losses can confound correlations. No heat is "
+            "allocated to rooms and absolute room or slab capacities remain unidentifiable."
         ),
     }
 

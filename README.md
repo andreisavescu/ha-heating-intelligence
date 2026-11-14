@@ -281,3 +281,6 @@ The multi-zone response fit also compares normalized coefficients across three c
 
 
 The aggregate house effective-capacity estimate now reports a deterministic moving-block resampling sensitivity range when at least 40 cooling-response intervals are available. It resamples contiguous four-interval blocks and reports 5th/50th/95th percentiles of the implied aggregate capacity. With shorter histories, the range is withheld. These are sensitivity diagnostics, not formal confidence intervals, and do not include uncertainty in the heat-loss coefficient or unmeasured gains.
+
+
+The whole-house measured-performance estimate now exposes explicit assumption sensitivity for the 7-day and 30-day heat-loss coefficients. It recalculates nine combinations of boiler efficiency (0.80, 0.90, 0.98) and AC heating COP (2, 3, 5), reporting the resulting H and U-value ranges. A window is withheld unless it meets the existing completed-day and degree-hour coverage thresholds. These ranges are conditional scenarios, not statistical confidence intervals or measured plant efficiencies.

@@ -468,10 +468,55 @@ def build_multizone_observation_model(
         node_id for node_id, node in nodes.items()
         if node["kind"] == "room_air"
     ]
+    room_node_ids = [node_id for node_id, node in nodes.items() if node["kind"] == "room_air"]
+    interzone_pairs = [
+        {"from": left, "to": right, "status": "conductance_not_identified"}
+        for index, left in enumerate(room_node_ids)
+        for right in room_node_ids[index + 1:]
+    ]
+    room_parameter_readiness = {}
+    for node_id in room_node_ids:
+        node = nodes[node_id]
+        room_parameter_readiness[node_id] = {
+            "air_only_capacity_wh_per_k": node.get("air_thermal_capacity_wh_per_k"),
+            "effective_room_capacity_wh_per_k": node.get("thermal_capacity_wh_per_k"),
+            "capacity_status": (
+                "effective_capacity_available"
+                if node.get("thermal_capacity_wh_per_k") is not None
+                else "air_only_capacity_only"
+                if node.get("air_thermal_capacity_wh_per_k") is not None
+                else "capacity_unavailable"
+            ),
+            "envelope_conductance_w_per_k": None,
+            "envelope_conductance_status": "not_identified_or_not_distributed",
+            "interzone_links": [
+                pair for pair in interzone_pairs
+                if pair["from"] == node_id or pair["to"] == node_id
+            ],
+        }
+    simulation_blockers = []
+    if missing_capacity:
+        simulation_blockers.append("effective_thermal_capacity_missing")
+    if room_node_ids:
+        simulation_blockers.append("room_envelope_conductances_not_identified")
+    if interzone_pairs:
+        simulation_blockers.append("interzone_conductances_not_identified")
+    simulation_readiness = {
+        "status": "withheld_missing_physical_parameters" if simulation_blockers else "physical_parameters_available",
+        "blockers": simulation_blockers,
+        "rooms": room_parameter_readiness,
+        "unidentified_interzone_pairs": interzone_pairs,
+        "note": (
+            "Air-only room capacities are not substitutes for effective room capacities. "
+            "Aggregate house capacity and residual envelope loss are not distributed to rooms, "
+            "and normalized G/C response rates are not converted to W/K conductances."
+        ),
+    }
     return {
         "model": "multi_zone_lumped_rc",
         "status": "observations_ready_parameters_incomplete" if nodes else "waiting_for_configured_sensors",
-        "simulation_status": "withheld_missing_physical_parameters",
+        "simulation_status": simulation_readiness["status"],
+        "simulation_readiness": simulation_readiness,
         "nodes": nodes,
         "configured_connections": connections,
         "ventilation_paths": ventilation_paths,

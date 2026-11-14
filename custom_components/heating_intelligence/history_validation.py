@@ -1500,7 +1500,7 @@ def build_thermal_input_room_response_alignment(
                 _partial_correlation_block_sensitivity(
                     adjusted_xs, adjusted_ys, adjusted_covariate_values,
                 )
-                if adjusted_covariates and adjusted_diagnostics["status"] == "adjusted_association_available"
+                if selected_covariates and adjusted_diagnostics["status"] == "adjusted_association_available"
                 else {
                     "status": "withheld_no_adjustment_model",
                     "method": "deterministic_moving_block_resampling",

@@ -244,3 +244,7 @@ The coordinator samples every 10 seconds. HA state timestamps are used to place 
 - Add a weekly room-demand heatmap using recorded demand-cycle timestamps, showing minutes of demand by room, day and hour.
 - Add latest-seven-days versus preceding-seven-days comparisons for gas and pump electricity, plus weather-normalised gas when the model is available.
 - Preserve existing tabs, metrics, entities, configuration and read-only behaviour.
+
+
+### v0.15 chronological validation
+Recorder calibration now includes a chronological train/holdout check for each room's free-cooling response. The first 70% of eligible intervals fit a first-order response; the later 30% are scored against a persistence baseline using MAE and RMSE. Outdoor observations older than 90 minutes are excluded. A passing holdout indicates improved short-horizon prediction only; it does not establish uniquely physical room capacity or envelope conductance. The current Recorder window is seven days, so longer seasonal validation remains outstanding.

@@ -24,6 +24,7 @@ from .thermal_learning import build_room_thermal_model, build_house_thermal_mode
 from .attic_thermal import build_attic_thermal_analysis
 from .pump_stages import update_pump_stage
 from .multizone_thermal_model import build_multizone_observation_model
+from .history_validation import build_recorder_history_summary
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -110,6 +111,79 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             self._history.setdefault("pumps", {})
             self._history.setdefault("sync_mismatch_count", 0)
             self._history.setdefault("last_sync_result", "unknown")
+
+    async def _async_recorder_history_summary(self, now):
+        """Read a bounded Recorder window at most every six hours."""
+        last_value = self._history.get("recorder_history_checked_at")
+        last_check = dt_util.parse_datetime(last_value) if last_value else None
+        cached = self._history.get("recorder_history_summary")
+        if last_check and cached and (now - last_check).total_seconds() < 6 * 3600:
+            return cached
+
+        entity_ids = set()
+        option_keys = (
+            CONF_OUTDOOR_TEMPERATURE_ENTITY, CONF_SOLAR_RADIATION_ENTITY,
+            CONF_ATTIC_TEMPERATURE_ENTITY, CONF_ATTIC_HUMIDITY_ENTITY,
+            CONF_GAS_CONSUMPTION_ENTITY, CONF_WATER_TEMPERATURE_ENTITY,
+            CONF_RETURN_WATER_TEMPERATURE_ENTITY, CONF_AC_POWER_ENTITY,
+            CONF_AC_ENERGY_ENTITY, CONF_BOILER_BURNER_ENTITY,
+            CONF_BOILER_MODULATION_ENTITY,
+        )
+        for key in option_keys:
+            entity_id = self.entry.options.get(key)
+            if entity_id:
+                entity_ids.add(entity_id)
+        for room in self.entry.options.get(CONF_ROOMS, []):
+            for key in (
+                CONF_TEMPERATURE_ENTITY, CONF_DEMAND_ENTITY, CONF_WINDOW_ENTITY,
+                CONF_HUMIDITY_ENTITY, CONF_CO2_ENTITY,
+            ):
+                entity_id = room.get(key)
+                if entity_id:
+                    entity_ids.add(entity_id)
+        for pump in self.entry.options.get(CONF_PUMPS, []):
+            for key in ("power_entity", "energy_entity"):
+                entity_id = pump.get(key)
+                if entity_id:
+                    entity_ids.add(entity_id)
+        if not entity_ids:
+            return {
+                "status": "no_entities_configured",
+                "source": "home_assistant_recorder",
+                "entity_count": 0,
+                "entities_with_history": 0,
+                "total_samples": 0,
+                "entities": {},
+                "raw_history_retained": False,
+            }
+
+        start = now - timedelta(days=7)
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.history import get_significant_states
+
+            recorder = get_instance(self.hass)
+            history = await recorder.async_add_executor_job(
+                get_significant_states,
+                self.hass, start, now, sorted(entity_ids), None,
+                True, False, True, True,
+            )
+            summary = build_recorder_history_summary(history, start, now)
+        except Exception:
+            _LOGGER.exception("Unable to read Recorder history for thermal validation")
+            summary = {
+                "status": "recorder_query_failed",
+                "source": "home_assistant_recorder",
+                "entity_count": len(entity_ids),
+                "entities_with_history": 0,
+                "total_samples": 0,
+                "entities": {},
+                "raw_history_retained": False,
+                "note": "Recorder history could not be queried; live operation is unaffected.",
+            }
+        self._history["recorder_history_checked_at"] = now.isoformat()
+        self._history["recorder_history_summary"] = summary
+        return summary
 
     async def _async_update_data(self):
         """Return a snapshot and update pump cycle accounting on state transitions."""
@@ -627,6 +701,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         )
         result["efficiency"]["weather_normalised"] = weather_model
         result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
+        result["thermal_model"]["historical_validation"] = await self._async_recorder_history_summary(now)
         result["thermal_model"]["multi_zone"] = build_multizone_observation_model(
             result["rooms"],
             result["weather"],

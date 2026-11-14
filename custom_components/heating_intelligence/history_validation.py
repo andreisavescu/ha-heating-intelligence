@@ -1550,9 +1550,11 @@ def build_solar_room_response_analysis(
                 "adjustment_covariates": covariates,
                 "training_adjusted_status": train_adjusted["status"],
                 "training_partial_pearson_r": train_adjusted.get("partial_pearson_r"),
+                "training_partial_confidence_interval_95": train_adjusted.get("confidence_interval_95"),
                 "training_complete_cases": train_adjusted.get("paired_intervals", len(train_complete)),
                 "holdout_adjusted_status": holdout_adjusted["status"],
                 "holdout_partial_pearson_r": holdout_adjusted.get("partial_pearson_r"),
+                "holdout_partial_confidence_interval_95": holdout_adjusted.get("confidence_interval_95"),
                 "holdout_complete_cases": holdout_adjusted.get("paired_intervals", len(holdout_complete)),
                 "holdout_same_direction": (
                     train_adjusted.get("partial_pearson_r") is not None
@@ -1567,6 +1569,10 @@ def build_solar_room_response_analysis(
             and item["holdout_adjusted_status"] == "adjusted_association_available"
             and item["training_partial_pearson_r"] is not None
             and item["holdout_partial_pearson_r"] is not None
+            and item["training_partial_confidence_interval_95"] is not None
+            and (item["training_partial_confidence_interval_95"][0] > 0 or item["training_partial_confidence_interval_95"][1] < 0)
+            and item["holdout_partial_confidence_interval_95"] is not None
+            and (item["holdout_partial_confidence_interval_95"][0] > 0 or item["holdout_partial_confidence_interval_95"][1] < 0)
         ]
         eligible.sort(key=lambda item: abs(item["training_partial_pearson_r"]), reverse=True)
         selected = eligible[0] if eligible else None

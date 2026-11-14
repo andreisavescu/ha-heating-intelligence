@@ -263,3 +263,6 @@ Recorder calibration now preserves each energy meter's `unit_of_measurement` and
 
 
 A further Recorder diagnostic pairs verified cumulative gas and AC energy increments with concurrent room-temperature rates on the same 30-minute intervals. It reports whole-house input-power versus average room-response association and separate per-room statistical associations for each meter. These are observational correlations only: they do not allocate gas or AC heat to rooms, identify causal response, or estimate room/slab capacities. Meter unit, freshness, monotonicity and interval checks are applied before a pair is accepted.
+
+
+The input-to-room response diagnostic now scans concurrent and delayed room-temperature responses (up to two hours at the default 30-minute cadence). Each response interval is admitted only when every configured room has a valid temperature, preventing changing room coverage from shifting the aggregate response metric. Per-room lag scans are reported separately for gas and AC. The strongest observed lag is descriptive only and must not be interpreted as a physical delay or causal effect.

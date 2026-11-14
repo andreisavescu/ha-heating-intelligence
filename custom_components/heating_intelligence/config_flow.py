@@ -81,22 +81,25 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             self._assessment.update(user_input)
             return await self.async_step_assessment_heating()
         current = self._assessment
-        fields = {
-            vol.Optional("construction_year"): selector.NumberSelector(selector.NumberSelectorConfig(min=1850, max=2035, step=1, mode=selector.NumberSelectorMode.BOX)),
-            vol.Optional("wall_insulation_cm", default=current.get("wall_insulation_cm", 15.0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=60, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)),
-            vol.Optional("roof_insulation_cm"): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX),
-            vol.Optional("floor_insulation_cm"): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=60, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX),
-            vol.Optional("window_glazing"): selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "double", "triple"], mode=selector.SelectSelectorMode.DROPDOWN)),
-            vol.Optional("window_frame"): selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "uPVC", "wood", "aluminium", "composite"], mode=selector.SelectSelectorMode.DROPDOWN)),
-            vol.Optional("main_orientation", default=current.get("main_orientation", "south")): selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "north", "south", "east", "west"], mode=selector.SelectSelectorMode.DROPDOWN)),
-            vol.Optional("shading"): selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "none", "partial", "significant"], mode=selector.SelectSelectorMode.DROPDOWN)),
-        }
-        for key, value in current.items():
-            if key in ("construction_year", "roof_insulation_cm", "floor_insulation_cm", "window_glazing", "window_frame", "shading") and value is not None:
-                fields[vol.Optional(key, default=value)] = fields.pop(next(k for k in fields if getattr(k, "schema", None) == key), None) if False else fields.get(vol.Optional(key))
+
+        def optional(key, selector_or_type, default=None):
+            marker = vol.Optional(key, default=default) if default is not None else vol.Optional(key)
+            return marker, selector_or_type
+
+        fields = dict([
+            optional("construction_year", selector.NumberSelector(selector.NumberSelectorConfig(min=1850, max=2035, step=1, mode=selector.NumberSelectorMode.BOX)), current.get("construction_year")),
+            optional("wall_insulation_cm", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=60, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)), current.get("wall_insulation_cm", 15.0)),
+            optional("roof_insulation_cm", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)), current.get("roof_insulation_cm")),
+            optional("floor_insulation_cm", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=60, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)), current.get("floor_insulation_cm")),
+            optional("window_glazing", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "double", "triple"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("window_glazing")),
+            optional("window_frame", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "uPVC", "wood", "aluminium", "composite"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("window_frame")),
+            optional("main_orientation", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "north", "south", "east", "west"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("main_orientation", "south")),
+            optional("shading", selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "none", "partial", "significant"], mode=selector.SelectSelectorMode.DROPDOWN)), current.get("shading")),
+        ])
         return self.async_show_form(step_id="house_assessment", data_schema=vol.Schema(fields))
 
     async def async_step_assessment_heating(self, user_input=None):
+        """Collect heating plant and thermal-mass characteristics."""
         if user_input is not None:
             self._assessment.update(user_input)
             return await self.async_step_assessment_occupancy()
@@ -113,10 +116,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(step_id="assessment_heating", data_schema=vol.Schema(fields))
 
     async def async_step_assessment_occupancy(self, user_input=None):
+        """Collect ventilation, occupancy and internal-gain characteristics."""
         if user_input is not None:
             self._assessment.update(user_input)
             data = dict(self.config_entry.options)
-            # Keep unknown/blank answers absent; known defaults remain editable.
             data[CONF_HOUSE_ASSESSMENT] = {key: value for key, value in self._assessment.items() if value not in (None, "")}
             return self.async_create_entry(title="", data=data)
         current = self._assessment

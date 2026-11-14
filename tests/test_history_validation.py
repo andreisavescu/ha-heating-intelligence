@@ -1,5 +1,6 @@
 """Tests for recorder-backed calibration history coverage."""
 from datetime import datetime, timedelta, timezone
+import math
 import importlib.util
 from pathlib import Path
 

@@ -70,6 +70,7 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
             "status": status,
             "co2_ppm": round(co2) if co2 is not None else None,
             "humidity_percent": round(humidity, 1) if humidity is not None else None,
+            "measured_ach": _number(room.get("air_changes_per_hour")),
             "observations": findings,
             "recommendation": " ".join(findings) if findings else (
                 "Configured readings are within the indicative bands." if has_reading
@@ -102,8 +103,10 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
     for floor, floor_rooms in floor_groups.items():
         floor_co2 = [_number(room.get("co2_ppm")) for room in floor_rooms if room.get("co2_entity")]
         floor_humidity = [_number(room.get("humidity")) for room in floor_rooms if room.get("humidity_entity")]
+        floor_ach = [_number(room.get("air_changes_per_hour")) for room in floor_rooms]
         floor_co2 = [value for value in floor_co2 if value is not None]
         floor_humidity = [value for value in floor_humidity if value is not None]
+        floor_ach = [value for value in floor_ach if value is not None and value > 0]
         by_floor[floor] = {
             "rooms": len(floor_rooms),
             "co2_rooms_with_readings": len(floor_co2),
@@ -111,6 +114,8 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
             "highest_co2_ppm": round(max(floor_co2)) if floor_co2 else None,
             "humidity_rooms_with_readings": len(floor_humidity),
             "average_humidity_percent": round(mean(floor_humidity), 1) if floor_humidity else None,
+            "measured_ach_rooms": len(floor_ach),
+            "average_measured_ach": round(mean(floor_ach), 3) if floor_ach else None,
         }
 
     return {

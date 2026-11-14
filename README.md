@@ -1,3 +1,11 @@
+## 0.15.5 — simplified card and readable demand timeline
+
+- Add a compact Home view as the default card tab, surfacing room demand, indoor temperature, pump state and water inlet temperature.
+- Keep detailed diagnostics available in the Analysis view, with Demand and Predictions in their own tabs.
+- Set the room-demand timeline to a rolling 4-hour default, with 2-hour and 24-hour views for closer inspection or broader context.
+- Improve demand-cycle tooltips with exact start/end timestamps and cycle duration.
+- Keep this release focused on the Lovelace card; no heating-control behavior or backend sensor configuration changes.
+
 ## 0.15.4 — Recorder-backed validated calibration learning
 
 - Persist compact, validated room-response calibration snapshots derived from Home Assistant Recorder history across integration restarts.

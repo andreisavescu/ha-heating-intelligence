@@ -224,6 +224,9 @@ def build_multizone_observation_model(
             'screed_thickness_cm': screed_cm,
             'thermal_capacity_wh_per_k': None,
             'pump_running': pump.get('running'),
+            'observability': (
+                (plant.get('ufh_slab_observability') or {}).get('floors', {}).get(floor_id, {})
+            ),
             'status': 'awaiting_slab_sensor_or_identifiable_capacity' if screed_cm is not None else 'screed_profile_incomplete',
         }
         floor_nodes[floor_id] = floor_node_id

@@ -777,6 +777,9 @@ def build_multizone_response_identification(
     minimum_holdout_intervals: int = 8,
     solar_max_w_m2: float = 30.0,
     ac_power_max_w: float = 50.0,
+    require_ac_power: bool = False,
+    require_boiler_burner_off: bool = False,
+    require_boiler_modulation_zero: bool = False,
 ) -> dict[str, Any]:
     """Identify normalized passive room-to-room and envelope response rates.
 
@@ -817,7 +820,7 @@ def build_multizone_response_identification(
     parsed.sort(key=lambda item: item[0])
 
     room_results = {}
-    all_interval_counts = {"candidate": 0, "eligible": 0, "excluded": {}}
+    all_interval_counts = {"candidate": max(0, len(parsed) - 1), "eligible": 0, "excluded": {}}
     for room_id in room_ids:
         predictors = ["envelope"] + [other for other in room_ids if other != room_id]
         rows = []
@@ -829,7 +832,6 @@ def build_multizone_response_identification(
             "invalid_interval": 0,
         }
         for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
-            all_interval_counts["candidate"] += 1
             elapsed_minutes = (stamp1 - stamp0).total_seconds() / 60
             if abs(elapsed_minutes - interval_minutes) > 1:
                 exclusions["invalid_interval"] += 1
@@ -857,8 +859,23 @@ def build_multizone_response_identification(
                 continue
             ac0 = numeric(first.get("channels", {}).get("ac_power"))
             ac1 = numeric(second.get("channels", {}).get("ac_power"))
-            if (ac0 is not None and ac0 > ac_power_max_w) or (ac1 is not None and ac1 > ac_power_max_w):
-                exclusions["ac_heating_active"] += 1
+            if ((require_ac_power and (ac0 is None or ac1 is None))
+                    or (ac0 is not None and ac0 > ac_power_max_w)
+                    or (ac1 is not None and ac1 > ac_power_max_w)):
+                exclusions["ac_heating_active_or_unavailable"] += 1
+                continue
+            burner0 = first.get("channels", {}).get("boiler_burner")
+            burner1 = second.get("channels", {}).get("boiler_burner")
+            if require_boiler_burner_off and not (state_off(burner0) and state_off(burner1)):
+                exclusions["boiler_active_or_unavailable"] += 1
+                continue
+            modulation0 = numeric(first.get("channels", {}).get("boiler_modulation"))
+            modulation1 = numeric(second.get("channels", {}).get("boiler_modulation"))
+            if require_boiler_modulation_zero and (
+                modulation0 is None or modulation1 is None
+                or modulation0 > 0.1 or modulation1 > 0.1
+            ):
+                exclusions["boiler_active_or_unavailable"] += 1
                 continue
             outside0 = numeric(first.get("channels", {}).get("outdoor_temperature"))
             outside1 = numeric(second.get("channels", {}).get("outdoor_temperature"))

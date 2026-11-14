@@ -294,6 +294,23 @@ def build_multizone_observation_model(
                     "status": "awaiting_upstairs_zone_coupling",
                 })
 
+    solar_record = weather.get("solar_radiation")
+    solar_w_m2 = value(solar_record)
+    window_areas = {direction: _finite_or_none(profile.get("window_area_" + direction + "_m2")) for direction in ("north", "south", "east", "west")}
+    configured_window_areas = {direction: area for direction, area in window_areas.items() if area is not None and area > 0}
+    gain_context = {
+        "solar_radiation_w_m2": solar_w_m2,
+        "window_area_by_orientation_m2": configured_window_areas,
+        "window_glazing": profile.get("window_glazing"),
+        "main_orientation": profile.get("main_orientation"),
+        "shading": profile.get("shading"),
+        "internal_gains_classification": profile.get("internal_gains"),
+        "solar_gain_w": None,
+        "internal_gain_w": None,
+        "status": "context_only_missing_solar_transmittance_and_orientation_model" if solar_w_m2 is not None or configured_window_areas else "awaiting_solar_and_window_inputs",
+        "note": "Solar and internal gains are retained as context. No gain in watts is inferred without calibrated glazing solar transmittance, shading and orientation-specific irradiance; occupancy categories are not converted into heat watts.",
+    }
+
     observed_rooms = sum(1 for node in nodes.values() if node["kind"] == "room_air" and node["temperature_c"] is not None)
     room_count = len(rooms)
     missing_capacity = [node_id for node_id, node in nodes.items() if node["kind"] != "fixed_boundary" and node.get("thermal_capacity_wh_per_k") is None]
@@ -311,6 +328,7 @@ def build_multizone_observation_model(
         "pending_paths": pending_paths,
         "floor_nodes": floor_nodes,
         "plant": plant_node,
+        "gain_context": gain_context,
         "coverage": {
             "configured_rooms": room_count,
             "rooms_with_temperature": observed_rooms,

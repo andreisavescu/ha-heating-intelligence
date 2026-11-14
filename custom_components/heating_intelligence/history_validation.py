@@ -2062,10 +2062,48 @@ def build_multizone_response_identification(
         result["excluded_intervals"] = exclusions
         room_results[room_id] = result
 
+    validated_rooms = [
+        item for item in room_results.values()
+        if item.get("holdout_mae_c") is not None
+        and item.get("persistence_baseline_mae_c") is not None
+        and item.get("holdout_rmse_c") is not None
+        and item.get("holdout_intervals", 0) > 0
+    ]
+    holdout_count = sum(item["holdout_intervals"] for item in validated_rooms)
+    aggregate_holdout_mae = (
+        sum(item["holdout_mae_c"] * item["holdout_intervals"] for item in validated_rooms) / holdout_count
+        if holdout_count else None
+    )
+    aggregate_baseline_mae = (
+        sum(item["persistence_baseline_mae_c"] * item["holdout_intervals"] for item in validated_rooms) / holdout_count
+        if holdout_count else None
+    )
+    aggregate_holdout_rmse = (
+        math.sqrt(sum(item["holdout_rmse_c"] ** 2 * item["holdout_intervals"] for item in validated_rooms) / holdout_count)
+        if holdout_count else None
+    )
+    house_holdout_validation = {
+        "status": (
+            "holdout_better_than_persistence"
+            if aggregate_holdout_mae is not None and aggregate_baseline_mae is not None
+            and aggregate_holdout_mae < aggregate_baseline_mae
+            else "holdout_not_better_than_persistence"
+            if aggregate_holdout_mae is not None else "insufficient_validated_rooms"
+        ),
+        "rooms_validated": len(validated_rooms),
+        "configured_rooms": len(room_ids),
+        "holdout_room_intervals": holdout_count,
+        "weighted_mae_c": round(aggregate_holdout_mae, 4) if aggregate_holdout_mae is not None else None,
+        "weighted_rmse_c": round(aggregate_holdout_rmse, 4) if aggregate_holdout_rmse is not None else None,
+        "persistence_baseline_weighted_mae_c": round(aggregate_baseline_mae, 4) if aggregate_baseline_mae is not None else None,
+        "weighting": "holdout_interval_count_per_room",
+        "note": "Aggregate diagnostic over room-level chronological holdouts; rooms without a valid fitted holdout are excluded and counted explicitly. This is not an independent sensor or plant-energy validation.",
+    }
     return {
         "status": "room_response_identification_available" if any(
             item.get("normalized_rates_per_hour") is not None for item in room_results.values()
         ) else "insufficient_or_non_identifiable_history",
+        "house_level_holdout_validation": house_holdout_validation,
         "method": "nonnegative_multizone_free_coasting_regression",
         "interval_minutes": interval_minutes,
         "train_fraction": train_fraction,

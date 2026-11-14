@@ -103,8 +103,20 @@ def build_house_assessment(
         observations.append(f"Main glazing orientation recorded as {profile['main_orientation']}.")
     if _known(profile.get("shading")):
         observations.append(f"Solar shading recorded as {profile['shading']}.")
+    if _known(profile.get("heating_distribution")):
+        observations.append("Heat distribution recorded as " + str(profile["heating_distribution"]) + ".")
+    if _known(profile.get("thermal_mass")):
+        observations.append("Building thermal mass recorded as " + str(profile["thermal_mass"]) + ".")
+    screed = _number(profile.get("ufh_screed_cm"))
+    if screed is not None:
+        observations.append(f"Underfloor-heating screed thickness recorded as {screed:g} cm.")
     if _known(profile.get("ventilation_type")):
-        observations.append(f"Ventilation arrangement recorded as {profile['ventilation_type']}.")
+        observations.append("Ventilation arrangement recorded as " + str(profile["ventilation_type"]) + ".")
+    if _known(profile.get("internal_gains")):
+        observations.append("Internal heat gains classified as " + str(profile["internal_gains"]) + ".")
+    occupants = _number(profile.get("occupants"))
+    if occupants is not None:
+        observations.append(f"Typical occupancy recorded as {int(occupants)} people.")
     construction_year = _number(profile.get("construction_year"))
     if construction_year is not None:
         observations.append(f"Construction year recorded as {int(construction_year)}; no regulatory or retrofit standard is assumed from year alone.")

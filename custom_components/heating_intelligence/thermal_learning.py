@@ -14,7 +14,10 @@ MIN_SPAN_HOURS = 2.0
 HORIZONS_HOURS = (1, 3, 6, 12)
 
 
-def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> dict[str, Any]:
+def _learn_mode(
+    samples: list[dict[str, Any]], now: datetime, demand: bool,
+    require_external_flag: bool = False,
+) -> dict[str, Any]:
     """Learn only from adjacent samples in the same mode with windows closed."""
     cutoff = now.astimezone(timezone.utc) - timedelta(days=LEARNING_DAYS)
     points = []
@@ -27,7 +30,8 @@ def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> d
         if not math.isfinite(temperature):
             continue
         if cutoff <= stamp <= now.astimezone(timezone.utc):
-            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), bool(item.get("external_heating", False))))
+            external_heating = bool(item.get("external_heating", False)) or (require_external_flag and "external_heating" not in item)
+            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), external_heating))
     points.sort(key=lambda point: point[0])
 
     eligible = [point for point in points if point[2] == demand and not point[3] and not point[4]]
@@ -67,18 +71,18 @@ def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> d
         "span_hours": round(span, 1),
         "rate_c_per_hour": round(rate, 3),
         "noise_c_per_hour": round(noise, 3),
-        "note": "Median temperature-change rate from consecutive closed-window observations without detected AC heating in this mode, learned over a rolling 30-day window.",
+        "note": "Median temperature-change rate from consecutive closed-window observations without detected or unclassified AC heating in this mode, learned over a rolling 30-day window.",
     }
 
 
 def build_room_thermal_model(
     room_history: dict[str, Any], now: datetime, current_temperature: float | None,
-    demand: bool,
+    demand: bool, ac_power_sensor_configured: bool = False,
 ) -> dict[str, Any]:
     """Learn heating/coasting rates from persisted room observations and forecast."""
     samples = room_history.get("temperature_samples", [])
-    heating = _learn_mode(samples, now, True)
-    coasting = _learn_mode(samples, now, False)
+    heating = _learn_mode(samples, now, True, ac_power_sensor_configured)
+    coasting = _learn_mode(samples, now, False, ac_power_sensor_configured)
     selected = heating if demand else coasting
     result: dict[str, Any] = {
         "status": selected["status"] if current_temperature is not None else "waiting_for_temperature",

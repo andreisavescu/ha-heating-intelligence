@@ -7,6 +7,7 @@ _SECTIONS = {
     "envelope": (
         "wall_construction", "roof_type", "floor_construction", "construction_year",
         "wall_insulation_cm", "wall_insulation_material", "roof_insulation_cm", "roof_insulation_material", "floor_insulation_cm", "floor_insulation_material",
+        "roof_area_m2", "roof_u_value", "attic_floor_area_m2", "attic_floor_u_value",
         "window_glazing", "window_frame", "main_orientation", "shading",
         "window_area_north_m2", "window_area_south_m2",
         "window_area_east_m2", "window_area_west_m2",
@@ -91,6 +92,10 @@ def build_house_assessment(
         )
     if roof is not None:
         observations.append(f"Recorded roof insulation thickness: {roof:g} cm.")
+    if _number(profile.get("roof_u_value")) is not None and _number(profile.get("roof_area_m2")) is not None:
+        observations.append("Roof heat-flow estimate uses the explicitly configured roof U-value and area.")
+    if _number(profile.get("attic_floor_u_value")) is not None and _number(profile.get("attic_floor_area_m2")) is not None:
+        observations.append("Upstairs-to-attic heat-flow estimate uses the explicitly configured ceiling U-value and area.")
     else:
         observations.append("Roof insulation thickness is not recorded; the envelope profile is incomplete.")
     if floor is not None:
@@ -176,6 +181,10 @@ def build_house_assessment(
             "roof_insulation_material": profile.get("roof_insulation_material"),
             "floor_insulation_material": profile.get("floor_insulation_material"),
             "roof_insulation_cm": roof,
+            "roof_area_m2": _number(profile.get("roof_area_m2")),
+            "roof_u_value_w_m2k": _number(profile.get("roof_u_value")),
+            "attic_floor_area_m2": _number(profile.get("attic_floor_area_m2")),
+            "attic_floor_u_value_w_m2k": _number(profile.get("attic_floor_u_value")),
             "floor_insulation_cm": floor,
             "window_glazing": profile.get("window_glazing"),
             "main_orientation": profile.get("main_orientation"),

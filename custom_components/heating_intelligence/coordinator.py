@@ -49,6 +49,8 @@ from .const import (
     CONF_AC_POWER_ENTITY,
     CONF_AC_ENERGY_ENTITY,
     CONF_AC_HEATING_COP,
+    CONF_BOILER_BURNER_ENTITY,
+    CONF_BOILER_MODULATION_ENTITY,
     CONF_FLOOR,
     CONF_ACH,
     CONF_PUMPS,
@@ -163,6 +165,17 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
 
         configured_pumps = self.entry.options.get(CONF_PUMPS, [])
         changed = False
+        burner_entity = self.entry.options.get(CONF_BOILER_BURNER_ENTITY)
+        burner_state = self.hass.states.get(burner_entity) if burner_entity else None
+        modulation_entity = self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)
+        modulation_state = self.hass.states.get(modulation_entity) if modulation_entity else None
+        boiler_context = {
+            "burner_entity": burner_entity,
+            "burner_state": burner_state.state if burner_state else None,
+            "burner_on": burner_state.state == "on" if burner_state else None,
+            "modulation_entity": modulation_entity,
+            "modulation_percent": _as_float(modulation_state.state) if modulation_state else None,
+        }
 
         for pump in configured_pumps:
             pump_id = pump["id"]
@@ -190,6 +203,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 now_local,
             )
             observed_running = stage_data["stage"] == "pump_running"
+            if stage_data.get("pump_started_at") and history.get("correlated_pump_started_at") != stage_data["pump_started_at"]:
+                history["correlated_pump_started_at"] = stage_data["pump_started_at"]
+                history["pump_start_boiler_context"] = dict(boiler_context)
             was_running = bool(history.get("running", False))
 
             if observed_running is True and not was_running:
@@ -269,6 +285,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "idle_baseline_w": stage_data["idle_baseline_w"],
                 "valve_level_w": stage_data["valve_level_w"],
                 "detection_basis": stage_data["detection_basis"],
+                "boiler_context_at_pump_start": history.get("pump_start_boiler_context"),
                 "power_source_state": power_state.state if power_state else "missing",
                 "energy_source_state": energy_state.state if energy_state else "missing",
                 "cycle_count": int(history.get("cycle_count", 0)),
@@ -280,6 +297,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "daily_cycle_count": int(history.get("daily_cycle_count", 0)),
                 "daily_energy_kwh": round(float(history.get("daily_energy_kwh", 0)), 4),
             }
+
+        result["boiler_context"] = boiler_context
 
         result["sync"] = {
             "status": self._history.get("last_sync_result", "unknown"),

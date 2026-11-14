@@ -2053,3 +2053,38 @@ def test_solar_room_response_excludes_unknown_configured_window_state():
     )
     assert result["excluded_observations"]["living"]["unknown_or_stale_window"] >= 1
 
+def test_physical_readiness_requires_fresh_unit_verified_room_heat_output():
+    stale = MODULE.build_multizone_physical_calibration_readiness(
+        [{
+            "channels": {
+                "room_heat_output_w": 450.0,
+                "room_heat_output_w_unit": "W",
+                "room_heat_output_w_age_minutes": 90,
+            }
+        }],
+        [{"id": "living"}],
+    )
+    unsupported = MODULE.build_multizone_physical_calibration_readiness(
+        [{
+            "channels": {
+                "zone_heat_output_w": 0.45,
+                "zone_heat_output_w_unit": "kWh",
+                "zone_heat_output_w_age_minutes": 0,
+            }
+        }],
+        [{"id": "living"}],
+    )
+    fresh = MODULE.build_multizone_physical_calibration_readiness(
+        [{
+            "channels": {
+                "room_heat_output_w": 450.0,
+                "room_heat_output_w_unit": "W",
+                "room_heat_output_w_age_minutes": 0,
+            }
+        }],
+        [{"id": "living"}],
+    )
+    assert stale["independent_room_heat_output_channels"] == []
+    assert unsupported["independent_room_heat_output_channels"] == []
+    assert fresh["independent_room_heat_output_channels"] == ["room_heat_output_w"]
+

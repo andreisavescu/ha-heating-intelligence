@@ -512,4 +512,9 @@ class RoomAirQualitySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
         key = "humidity_status" if self.metric == "humidity" else "co2_status"
-        return {"air_quality_status": room.get(key)}
+        return {
+            "air_quality_status": room.get(key),
+            "room_air_assessment": room.get("air_quality_assessment", {}),
+            "co2_ppm": room.get("co2_ppm"),
+            "relative_humidity_percent": room.get("humidity"),
+        }

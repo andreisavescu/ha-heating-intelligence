@@ -314,3 +314,11 @@ Multi-zone chronological holdout scoring now includes per-room residual diagnost
 - It lists verified system-level energy meters separately from water-flow and room/zone heat-output channels. It does not treat pump electrical power or supply-return delta-T without flow as delivered heat.
 - Absolute room capacities, W/K conductances and physical simulation readiness remain explicitly false until independent room capacity, measured thermal output and a defensible room-level heat allocation exist.
 - The report includes the concrete additional evidence required to proceed. It is a readiness/diagnostic layer, not a new parameter estimator and does not manufacture missing measurements.
+
+
+### Hydronic flow and measured water-side heat output
+- Global settings now accept an optional water-flow-rate sensor. The Recorder calibration dataset retains its native unit and freshness metadata.
+- When fresh positive flow and fresh supply/return temperatures are available, the calibration summary calculates water-side thermal transfer using `Q̇ = ṁ × cp × (T_supply − T_return)`.
+- Supported flow units are L/min, L/s, m³/h, kg/h and kg/s. The default water properties are 997 kg/m³ and 4186 J/(kg·K); these assumptions are exposed in the result.
+- The summary reports valid-sample coverage and median / 10th / 90th percentile output. Unsupported units, stale inputs, zero/negative flow and non-positive supply-return delta-T are excluded explicitly.
+- This is system-side hydronic output only. It is not automatically equal to heat delivered to rooms, and it is not allocated among rooms or used to claim calibrated room capacities. Hydraulic bypasses, buffer tanks and distribution losses still matter.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import math
 from statistics import median
 from typing import Any
 
@@ -22,6 +23,8 @@ def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> d
             stamp = datetime.fromisoformat(item["time"]).astimezone(timezone.utc)
             temperature = float(item["temperature"])
         except (KeyError, TypeError, ValueError):
+            continue
+        if not math.isfinite(temperature):
             continue
         if cutoff <= stamp <= now.astimezone(timezone.utc):
             points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), bool(item.get("external_heating", False))))

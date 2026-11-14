@@ -791,6 +791,7 @@ def build_recorder_calibration_dataset(
             index = bisect_right(points, stamp, key=lambda item: item[0]) - 1
             value = None
             age_minutes = None
+            unit = None
             if index >= 0:
                 point_stamp, raw, unit = points[index]
                 age = stamp - point_stamp

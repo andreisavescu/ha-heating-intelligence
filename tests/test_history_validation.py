@@ -1673,6 +1673,8 @@ def test_solar_room_response_recovers_delayed_association_on_holdout():
     solar = [float((index * 73) % 101) * 8.0 for index in range(count)]
     outdoor = [5.0 + ((index * 17) % 31) * 0.1 for index in range(count)]
     demand = [bool((index * 7) % 13 < 6) for index in range(count)]
+    co2 = [450.0 + 70.0 * math.sin(index * 0.41) + 18.0 * math.cos(index * 0.17) for index in range(count)]
+    humidity = [40.0 + 4.0 * math.cos(index * 0.33) + 1.5 * math.sin(index * 0.11) for index in range(count)]
     slopes = []
     for index in range(count - 1):
         delayed_solar = solar[index - 2] if index >= 2 else 0.0
@@ -1702,6 +1704,10 @@ def test_solar_room_response_recovers_delayed_association_on_holdout():
                     "temperature_age_minutes": 0,
                     "demand": "on" if demand[index] else "off",
                     "demand_age_minutes": 0,
+                    "co2": co2[index],
+                    "co2_age_minutes": 0,
+                    "humidity": humidity[index],
+                    "humidity_age_minutes": 0,
                     "window": "off",
                     "window_age_minutes": 0,
                 }
@@ -1717,6 +1723,9 @@ def test_solar_room_response_recovers_delayed_association_on_holdout():
     room = result["rooms"]["living"]
     assert room["status"] == "repeatable_adjusted_solar_response_association_only"
     assert room["selected_training_lag_minutes"] == 60
+    selected_lag = room["lag_scan"][2]
+    assert "co2" in selected_lag["adjustment_covariates"]
+    assert "humidity" in selected_lag["adjustment_covariates"]
     assert room["holdout_same_direction"] is True
     assert room["solar_gain_w"] is None
     assert result["solar_gain_w_identified"] is False

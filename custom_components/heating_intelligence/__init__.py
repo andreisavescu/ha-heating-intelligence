@@ -125,8 +125,6 @@ async def _async_options_updated(hass, entry) -> None:
 
 async def async_unload_entry(hass, entry) -> bool:
     """Unload an entry."""
-    from .coordinator import HeatingIntelligenceCoordinator  # noqa: F401
-
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)

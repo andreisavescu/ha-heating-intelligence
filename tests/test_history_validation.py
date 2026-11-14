@@ -423,6 +423,13 @@ def test_multizone_identification_requires_configured_ac_and_boiler_off_telemetr
     assert room["eligible_intervals"] == 0
     assert room["excluded_intervals"]["ac_heating_active_or_unavailable"] > 0
     assert room["excluded_intervals"]["boiler_active_or_unavailable"] == 0
+    boiler_only = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}],
+        require_boiler_burner_off=True,
+        require_boiler_modulation_zero=True,
+    )
+    assert boiler_only["rooms"]["living"]["excluded_intervals"]["boiler_active_or_unavailable"] > 0
 
 
 def test_multizone_global_candidate_count_is_not_multiplied_by_room_count():

@@ -436,6 +436,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["efficiency"],
             result["rooms"],
         )
+        result["house_assessment"]["cross_system_context"] = {
+            "indoor_air_quality_status": result["indoor_air_quality"].get("co2", {}).get("status"),
+            "humidity_status": result["indoor_air_quality"].get("humidity", {}).get("status"),
+            "thermal_model_status": result["thermal_model"].get("status"),
+            "thermal_model_rooms": result["thermal_model"].get("rooms_modelled", 0),
+            "measured_performance_status": result["house_assessment"].get("performance_status"),
+        }
         normalised_by_date = {
             item["date"]: item for item in weather_model.get("recent_days", [])
         }

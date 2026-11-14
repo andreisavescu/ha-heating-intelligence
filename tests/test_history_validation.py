@@ -986,3 +986,68 @@ def test_pearson_diagnostics_marks_wide_nominal_interval_as_uncertain():
     interval = diagnostics["confidence_interval_95"]
     assert interval is not None
     assert interval[0] <= 0 <= interval[1]
+
+
+def test_partial_correlation_removes_shared_weather_driver():
+    shared = [float(index) for index in range(40)]
+    noise_x = [1.0 if index % 2 else -1.0 for index in range(40)]
+    noise_y = [1.0 if index % 4 < 2 else -1.0 for index in range(40)]
+    xs = [value + noise for value, noise in zip(shared, noise_x)]
+    ys = [2.0 * value + noise for value, noise in zip(shared, noise_y)]
+    result = MODULE._partial_correlation_diagnostics(
+        xs, ys, {"outdoor_temperature_c": shared}
+    )
+    assert result["status"] == "adjusted_association_available"
+    assert result["design_rank"] == 2
+    assert abs(result["partial_pearson_r"]) < 0.1
+    assert result["confidence_interval_95"] is not None
+
+
+def test_partial_correlation_withholds_collinear_covariates():
+    shared = [float(index) for index in range(20)]
+    result = MODULE._partial_correlation_diagnostics(
+        [value + 1 for value in shared],
+        [value * 2 + 1 for value in shared],
+        {"outdoor_temperature_c": shared, "duplicate_weather_driver": shared},
+    )
+    assert result["status"] == "rank_deficient_adjustment_design"
+    assert result["partial_pearson_r"] is None
+
+
+def test_thermal_input_alignment_reports_weather_and_demand_adjustment():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    cumulative = 100.0
+    for index in range(36):
+        outdoor = 5.0 + (index % 9) * 0.7
+        solar = float((index * 13) % 80)
+        demand = "on" if index % 3 else "off"
+        cumulative += 0.12 + (index % 7) * 0.025
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "gas_consumption": cumulative,
+                "gas_consumption_age_minutes": 0,
+                "gas_consumption_unit": "kWh",
+                "outdoor_temperature": outdoor,
+                "outdoor_temperature_age_minutes": 0,
+                "solar_radiation": solar,
+                "solar_radiation_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {
+                    "temperature": 20.0 + index * 0.015 + (index % 5) * 0.004,
+                    "demand": demand,
+                    "window": "off",
+                },
+            },
+        })
+    result = MODULE.build_thermal_input_room_response_alignment(
+        samples, [{"id": "living"}], minimum_intervals=8, maximum_lag_intervals=1,
+    )
+    zero_lag = result["meters"]["gas_consumption"]["lag_scan"][0]
+    adjustment = zero_lag["confounder_adjustment"]
+    assert "outdoor_temperature_c" in adjustment["covariates"]
+    assert "solar_radiation_w_m2" in adjustment["covariates"]
+    assert "room_demand_fraction" in adjustment["covariates"]
+    assert adjustment["paired_intervals"] >= 8

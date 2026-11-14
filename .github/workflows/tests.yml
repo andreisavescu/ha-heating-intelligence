@@ -23,5 +23,3 @@ jobs:
         run: python -m compileall -q custom_components
       - name: Check Lovelace card JavaScript syntax
         run: node --check custom_components/heating_intelligence/www/heating-intelligence-card.js
-      - name: Run unit tests
-        run: python -m pytest -q

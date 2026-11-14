@@ -284,3 +284,6 @@ The aggregate house effective-capacity estimate now reports a deterministic movi
 
 
 The whole-house measured-performance estimate now exposes explicit assumption sensitivity for the 7-day and 30-day heat-loss coefficients. It recalculates nine combinations of boiler efficiency (0.80, 0.90, 0.98) and AC heating COP (2, 3, 5), reporting the resulting H and U-value ranges. A window is withheld unless it meets the existing completed-day and degree-hour coverage thresholds. These ranges are conditional scenarios, not statistical confidence intervals or measured plant efficiencies.
+
+
+Gas-meter conversion is now tracked separately from gas energy: daily records retain the raw m³ delta and whether the meter basis was volumetric or already energy-based. The whole-house heat-loss sensitivity uses three conversion factors (95%, 100%, 105% of the configured kWh/m³ factor) only when all days in the selected window have a consistently identified m³ basis. Combined with the three boiler-efficiency and three AC-COP assumptions, this yields 27 scenarios. Legacy days without conversion-basis metadata, mixed meter units and unsupported units are withheld rather than guessed.

@@ -48,6 +48,35 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
     else:
         humidity_status = "comfortable"
 
+    room_assessments = {}
+    for room_id, room in rooms.items():
+        co2 = _number(room.get("co2_ppm")) if room.get("co2_entity") else None
+        humidity = _number(room.get("humidity")) if room.get("humidity_entity") else None
+        findings = []
+        if co2 is not None and co2 >= 2000:
+            findings.append("CO2 is very high; ventilate the room and verify the sensor.")
+        elif co2 is not None and co2 >= 1200:
+            findings.append("CO2 is high; ventilation is likely beneficial.")
+        elif co2 is not None and co2 >= 800:
+            findings.append("CO2 is elevated compared with the lower indicative band.")
+        if humidity is not None and humidity > 60:
+            findings.append("Relative humidity is above 60%; monitor the trend and ventilation.")
+        elif humidity is not None and humidity < 30:
+            findings.append("Relative humidity is below 30%; indoor air is dry.")
+        has_reading = co2 is not None or humidity is not None
+        status = "attention" if findings else "good" if has_reading else "no_readings"
+        room_assessments[room_id] = {
+            "room_name": room.get("name", room_id),
+            "status": status,
+            "co2_ppm": round(co2) if co2 is not None else None,
+            "humidity_percent": round(humidity, 1) if humidity is not None else None,
+            "observations": findings,
+            "recommendation": " ".join(findings) if findings else (
+                "Configured readings are within the indicative bands." if has_reading
+                else "Configure a CO2 or humidity sensor to enable room air analysis."
+            ),
+        }
+
     ventilation_rooms = [
         {"name": name, "co2_ppm": round(value)}
         for name, value in valid_co2 if value >= 1200
@@ -66,6 +95,7 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
 
     return {
         "configured_rooms": len(rooms),
+        "rooms": room_assessments,
         "co2": {
             "configured_rooms": len(configured_co2),
             "rooms_with_readings": len(valid_co2),

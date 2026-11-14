@@ -585,6 +585,7 @@ class RoomAirQualitySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
         super().__init__(coordinator)
         self.room_id = room_id
+        self.room_name = room_name
         self.metric = metric
         self._attr_name = f"{room_name} {'Humidity' if metric == 'humidity' else 'CO2'}"
         self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"

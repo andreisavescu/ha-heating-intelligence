@@ -269,3 +269,6 @@ The input-to-room response diagnostic now scans concurrent and delayed room-temp
 
 
 The Recorder calibration diagnostics now include a room-level excitation screen. It counts demand-on/off intervals and transitions per room, compares temperature-rate distributions between those modes, measures pairwise demand co-activation, counts distinct simultaneous room-demand patterns, and checks overlap between floor-pump activity and room demand. This is a prerequisite/observability screen only: demand is not delivered heat, pump electricity is not thermal output, and the screen does not identify room-level watts, capacities or conductances.
+
+
+The passive multi-zone fit now reports per-driver temperature-gradient excitation on its training segment: standard deviation, observed range, positive/negative/near-zero interval counts, and whether each room-to-room gradient reverses direction with adequate sample counts. Room links with weak or one-sided gradients are explicitly listed. This is an excitation-quality diagnostic, not a new physical parameter estimate; the existing full-matrix rank/condition checks still govern coefficient withholding, and holdout data are not used to assess training excitation.

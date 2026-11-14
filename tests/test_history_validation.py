@@ -1051,3 +1051,19 @@ def test_thermal_input_alignment_reports_weather_and_demand_adjustment():
     assert "solar_radiation_w_m2" in adjustment["covariates"]
     assert "room_demand_fraction" in adjustment["covariates"]
     assert adjustment["paired_intervals"] >= 8
+
+
+def test_partial_correlation_block_sensitivity_reports_resampling_range():
+    shared = [float(index) for index in range(80)]
+    xs = [0.2 * value + math.sin(index * 0.7) for index, value in enumerate(shared)]
+    ys = [
+        0.5 * value + 0.8 * math.sin(index * 0.7) + 0.15 * math.cos(index * 0.31)
+        for index, value in enumerate(shared)
+    ]
+    result = MODULE._partial_correlation_block_sensitivity(
+        xs, ys, {"outdoor_temperature_c": shared}, replicates=40,
+    )
+    assert result["status"] == "block_sensitivity_available"
+    assert result["successful_replicates"] >= 20
+    assert result["lower_5_percentile_partial_r"] <= result["median_partial_r"]
+    assert result["median_partial_r"] <= result["upper_95_percentile_partial_r"]

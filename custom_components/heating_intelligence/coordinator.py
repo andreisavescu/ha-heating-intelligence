@@ -299,6 +299,49 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             }
 
         result["boiler_context"] = boiler_context
+        pump_events = []
+        for pump_id, pump_data in result["pumps"].items():
+            for event_key, event_label in (
+                ("valve_opened_at", "valve_opening"),
+                ("pump_started_at", "pump_started"),
+            ):
+                event_time = pump_data.get(event_key)
+                if event_time:
+                    pump_events.append({
+                        "pump_id": pump_id,
+                        "event": event_label,
+                        "timestamp": event_time,
+                        "boiler_burner_on": (
+                            pump_data.get("boiler_context_at_pump_start", {}).get("burner_on")
+                            if event_label == "pump_started" else None
+                        ),
+                    })
+        pump_events.sort(key=lambda item: item["timestamp"])
+        def event_delay(pump_id, first_event, second_event):
+            pump_data = result["pumps"].get(pump_id, {})
+            first = dt_util.parse_datetime(pump_data.get(first_event) or "")
+            second = dt_util.parse_datetime(pump_data.get(second_event) or "")
+            return round((second - first).total_seconds()) if first and second else None
+        downstairs_start = dt_util.parse_datetime(
+            result["pumps"].get("ground_floor", {}).get("pump_started_at") or ""
+        )
+        upstairs_start = dt_util.parse_datetime(
+            result["pumps"].get("upstairs", {}).get("pump_started_at") or ""
+        )
+        result["pump_sequence"] = {
+            "events": pump_events,
+            "downstairs_valve_to_pump_seconds": event_delay(
+                "ground_floor", "valve_opened_at", "pump_started_at"
+            ),
+            "upstairs_valve_to_pump_seconds": event_delay(
+                "upstairs", "valve_opened_at", "pump_started_at"
+            ),
+            "downstairs_to_upstairs_pump_seconds": (
+                round((upstairs_start - downstairs_start).total_seconds())
+                if downstairs_start and upstairs_start else None
+            ),
+            "sampling_interval_seconds": 10,
+        }
 
         result["sync"] = {
             "status": self._history.get("last_sync_result", "unknown"),

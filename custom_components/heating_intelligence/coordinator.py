@@ -266,6 +266,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 summary["ufh_slab_observability"],
                 summary["water_side_thermal_output"],
                 summary["house_effective_rc_calibration"],
+                summary["floor_thermal_output_observability"],
             )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")

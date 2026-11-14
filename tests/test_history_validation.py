@@ -54,3 +54,63 @@ def test_ignores_invalid_timestamps_and_out_of_window_samples():
     assert result["status"] == "no_recorder_history"
     assert result["entities"]["sensor.room"]["samples"] == 0
     assert result["entities"]["sensor.room"]["status"] == "insufficient_history"
+
+
+
+def test_recorder_room_response_uses_closed_window_known_demand_and_excludes_ac():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {
+        "sensor.room": [
+            {"state": str(20 + index * 0.1), "last_changed": (end - timedelta(minutes=10 * (6-index))).isoformat()}
+            for index in range(7)
+        ],
+        "binary_sensor.room_demand": [
+            {"state": "on", "last_changed": (end - timedelta(hours=2)).isoformat()}
+        ],
+        "binary_sensor.room_window": [
+            {"state": "off", "last_changed": (end - timedelta(hours=2)).isoformat()}
+        ],
+        "sensor.ac_power": [
+            {"state": "0", "last_changed": (end - timedelta(hours=2)).isoformat()}
+        ],
+    }
+    result = MODULE.build_recorder_room_response(
+        history,
+        [{
+            "id": "living",
+            "temperature_entity": "sensor.room",
+            "demand_entity": "binary_sensor.room_demand",
+            "window_entity": "binary_sensor.room_window",
+        }],
+        "sensor.ac_power",
+    )
+    room = result["living"]
+    assert room["heating"]["status"] == "available"
+    assert room["heating"]["rate_c_per_hour"] == 0.6
+    assert room["heating"]["valid_intervals"] == 6
+    assert room["coasting"]["status"] == "learning"
+
+
+def test_recorder_room_response_withholds_unknown_window_or_demand():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {
+        "sensor.room": [
+            {"state": str(20 + index * 0.1), "last_changed": (end - timedelta(minutes=10 * (6-index))).isoformat()}
+            for index in range(7)
+        ],
+        "binary_sensor.room_demand": [
+            {"state": "on", "last_changed": (end - timedelta(hours=2)).isoformat()}
+        ],
+    }
+    result = MODULE.build_recorder_room_response(
+        history,
+        [{
+            "id": "bedroom",
+            "temperature_entity": "sensor.room",
+            "demand_entity": "binary_sensor.room_demand",
+            "window_entity": "binary_sensor.missing_window",
+        }],
+    )
+    assert result["bedroom"]["heating"]["status"] == "learning"
+    assert result["bedroom"]["heating"]["valid_intervals"] == 0
+    assert result["bedroom"]["excluded_samples"]["unknown_mode"] > 0

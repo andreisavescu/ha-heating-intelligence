@@ -1407,6 +1407,7 @@ def build_solar_room_response_analysis(
             "unsupported_solar_unit": 0,
             "invalid_or_stale_temperature": 0,
             "open_window": 0,
+            "unknown_or_stale_window": 0,
             "invalid_or_stale_demand": 0,
             "invalid_cadence": 0,
         } for room_id in room_ids
@@ -1461,6 +1462,10 @@ def build_solar_room_response_analysis(
                         window_invalid = True
             if window_open:
                 exclusions[room_id]["open_window"] += 1
+                room_intervals[room_id] = None
+                continue
+            if window_invalid and room.get("window_entity"):
+                exclusions[room_id]["unknown_or_stale_window"] += 1
                 room_intervals[room_id] = None
                 continue
             demand = _switch_state(right.get("demand"))

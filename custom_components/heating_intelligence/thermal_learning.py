@@ -24,16 +24,18 @@ def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> d
         except (KeyError, TypeError, ValueError):
             continue
         if cutoff <= stamp <= now.astimezone(timezone.utc):
-            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open"))))
+            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), bool(item.get("external_heating", False))))
     points.sort(key=lambda point: point[0])
 
-    eligible = [point for point in points if point[2] == demand and not point[3]]
+    eligible = [point for point in points if point[2] == demand and not point[3] and not point[4]]
+    excluded_external = sum(1 for point in points if point[4])
     rates = []
     for first, second in zip(points, points[1:]):
         minutes = (second[0] - first[0]).total_seconds() / 60
         if (
             first[2] == demand and second[2] == demand
             and not first[3] and not second[3]
+            and not first[4] and not second[4]
             and MIN_INTERVAL_MINUTES <= minutes <= MAX_INTERVAL_MINUTES
         ):
             rates.append((second[1] - first[1]) / (minutes / 60))
@@ -44,6 +46,7 @@ def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> d
             "confidence": 0,
             "sample_count": len(eligible),
             "valid_intervals": len(rates),
+            "excluded_external_heating_samples": excluded_external,
             "span_hours": round(span, 1),
             "rate_c_per_hour": None,
             "noise_c_per_hour": None,
@@ -57,10 +60,11 @@ def _learn_mode(samples: list[dict[str, Any]], now: datetime, demand: bool) -> d
         "confidence": max(5, min(95, confidence)),
         "sample_count": len(eligible),
         "valid_intervals": len(rates),
+        "excluded_external_heating_samples": excluded_external,
         "span_hours": round(span, 1),
         "rate_c_per_hour": round(rate, 3),
         "noise_c_per_hour": round(noise, 3),
-        "note": "Median temperature-change rate from consecutive closed-window observations in this heating mode, learned over a rolling 30-day window.",
+        "note": "Median temperature-change rate from consecutive closed-window observations without detected AC heating in this mode, learned over a rolling 30-day window.",
     }
 
 

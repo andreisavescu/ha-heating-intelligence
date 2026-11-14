@@ -299,6 +299,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             co2_state = self.hass.states.get(co2_id) if co2_id else None
             humidity_value = _as_float(humidity_state.state) if humidity_state else None
             co2_value = _as_float(co2_state.state) if co2_state else None
+            if humidity_value is not None and not 0 <= humidity_value <= 100:
+                humidity_value = None
+            if co2_value is not None and co2_value < 0:
+                co2_value = None
             humidity_status = ("low" if humidity_value < 30 else "high" if humidity_value > 60 else "comfortable") if humidity_value is not None else None
             co2_status = ("good" if co2_value < 800 else "elevated" if co2_value < 1200 else "high" if co2_value < 2000 else "very_high") if co2_value is not None else None
             demand_state = demand.state if demand else None

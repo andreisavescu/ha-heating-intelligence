@@ -3368,8 +3368,10 @@ def build_multizone_response_identification(
                 bootstrap_block_length = min(4, max(1, len(train) // 4))
                 bootstrap_replicates = 80 if len(train) >= 40 else 0
                 bootstrap_coefficients = [[] for _ in range(p)]
+                bootstrap_rejected_non_identifiable = 0
 
                 def fit_bootstrap_rows(bootstrap_rows):
+                    nonlocal bootstrap_rejected_non_identifiable
                     count = len(bootstrap_rows)
                     local_means = [
                         sum(row[1][j] for row in bootstrap_rows) / count
@@ -3380,11 +3382,29 @@ def build_multizone_response_identification(
                         for j in range(p)
                     ]
                     if any(scale <= 1e-5 for scale in local_scales):
+                        bootstrap_rejected_non_identifiable += 1
                         return None
                     local_design = [
                         [(row[1][j] - local_means[j]) / local_scales[j] for j in range(p)]
                         for row in bootstrap_rows
                     ]
+                    local_gram = [
+                        [sum(row[i] * row[j] for row in local_design) / count for j in range(p)]
+                        for i in range(p)
+                    ]
+                    local_eigenvalues = _symmetric_matrix_eigenvalues(local_gram)
+                    local_largest = max(local_eigenvalues) if local_eigenvalues else 0.0
+                    local_positive = [
+                        value for value in local_eigenvalues
+                        if value > max(1e-10, local_largest * 1e-10)
+                    ]
+                    if len(local_positive) != p or local_largest <= 0:
+                        bootstrap_rejected_non_identifiable += 1
+                        return None
+                    local_condition = math.sqrt(local_largest / min(local_positive))
+                    if local_condition > max_predictor_condition_number:
+                        bootstrap_rejected_non_identifiable += 1
+                        return None
                     local_y_mean = sum(row[2] for row in bootstrap_rows) / count
                     local_coefficients = [0.0] * p
                     local_residual = [row[2] - local_y_mean for row in bootstrap_rows]
@@ -3607,6 +3627,7 @@ def build_multizone_response_identification(
                             "stability": "insufficient_bootstrap_replicates",
                         }
                 result["coefficient_uncertainty"] = coefficient_uncertainty
+                result["bootstrap_rejected_non_identifiable_replicates"] = bootstrap_rejected_non_identifiable
                 result["coefficient_uncertainty_method"] = (
                     "deterministic_moving_block_bootstrap_90_percentile_range"
                 )

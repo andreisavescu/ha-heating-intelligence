@@ -213,3 +213,39 @@ def test_held_out_validation_rejects_stale_outdoor_observations():
     room = result["rooms"]["room"]
     assert room["valid_intervals"] == 0
     assert room["excluded_intervals"]["outdoor_missing_or_stale"] > 0
+
+
+def test_house_effective_rc_capacity_requires_independent_heat_loss_and_fits_tau():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {
+        "sensor.outdoor": [],
+        "sensor.indoor": [],
+        "binary_sensor.demand": [{"state": "off", "last_changed": (end - timedelta(hours=24)).isoformat()}],
+        "binary_sensor.window": [{"state": "off", "last_changed": (end - timedelta(hours=24)).isoformat()}],
+        "sensor.solar": [],
+    }
+    temp = 25.0
+    for index in range(25):
+        stamp = end - timedelta(hours=24 - index)
+        history["sensor.outdoor"].append({"state": "5", "last_changed": stamp.isoformat()})
+        history["sensor.indoor"].append({"state": str(temp), "last_changed": stamp.isoformat()})
+        history["sensor.solar"].append({"state": "0", "last_changed": stamp.isoformat()})
+        temp = 5 + (temp - 5) * (2.718281828 ** (-1 / 12))
+    rooms = [{
+        "id": "whole_house", "area_m2": 200,
+        "temperature_entity": "sensor.indoor",
+        "demand_entity": "binary_sensor.demand",
+        "window_entity": "binary_sensor.window",
+    }]
+    result = MODULE.build_house_effective_rc_calibration(
+        history, rooms, "sensor.outdoor", 300, "sensor.solar",
+    )
+    assert result["status"] == "effective_aggregate_capacity_estimate"
+    assert 10 <= result["apparent_time_constant_hours"] <= 14
+    assert 3000 <= result["effective_building_thermal_capacity_wh_per_k"] <= 4200
+
+
+def test_house_effective_rc_capacity_is_withheld_without_independent_heat_loss():
+    result = MODULE.build_house_effective_rc_calibration({}, [], "sensor.outdoor", None)
+    assert result["status"] == "withheld_heat_loss_coefficient_unavailable"
+    assert result["effective_building_thermal_capacity_wh_per_k"] is None

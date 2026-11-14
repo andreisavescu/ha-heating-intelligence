@@ -828,7 +828,8 @@ def build_multizone_response_identification(
             "non_contiguous_or_missing_temperature": 0,
             "demand_or_window_not_confirmed_off_closed": 0,
             "solar_missing_or_high": 0,
-            "ac_heating_active": 0,
+            "ac_heating_active_or_unavailable": 0,
+            "boiler_active_or_unavailable": 0,
             "invalid_interval": 0,
         }
         for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):

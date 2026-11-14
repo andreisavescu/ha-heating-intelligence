@@ -281,6 +281,33 @@ def test_house_effective_rc_capacity_reports_block_resampling_sensitivity():
     assert sensitivity["lower_90_percentile_wh_per_k"] <= sensitivity["upper_90_percentile_wh_per_k"]
 
 
+def test_house_effective_rc_combines_heat_loss_and_time_constant_sensitivity():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {"sensor.outdoor": [], "sensor.indoor": [], "sensor.solar": []}
+    temp = 21.0
+    for index in range(60):
+        stamp = end - timedelta(hours=60 - index)
+        history["sensor.outdoor"].append({"state": "5", "last_changed": stamp.isoformat()})
+        history["sensor.indoor"].append({"state": str(temp), "last_changed": stamp.isoformat()})
+        history["sensor.solar"].append({"state": "0", "last_changed": stamp.isoformat()})
+        temp = 5 + (temp - 5) * math.exp(-1 / 30)
+    result = MODULE.build_house_effective_rc_calibration(
+        history,
+        [{
+            "id": "whole_house", "area_m2": 200,
+            "temperature_entity": "sensor.indoor",
+            "demand_entity": "binary_sensor.demand",
+            "window_entity": "binary_sensor.window",
+        }],
+        "sensor.outdoor", 300, "sensor.solar",
+        heat_loss_sensitivity_range_w_k={"minimum": 250, "maximum": 350},
+    )
+    sensitivity = result["capacity_assumption_sensitivity"]
+    assert sensitivity["status"] == "combined_heat_loss_and_time_constant_sensitivity_available"
+    assert sensitivity["lower_wh_per_k"] < sensitivity["upper_wh_per_k"]
+    assert sensitivity["heat_loss_range_w_k"]["minimum"] == 250
+
+
 def test_house_effective_rc_capacity_is_withheld_without_independent_heat_loss():
     result = MODULE.build_house_effective_rc_calibration({}, [], "sensor.outdoor", None)
     assert result["status"] == "withheld_heat_loss_coefficient_unavailable"

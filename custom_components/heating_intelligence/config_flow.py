@@ -250,16 +250,33 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             return self.async_abort(reason="no_rooms")
         if user_input is not None:
             self._air_room_id = user_input["room"]
-            room = next(item for item in rooms if item["id"] == self._air_room_id)
-            self._air_room_input = dict(user_input)
-            if user_input.get(CONF_ENABLE_CO2):
-                return await self.async_step_room_air_quality_co2()
-            return self._save_room_air_quality(None)
+            return await self.async_step_room_air_quality_config()
         return self.async_show_form(
             step_id="room_air_quality",
             data_schema=vol.Schema({
                 vol.Required("room"): vol.In({room["id"]: room[CONF_NAME] for room in rooms}),
             }),
+        )
+
+    async def async_step_room_air_quality_config(self, user_input=None):
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        room = next((item for item in rooms if item["id"] == self._air_room_id), None)
+        if room is None:
+            return self.async_abort(reason="no_rooms")
+        if user_input is not None:
+            self._air_room_input = dict(user_input)
+            if user_input.get(CONF_ENABLE_CO2):
+                return await self.async_step_room_air_quality_co2()
+            return self._save_room_air_quality(None)
+        fields = {
+            vol.Optional(CONF_HUMIDITY_ENTITY, default=room.get(CONF_HUMIDITY_ENTITY)) if room.get(CONF_HUMIDITY_ENTITY) else vol.Optional(CONF_HUMIDITY_ENTITY):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_ENABLE_CO2, default=bool(room.get(CONF_CO2_ENTITY))): selector.BooleanSelector(),
+        }
+        return self.async_show_form(
+            step_id="room_air_quality_config",
+            data_schema=vol.Schema(fields),
+            description_placeholders={"room_name": room[CONF_NAME]},
         )
 
     async def async_step_room_air_quality_co2(self, user_input=None):

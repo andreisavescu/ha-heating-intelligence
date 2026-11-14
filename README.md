@@ -1,3 +1,8 @@
+## 0.14.2 — room air-quality entity registration fix
+
+- Fix room humidity and CO₂ entities failing to resolve their configured room device association.
+- Preserve the existing entity IDs and room-device grouping; no room reconfiguration is required.
+
 # HA Heating Intelligence
 
 <p align="center">

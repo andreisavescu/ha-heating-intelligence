@@ -283,7 +283,11 @@ def test_house_effective_rc_capacity_reports_block_resampling_sensitivity():
 
 def test_house_effective_rc_combines_heat_loss_and_time_constant_sensitivity():
     end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
-    history = {"sensor.outdoor": [], "sensor.indoor": [], "sensor.solar": []}
+    history = {
+        "sensor.outdoor": [], "sensor.indoor": [], "sensor.solar": [],
+        "binary_sensor.demand": [{"state": "off", "last_changed": (end - timedelta(hours=60)).isoformat()}],
+        "binary_sensor.window": [{"state": "off", "last_changed": (end - timedelta(hours=60)).isoformat()}],
+    }
     temp = 21.0
     for index in range(60):
         stamp = end - timedelta(hours=60 - index)

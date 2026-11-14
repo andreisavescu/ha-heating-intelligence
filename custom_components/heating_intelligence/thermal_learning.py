@@ -107,15 +107,30 @@ def build_room_thermal_model(
     return result
 
 
-def build_house_thermal_model(room_models: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Summarise independent room models without averaging their temperatures."""
+def build_house_thermal_model(
+    room_models: dict[str, dict[str, Any]], efficiency: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Summarise room learning alongside the existing measured house heat-loss model."""
     available = [model for model in room_models.values() if model.get("status") == "available"]
+    efficiency = efficiency or {}
+    whole_house = {
+        key: efficiency.get(key) for key in (
+            "heat_loss_coefficient_w_k", "heat_loss_u_value_daily",
+            "heat_loss_u_value_7d", "heat_loss_u_value_30d",
+            "gas_kwh_per_degree_day",
+        ) if efficiency.get(key) is not None
+    }
+    whole_house["weather_normalised_status"] = efficiency.get("weather_normalised", {}).get("status")
+    whole_house["status"] = "available" if any(
+        key in whole_house for key in ("heat_loss_u_value_daily", "heat_loss_u_value_7d", "heat_loss_u_value_30d")
+    ) else "collecting_data"
     return {
         "status": "available" if available else "learning",
         "rooms_modelled": len(available),
         "rooms_learning": len(room_models) - len(available),
         "average_confidence": round(sum(item["confidence"] for item in available) / len(available)) if available else None,
         "room_models": room_models,
+        "whole_house_observed_performance": whole_house,
         "interpretation": (
             "Room response rates are learned independently from historical temperature samples. "
             "They describe observed response, not a calibrated whole-building heat-loss model. "

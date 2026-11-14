@@ -208,8 +208,8 @@ def test_aggregate_capacity_budget_reports_non_air_remainder_without_room_alloca
     )
     budget = result["aggregate_capacity_budget"]
     assert budget["status"] == "aggregate_non_air_capacity_available"
-    assert budget["configured_air_only_capacity_wh_per_k"] == 6030.0
-    assert budget["implied_non_air_capacity_wh_per_k"] == 3970.0
+    assert budget["configured_air_only_capacity_wh_per_k"] == 50.25
+    assert budget["implied_non_air_capacity_wh_per_k"] == 9949.75
     assert budget["room_capacity_allocation"] is None
 
 

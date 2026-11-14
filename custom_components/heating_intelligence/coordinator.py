@@ -187,7 +187,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             stage_data = update_pump_stage(
                 history.setdefault("stage_history", {}),
                 power,
-                dt_util.as_local(power_state.last_changed) if power_state else now_local,
+                now_local,
             )
             observed_running = stage_data["stage"] == "pump_running"
             was_running = bool(history.get("running", False))

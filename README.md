@@ -340,3 +340,4 @@ The UFH pump response diagnostic uses pump electrical power only to mark circula
 - Report the conventional 2-norm condition number of the standardized training design matrix (square root of the Gram-matrix eigenvalue ratio), alongside pairwise correlations and matrix rank.
 - Apply the same full-rank and condition-number gate to every deterministic moving-block bootstrap resample; non-identifiable resamples are rejected and counted instead of contributing arbitrary coefficient allocations.
 - The bootstrap range remains a resampling sensitivity diagnostic, not a formal confidence interval.
+Solar-response evidence is only labelled repeatable when the training and holdout partial-correlation nominal 95% Fisher intervals both exclude zero and the association direction is consistent. These intervals assume independent pairs; serial correlation can make them optimistic, so they remain descriptive screening evidence rather than formal inference.

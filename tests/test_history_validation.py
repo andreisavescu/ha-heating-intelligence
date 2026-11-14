@@ -166,7 +166,10 @@ def test_preliminary_calibration_withholds_when_window_state_is_unknown():
 def test_held_out_validation_uses_chronological_holdout_and_beats_persistence():
     end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
     history = {
-        "sensor.outdoor": [{"state": "5", "last_changed": (end - timedelta(hours=24)).isoformat()}],
+        "sensor.outdoor": [
+            {"state": "5", "last_changed": (end - timedelta(hours=24 - index)).isoformat()}
+            for index in range(25)
+        ],
         "sensor.room": [],
         "binary_sensor.demand": [{"state": "off", "last_changed": (end - timedelta(hours=24)).isoformat()}],
         "binary_sensor.window": [{"state": "off", "last_changed": (end - timedelta(hours=24)).isoformat()}],
@@ -193,7 +196,7 @@ def test_held_out_validation_uses_chronological_holdout_and_beats_persistence():
 def test_held_out_validation_rejects_stale_outdoor_observations():
     end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
     history = {
-        "sensor.outdoor": [{"state": "5", "last_changed": (end - timedelta(hours=12)).isoformat()}],
+        "sensor.outdoor": [{"state": "5", "last_changed": (end - timedelta(hours=24)).isoformat()}],
         "sensor.room": [
             {"state": str(22 - index * 0.1), "last_changed": (end - timedelta(hours=12) + timedelta(minutes=30 * index)).isoformat()}
             for index in range(25)

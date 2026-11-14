@@ -1555,6 +1555,20 @@ def build_thermal_input_room_response_alignment(
             adjusted_valid_lags,
             key=lambda item: abs(item["confounder_adjustment"]["partial_pearson_r"]),
         ) if adjusted_valid_lags else None
+        ranked_adjusted_lags = sorted(
+            adjusted_valid_lags,
+            key=lambda item: abs(item["confounder_adjustment"]["partial_pearson_r"]),
+            reverse=True,
+        )
+        adjusted_lag_peak_status = "insufficient_adjusted_lags"
+        if ranked_adjusted_lags:
+            adjusted_lag_peak_status = (
+                "distinct_adjusted_descriptive_peak"
+                if len(ranked_adjusted_lags) == 1
+                or abs(ranked_adjusted_lags[0]["confounder_adjustment"]["partial_pearson_r"])
+                - abs(ranked_adjusted_lags[1]["confounder_adjustment"]["partial_pearson_r"]) >= 0.05
+                else "ambiguous_adjusted_neighbouring_lag_peaks"
+            )
         ranked_lags = sorted(valid_lags, key=lambda item: abs(item["pearson_r"]), reverse=True)
         lag_peak_status = "insufficient_valid_lags"
         if ranked_lags:
@@ -1603,8 +1617,8 @@ def build_thermal_input_room_response_alignment(
             )
         ):
             evidence_status = "withheld_uncertain_adjusted_correlation"
-        elif lag_peak_status != "distinct_descriptive_peak":
-            evidence_status = "descriptive_lag_ambiguous"
+        elif adjusted_lag_peak_status != "distinct_adjusted_descriptive_peak":
+            evidence_status = "descriptive_adjusted_lag_ambiguous"
         else:
             evidence_status = "repeatable_adjusted_descriptive_association_only"
         results[key] = {
@@ -1617,6 +1631,11 @@ def build_thermal_input_room_response_alignment(
             "strongest_adjusted_lag_minutes": best_adjusted_lag["lag_minutes"] if best_adjusted_lag else None,
             "strongest_adjusted_partial_pearson_r": (
                 best_adjusted_lag["confounder_adjustment"]["partial_pearson_r"]
+                if best_adjusted_lag else None
+            ),
+            "adjusted_lag_peak_status": adjusted_lag_peak_status,
+            "strongest_adjusted_partial_correlation_sensitivity": (
+                best_adjusted_lag["confounder_adjustment"]["block_sensitivity"]
                 if best_adjusted_lag else None
             ),
             "confounder_adjustment_status": (

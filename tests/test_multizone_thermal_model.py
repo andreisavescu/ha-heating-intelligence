@@ -231,7 +231,7 @@ def test_aggregate_capacity_budget_withholds_partial_volume_coverage():
 def test_aggregate_capacity_budget_flags_capacity_below_air_only_minimum():
     result = MODEL.build_multizone_observation_model(
         {"living": {"volume_m3": 100.0}},
-        profile={"effective_building_thermal_capacity_wh_per_k": 100.0},
+        profile={"effective_building_thermal_capacity_wh_per_k": 10.0},
     )
     budget = result["aggregate_capacity_budget"]
     assert budget["status"] == "inconsistent_effective_capacity_below_air_only"

@@ -1,11 +1,19 @@
 ## 0.15.0 — multi-zone thermal model foundation and Recorder history coverage
 
-- Add a Home Assistant-independent lumped RC network solver with bounded integration steps and numerical validation.
+- Add a Home Assistant-independent lumped RC network solver with bounded integration steps, explicit energy accounting for gains and fixed boundaries, and a maximum-substep safety guard.
 - Map configured room temperatures, demand/window states, CO₂, humidity and ACH alongside outdoor weather, attic, UFH floor context, boiler water temperatures, burner/modulation and pump telemetry.
 - Accept optional measured room volume and estimate ventilation conductance only when both room volume and ACH are configured.
+- Report air-only sensible heat capacity from configured room volume separately from effective room/building capacity. Ventilation conductance uses the configured ACH and volume, with an illustrative ±10% ACH sensitivity (not a confidence interval); missing room volumes remain explicitly uncovered.
 - Expose roof conductance only when roof U-value and area are explicitly configured.
 - Surface existing learned room heating/coasting rates, confidence and sample counts as calibration evidence; do not misrepresent temperature slopes as physical heat capacities or envelope U-values.
-- Query up to seven days of configured Home Assistant Recorder history locally every six hours and show per-entity data coverage for calibration planning. Raw history remains in Recorder and is not copied into integration storage or sent externally.
+- Query a configurable 7–365-day window of configured Home Assistant Recorder history locally every six hours (90 days by default) and show per-entity data coverage, native state-change counts and distinct states for calibration planning. Raw history remains in Recorder and is not copied into integration storage or sent externally.
+- Build a transient 30-minute aligned calibration dataset from room temperatures, demand/window states, weather, solar, attic, gas, boiler, AC, water-temperature and configured pump telemetry. Last-known values are carried forward only up to 45 minutes; explicit `unknown`/`unavailable` states invalidate the value. Report per-channel freshness and core/room-state coverage. Aligned rows remain in coordinator memory for subsequent fitting and are not persisted.
+- Validate the weather-normalized daily gas model on a chronological 70/30 split: only the earlier segment is used to fit coefficients and reference weather; the later segment is scored against a training-mean baseline with MAE, RMSE and R². Small samples without at least 12 training and 6 holdout days are withheld.
+- Aggregate room-level multi-zone holdout errors into a house-level, interval-weighted validation summary. Rooms without valid holdout fits are counted separately; this remains a prediction diagnostic, not independent plant-energy validation.
+- Combine the aggregate cooling time-constant resampling range with the whole-house heat-loss assumption range to report an aggregate building-capacity sensitivity envelope. This is not a confidence interval and is never allocated to individual rooms or slabs.
+- The RC solver now reports stored-energy change, integrated internal gains, fixed-boundary heat exchange and energy-balance error. It rejects pathological integration requests requiring more than 100,000 explicit substeps.
+- Expose a per-room physical-parameter readiness matrix with air-only versus effective capacity, unresolved envelope conductance, and each unidentified inter-zone link. The simulator remains withheld while these physical parameters are missing; aggregate capacity is not distributed and normalized G/C rates are not relabeled as W/K.
+- Fit a first-pass non-negative multi-zone free-coasting response model from simultaneous room and outdoor temperatures. It requires all configured rooms to have known demand-off/closed-window states and low measured solar radiation; configured AC and boiler telemetry must also confirm no active heating. It reports chronological holdout error and normalized `G/C` response rates in 1/hour. These are not absolute W/K conductances or room capacities; the physical simulation remains withheld until absolute capacities and links are independently identified.
 - Keep the physical simulation withheld until required thermal capacities and conductive links are identified. Solar/internal gains and UFH/plant heat output remain uncalculated where calibrated inputs are missing.
 
 ## 0.14.4 — manifold pump stage visibility
@@ -244,3 +252,107 @@ The coordinator samples every 10 seconds. HA state timestamps are used to place 
 - Add a weekly room-demand heatmap using recorded demand-cycle timestamps, showing minutes of demand by room, day and hour.
 - Add latest-seven-days versus preceding-seven-days comparisons for gas and pump electricity, plus weather-normalised gas when the model is available.
 - Preserve existing tabs, metrics, entities, configuration and read-only behaviour.
+
+
+### v0.15 chronological validation
+Recorder calibration now includes a chronological train/holdout check for each room's free-cooling response. The first 70% of eligible intervals fit a first-order response; the later 30% are scored against a persistence baseline using MAE and RMSE. Outdoor observations older than 90 minutes are excluded. A passing holdout indicates improved short-horizon prediction only; it does not establish uniquely physical room capacity or envelope conductance. The default Recorder inventory window is now 90 days (configurable from 7 to 365 days). The thermal-model dataset remains 30-minute aligned; control-state transitions retain their native Recorder timestamps so PWM pulse timing is not lost to downsampling.
+
+
+The Recorder summary also reports an aggregate effective whole-building heat capacity when a 7-day energy-derived house heat-loss coefficient and clean low-solar free-cooling history are both available. It calculates the aggregate estimate as H_house × tau_house. This value is not assigned to individual rooms or floor slabs and remains conditional on the configured boiler-efficiency / AC-COP assumptions and unmeasured-gain limitations. The multi-zone inventory also calculates each configured room's ventilation conductance from volume and ACH even when outdoor temperature is temporarily unavailable. It reports a residual whole-house envelope-loss estimate only when every configured room has positive volume and ACH, and only when the independently estimated 7-day whole-house heat-loss coefficient exceeds the summed ventilation conductance. The residual assumes that the aggregate coefficient already includes ventilation and uses the same indoor/outdoor boundary; it is withheld for incomplete coverage or inconsistent values. It is not distributed among rooms because room-level conductances remain unidentified. The normalized multi-zone response fit now screens both pairwise predictor correlations and the rank/condition number of the complete standardized predictor matrix; joint dependencies among three or more drivers also cause coefficients to be withheld. A full-rank matrix is necessary but does not by itself prove physical identifiability. The multi-zone inventory also reconciles the Recorder-derived effective whole-building capacity against the air-only capacity calculated from configured room volumes. With complete volume coverage it reports an aggregate implied non-air storage remainder, or flags an inconsistency if the estimated whole-building capacity falls below the air-only minimum. This remainder is not assigned to rooms, walls or slabs; it is an aggregate consistency diagnostic only.
+
+
+The UFH observability screen now uses aligned Recorder history for each manifold to compare adjacent-room temperature rates during pump-on and pump-off intervals, and reports supply/return delta-T when both readings are fresh. This is only an excitation diagnostic: pump electrical power is not delivered heat, water delta-T without flow is not thermal output, and no slab capacity is inferred. The floor nodes expose this evidence while keeping slab temperature, capacity and heat output withheld.
+
+
+Recorder calibration now preserves each energy meter's `unit_of_measurement` and derives interval energy only from fresh, monotonic cumulative meters with explicit energy units. Gas volume units (for example m³) are not converted without a configured calorific value and meter basis. For verified gas kWh and AC electricity kWh it reports delivered-heat sensitivity scenarios (boiler efficiency 0.80/0.90/0.98 and AC COP 2/3/5); these are assumptions, not measured efficiencies. The results remain whole-system input proxies and are not allocated to individual rooms or UFH slabs.
+
+
+A further Recorder diagnostic pairs verified cumulative gas and AC energy increments with concurrent room-temperature rates on the same 30-minute intervals. It reports whole-house input-power versus average room-response association and separate per-room statistical associations for each meter. These are observational correlations only: they do not allocate gas or AC heat to rooms, identify causal response, or estimate room/slab capacities. Meter unit, freshness, monotonicity and interval checks are applied before a pair is accepted.
+
+
+The input-to-room response diagnostic now scans concurrent and delayed room-temperature responses (up to two hours at the default 30-minute cadence). Each response interval is admitted only when every configured room has a valid temperature, preventing changing room coverage from shifting the aggregate response metric. Per-room lag scans are reported separately for gas and AC. The strongest observed lag is descriptive only and must not be interpreted as a physical delay or causal effect.
+
+
+The Recorder calibration diagnostics now include a room-level excitation screen. It counts demand-on/off intervals and transitions per room, compares temperature-rate distributions between those modes, measures pairwise demand co-activation, counts distinct simultaneous room-demand patterns, and checks overlap between floor-pump activity and room demand. This is a prerequisite/observability screen only: demand is not delivered heat, pump electricity is not thermal output, and the screen does not identify room-level watts, capacities or conductances.
+
+
+The passive multi-zone fit now reports per-driver temperature-gradient excitation on its training segment: standard deviation, observed range, positive/negative/near-zero interval counts, and whether each room-to-room gradient reverses direction with adequate sample counts. Room links with weak or one-sided gradients are explicitly listed. This is an excitation-quality diagnostic, not a new physical parameter estimate; the existing full-matrix rank/condition checks still govern coefficient withholding, and holdout data are not used to assess training excitation.
+
+
+The normalized free-coasting multi-zone regression now includes deterministic moving-block bootstrap coefficient-stability diagnostics. It resamples contiguous four-interval blocks from the chronological training segment (80 deterministic replicates when at least 40 training intervals are available) and reports the 5th/50th/95th percentiles plus relative range for each normalized coefficient. These are resampling sensitivity ranges, not formal confidence intervals; they exclude sensor bias, unmeasured gains, model misspecification and uncertainty in delivered room heat. The chronological holdout remains untouched.
+
+
+The multi-zone response fit also compares normalized coefficients across three contiguous chronological sections of the training segment. Each section must have sufficient observations, nontrivial predictor excitation, a full-rank standardized predictor matrix and an acceptable condition number before its coefficients are included. Per-predictor minimum, median, maximum, median absolute deviation and relative range are reported. The final chronological holdout is excluded. This is a descriptive temporal-stability diagnostic, not a confidence interval or proof of physical parameter constancy.
+
+
+The aggregate house effective-capacity estimate now reports a deterministic moving-block resampling sensitivity range when at least 40 cooling-response intervals are available. It resamples contiguous four-interval blocks and reports 5th/50th/95th percentiles of the implied aggregate capacity. With shorter histories, the range is withheld. These are sensitivity diagnostics, not formal confidence intervals, and do not include uncertainty in the heat-loss coefficient or unmeasured gains.
+
+
+The whole-house measured-performance estimate now exposes explicit assumption sensitivity for the 7-day and 30-day heat-loss coefficients. It recalculates nine combinations of boiler efficiency (0.80, 0.90, 0.98) and AC heating COP (2, 3, 5), reporting the resulting H and U-value ranges. A window is withheld unless it meets the existing completed-day and degree-hour coverage thresholds. These ranges are conditional scenarios, not statistical confidence intervals or measured plant efficiencies.
+
+
+Gas-meter conversion is now tracked separately from gas energy: daily records retain the raw m³ delta and whether the meter basis was volumetric or already energy-based. The whole-house heat-loss sensitivity uses three conversion factors (95%, 100%, 105% of the configured kWh/m³ factor) only when all days in the selected window have a consistently identified m³ basis. Combined with the three boiler-efficiency and three AC-COP assumptions, this yields 27 scenarios. Legacy days without conversion-basis metadata, mixed meter units and unsupported units are withheld rather than guessed.
+
+
+The weather-normalised gas regression now uses a chronological 70/30 training/holdout split. Coefficients and median reference weather are derived from training days only; the later holdout is scored against a training-mean baseline with MAE, RMSE and R². Multi-zone room holdout metrics are also aggregated with interval-count weighting at house level. The aggregate building-capacity sensitivity combines the cooling time-constant resampling distribution with the whole-house heat-loss assumption range; it remains a sensitivity envelope, not a formal confidence interval or room-level allocation. The RC solver now audits the energy balance between stored-energy change, internal gains and fixed-boundary exchange, and rejects integration requests requiring more than 100,000 substeps.
+
+
+The multi-zone observation model now returns an explicit simulation-readiness matrix for every room and every room pair. It distinguishes a known air-only capacity from the still-missing effective room capacity, lists unidentified inter-zone links and keeps room-envelope conductances withheld. This is intended to make the remaining calibration blockers actionable without fabricating physical values.
+
+The plant-input/room-response alignment now adds Fisher 95% intervals for Pearson associations, chronological split-half repeatability checks, an input-variation gate, and a check for ambiguous neighbouring lag peaks. A correlation is labelled only as a repeatable descriptive association when input variation is adequate, the direction persists across both history halves, and the lag peak is distinguishable. The Fisher intervals are nominal and assume independent pairs, so serial correlation may make them optimistic; intervals spanning zero are withheld from repeatable-association status. These diagnostics still do not establish causality, delivered room heat, or physical thermal parameters.
+
+The plant-input/room-response diagnostic now also captures outdoor temperature, solar radiation, the fraction of rooms requesting heat and the fraction with open windows. For each lag it reports a partial correlation after linear adjustment for covariates with sufficient coverage. The adjustment design is rank-checked and withheld when collinear or ill-conditioned; it requires enough complete cases and reports a nominal Fisher interval using partial-correlation degrees of freedom (number of pairs minus adjusted covariates minus three). A deterministic moving-block resampling range is added when at least 40 adjusted pairs are available. This is a sensitivity diagnostic, not a formal confidence interval, and it cannot remove unmeasured confounding or prove causal heat delivery. Raw correlations remain visible alongside the adjusted result.
+
+
+
+Multi-zone chronological holdout scoring now includes per-room residual diagnostics: mean bias, residual dispersion, maximum absolute error, lag-one residual correlation, residual drift per day, and a timestamp/cadence audit of the held-out segment. When at least 20 holdout intervals are available, deterministic moving-block resampling reports 5th/50th/95th percentile MAE and RMSE sensitivity ranges. These are descriptive diagnostics and resampling sensitivity, not formal confidence intervals. The house-level validation summary also counts rooms that beat or fail to beat persistence and rooms with residual diagnostics. Predictive holdout performance does not identify absolute thermal parameters: the per-room result explicitly continues to withhold physical parameter identification until independent room capacity and room-level heat input are available.
+
+
+### Explicit absolute-parameter readiness report
+- Recorder diagnostics now produce a per-room physical-calibration readiness report alongside normalized multi-zone response identification.
+- The report combines room temperature/state coverage, configured volume/ACH, normalized response fit status, chronological holdout error, coefficient resampling stability and temporal stability.
+- It lists verified system-level energy meters separately from water-flow and room/zone heat-output channels. It does not treat pump electrical power or supply-return delta-T without flow as delivered heat.
+- Absolute room capacities, W/K conductances and physical simulation readiness remain explicitly false until independent room capacity, measured thermal output and a defensible room-level heat allocation exist.
+- The report includes the concrete additional evidence required to proceed. It is a readiness/diagnostic layer, not a new parameter estimator and does not manufacture missing measurements.
+
+
+### Hydronic flow and measured water-side heat output
+- Global settings now accept an optional water-flow-rate sensor. The Recorder calibration dataset retains its native unit and freshness metadata.
+- When fresh positive flow and fresh supply/return temperatures are available, the calibration summary calculates water-side thermal transfer using `Q̇ = ṁ × cp × (T_supply − T_return)`.
+- Supported flow units are L/min, L/s, m³/h, kg/h and kg/s. The default water properties are 997 kg/m³ and 4186 J/(kg·K); these assumptions are exposed in the result.
+- The summary reports valid-sample coverage and median / 10th / 90th percentile output. It also integrates valid adjacent samples with a trapezoidal rule into a water-side kWh estimate; gaps outside the configured cadence are not bridged. Unsupported units, stale inputs, zero/negative flow and non-positive supply-return delta-T are excluded explicitly.
+- This is system-side hydronic output only. It is not automatically equal to heat delivered to rooms, and it is not allocated among rooms or used to claim calibrated room capacities. Hydraulic bypasses, buffer tanks and distribution losses still matter.
+
+### UFH response observability safeguards
+The UFH pump response diagnostic uses pump electrical power only to mark circulation state. A floor interval is accepted only when every configured room on that floor has a fresh temperature; an incomplete room set resets the adjacent-interval comparison rather than averaging whichever sensors happen to be available. Explicitly open-window intervals are excluded, and missing or irregular 30-minute cadence is not bridged. The diagnostic reports per-room and complete-floor temperature-rate summaries for pump-on and pump-off periods. These remain observed temperature responses: they are not thermal output, slab temperature, room heat delivery or slab capacity. A floor with no configured rooms is reported separately rather than treated as an empty response dataset.
+### Room-level solar response diagnostics
+- Add a per-room 0–120 minute solar-irradiance/temperature-slope lag scan using fresh Recorder values and exact 30-minute cadence.
+- Select the lag on the chronological training segment and check the same adjusted association on the later holdout; adjust for sufficiently covered outdoor temperature and room demand.
+- Exclude explicitly open-window intervals, stale temperatures/irradiance and cadence gaps; reject unsupported irradiance units.
+- Surface configured per-room window area/orientation as context only. No solar gain watts, glazing transmittance, or absolute room RC parameters are inferred.
+- Include the evidence in the physical-readiness audit without changing the rule that physical simulation remains withheld until independent capacities, delivered-heat allocation and output validation exist.
+### Passive multi-zone fit data-quality gates
+- The normalized free-coasting RC fit now rejects stale room temperatures, demand/window states, solar irradiance, outdoor temperature and configured AC/boiler telemetry using the same 45-minute Recorder freshness limit.
+- Solar irradiance is checked in W/m² (or converted from kW/m²) before applying the low-solar threshold; explicitly unsupported units are excluded rather than compared numerically.
+- Exclusion counts distinguish stale measurements from missing states, active heating and high solar conditions.
+- These checks improve the validity of normalized G/C evidence; they do not convert the fit into absolute conductances or thermal capacities.
+### Multi-zone fit conditioning and bootstrap safeguards
+- Report the conventional 2-norm condition number of the standardized training design matrix (square root of the Gram-matrix eigenvalue ratio), alongside pairwise correlations and matrix rank.
+- Apply the same full-rank and condition-number gate to every deterministic moving-block bootstrap resample; non-identifiable resamples are rejected and counted instead of contributing arbitrary coefficient allocations.
+- The bootstrap range remains a resampling sensitivity diagnostic, not a formal confidence interval.
+Solar-response evidence is only labelled repeatable when the training and holdout partial-correlation nominal 95% Fisher intervals both exclude zero and the association direction is consistent. These intervals assume independent pairs; serial correlation can make them optimistic, so they remain descriptive screening evidence rather than formal inference.
+- When a room has a configured window sensor, unknown or stale window state is excluded from solar-response analysis rather than being treated as closed. Rooms without a configured window sensor remain explicitly distinguishable from rooms whose configured sensor is unavailable.
+- Where fresh room sensors exist, solar-response adjustment also includes room CO₂ and relative humidity as internal-activity/moisture proxies. These are nuisance covariates only: neither CO₂ nor humidity is converted into occupant heat or moisture watts. The minimum pair count is raised to preserve adequate training and holdout sample counts for the expanded adjustment design.
+### Independent room-output readiness gate
+A configured room/zone heat-output channel is counted as independent measured thermal output only when it has a non-negative numeric reading, a fresh value (within 45 minutes), and an explicit W or kW unit. Stale, untyped and energy-unit values do not clear the physical-calibration blocker.
+Water-flow evidence in the physical-readiness audit is counted only for positive fresh readings with a supported volumetric or mass-flow unit. This is separate from the water-side output calculation, which additionally requires fresh supply/return temperatures and a positive delta-T.
+Room coverage in the physical-readiness audit uses the same 45-minute freshness rule for temperature, demand and window state. Stale readings no longer inflate the apparent amount of calibration-ready history.
+Historical AC power is normalized from W, kW, MW and mW before the passive-fit AC-heating exclusion threshold is applied. Unsupported explicit units are excluded rather than compared as if they were watts; missing legacy units retain the native-watt assumption.
+
+### Native control-event and PWM timing inventory
+- The Recorder calibration report now inventories configured room-demand switches and the configured boiler-burner entity using their original `last_changed` timestamps.
+- Explicit `on`→`off` and `off`→`on` transitions produce measured dwell intervals; complete on/off cycles are counted only within uninterrupted known-state sequences.
+- `unknown` and `unavailable` states break continuity. The inventory never converts them into `off`, bridges across them, or invents pulse durations.
+- Reports per-entity sample counts, explicit transitions, complete on/off intervals and cycle counts, dwell-time median/minimum/maximum, and interrupted active intervals. Raw history is not retained in the summary.
+- This is controller-event timing evidence, not proof of PWM duty-cycle accuracy or delivered heat. A switch stream that alternates `on`/`unavailable` cannot establish pulse durations until explicit `off` transitions are recorded.
+- High-resolution event timestamps remain separate from the 30-minute thermal identification dataset; no synthetic 10-second rows are generated.

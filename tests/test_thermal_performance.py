@@ -28,6 +28,57 @@ def test_daily_heat_loss_uses_previous_completed_day():
     assert result["heat_loss_u_value_daily"] == round(900 / 361.26, 4)
 
 
+def test_heat_loss_assumption_sensitivity_reports_nine_scenarios():
+    now = datetime(2026, 11, 13, 12, tzinfo=timezone.utc)
+    days = {}
+    for offset in range(7):
+        date = (now.date() - timedelta(days=6-offset)).isoformat()
+        days[date] = {
+            "gas_kwh": 10.0,
+            "gas_meter_conversion_basis": "energy_kwh",
+            "ac_electricity_kwh": 2.0,
+            "delta_t_degree_hours": 30.0,
+        }
+    result = THERMAL.thermal_performance_statistics({"efficiency_daily": days}, now)
+    sensitivity = result["heat_loss_assumption_sensitivity_7d"]
+    assert sensitivity["status"] == "assumption_sensitivity_available"
+    assert sensitivity["scenario_count"] == 9
+    assert sensitivity["heat_loss_coefficient_range_w_k"]["minimum"] < sensitivity["heat_loss_coefficient_range_w_k"]["maximum"]
+    assert result["heat_loss_assumption_sensitivity_30d"]["status"] == "insufficient_completed_day_history"
+
+
+def test_gas_conversion_sensitivity_requires_m3_basis_and_varies_factor():
+    now = datetime(2026, 11, 13, 12, tzinfo=timezone.utc)
+    days = {}
+    for offset in range(7):
+        date = (now.date() - timedelta(days=6-offset)).isoformat()
+        days[date] = {
+            "gas_kwh": 10.55,
+            "gas_meter_volume_m3": 1.0,
+            "gas_meter_conversion_basis": "volume_m3",
+            "ac_electricity_kwh": 0.0,
+            "delta_t_degree_hours": 30.0,
+        }
+    result = THERMAL.thermal_performance_statistics({"efficiency_daily": days}, now, 0.9, 361.26, 3.0, 10.55)
+    sensitivity = result["heat_loss_assumption_sensitivity_7d"]
+    assert sensitivity["status"] == "assumption_sensitivity_available"
+    assert sensitivity["scenario_count"] == 27
+    factors = {item["gas_kwh_per_m3_assumption"] for item in sensitivity["scenarios"]}
+    assert factors == {10.0225, 10.55, 11.0775}
+    assert sensitivity["gas_meter_conversion_basis"] == "volume_m3"
+
+
+def test_gas_conversion_sensitivity_withholds_legacy_unknown_meter_basis():
+    now = datetime(2026, 11, 13, 12, tzinfo=timezone.utc)
+    days = {}
+    for offset in range(7):
+        date = (now.date() - timedelta(days=6-offset)).isoformat()
+        days[date] = {"gas_kwh": 10.0, "delta_t_degree_hours": 30.0}
+    result = THERMAL.thermal_performance_statistics({"efficiency_daily": days}, now)
+    assert result["heat_loss_assumption_sensitivity_7d"]["status"] == "insufficient_completed_day_history"
+    assert result["heat_loss_assumption_sensitivity_7d"]["scenario_count"] == 0
+
+
 def test_rolling_heat_loss_requires_sufficient_days():
     now = datetime(2026, 11, 13, 12, tzinfo=timezone.utc)
     days = {}

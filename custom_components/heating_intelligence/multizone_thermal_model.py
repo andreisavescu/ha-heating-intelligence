@@ -96,16 +96,30 @@ def simulate_thermal_step(
     ]
     max_substep = min(stable_seconds) * 0.25 if stable_seconds else duration
     steps = max(1, math.ceil(duration / max_substep))
+    maximum_steps = 100_000
+    if steps > maximum_steps:
+        raise ValueError(
+            f"thermal step requires {steps} substeps; maximum is {maximum_steps}. "
+            "Check unusually small capacities or large conductances."
+        )
     dt_hours = duration / steps / 3600.0
+    initial_temperatures = dict(temperatures)
+    applied_gains_wh = 0.0
+    boundary_heat_exchange_wh = 0.0
 
     for _ in range(steps):
         net_w = {node_id: gains[node_id] for node_id in nodes}
+        applied_gains_wh += sum(gains[node_id] for node_id in capacities) * dt_hours
         for source, target, conductance in links:
             flow_w = conductance * (temperatures[source] - temperatures[target])
             if source not in fixed:
                 net_w[source] -= flow_w
+            else:
+                boundary_heat_exchange_wh += flow_w * dt_hours
             if target not in fixed:
                 net_w[target] += flow_w
+            else:
+                boundary_heat_exchange_wh -= flow_w * dt_hours
         for node_id, capacity in capacities.items():
             temperatures[node_id] += net_w[node_id] * dt_hours / capacity
 
@@ -119,11 +133,30 @@ def simulate_thermal_step(
             "heat_flow_w": round(flow_w, 4),
         })
 
+    stored_energy_change_wh = sum(
+        capacity * (temperatures[node_id] - initial_temperatures[node_id])
+        for node_id, capacity in capacities.items()
+    )
+    expected_energy_change_wh = applied_gains_wh + boundary_heat_exchange_wh
+    energy_balance_error_wh = stored_energy_change_wh - expected_energy_change_wh
+
     return {
         "temperatures_c": {
             node_id: round(value, 4) for node_id, value in temperatures.items()
         },
         "connections": final_flows,
+        "energy_balance": {
+            "stored_energy_change_wh": round(stored_energy_change_wh, 6),
+            "applied_gains_wh": round(applied_gains_wh, 6),
+            "boundary_heat_exchange_wh": round(boundary_heat_exchange_wh, 6),
+            "expected_energy_change_wh": round(expected_energy_change_wh, 6),
+            "error_wh": round(energy_balance_error_wh, 6),
+            "status": (
+                "balanced_within_numerical_precision"
+                if abs(energy_balance_error_wh) <= max(0.01, abs(expected_energy_change_wh) * 1e-6)
+                else "energy_balance_error"
+            ),
+        },
         "substeps": steps,
         "duration_seconds": duration,
         "model": "lumped_rc_network",
@@ -172,6 +205,11 @@ def build_multizone_observation_model(
             "area_m2": _finite_or_none(room.get("area_m2")),
             "volume_m3": _finite_or_none(room.get("volume_m3")),
             "configured_ach": _finite_or_none(room.get("air_changes_per_hour")),
+            "air_thermal_capacity_wh_per_k": (
+                round(1.2 * 1005.0 / 3600.0 * float(room.get("volume_m3")), 4)
+                if _finite_or_none(room.get("volume_m3")) is not None
+                and _finite_or_none(room.get("volume_m3")) > 0 else None
+            ),
             "co2_ppm": _finite_or_none(room.get("co2_ppm")),
             "humidity_percent": _finite_or_none(room.get("humidity")),
             "thermal_capacity_wh_per_k": None,
@@ -219,6 +257,9 @@ def build_multizone_observation_model(
             'screed_thickness_cm': screed_cm,
             'thermal_capacity_wh_per_k': None,
             'pump_running': pump.get('running'),
+            'observability': (
+                (plant.get('ufh_slab_observability') or {}).get('floors', {}).get(floor_id, {})
+            ),
             'status': 'awaiting_slab_sensor_or_identifiable_capacity' if screed_cm is not None else 'screed_profile_incomplete',
         }
         floor_nodes[floor_id] = floor_node_id
@@ -232,35 +273,48 @@ def build_multizone_observation_model(
         'return_water_temperature_c': _finite_or_none(plant.get('water_return_temperature')),
         'burner_state': boiler_context.get('burner_state'),
         'burner_on': boiler_context.get('burner_on'),
-        'modulation_percent': _finite_or_none(boiler_context.get('modulation_percent')),
+        'modulation_percent': _finite_or_none(boiler_context.get('modulation_percent', boiler_context.get('modulation'))),
         'pumps': {pump_id: {'running': pump.get('running'), 'power_w': _finite_or_none(pump.get('power')), 'stage': pump.get('stage')} for pump_id, pump in (plant.get('pumps') or {}).items()},
         'thermal_output_w': None,
-        'status': 'telemetry_observed' if (plant.get('water_temperature') is not None or plant.get('water_return_temperature') is not None or boiler_context.get('burner_state') not in (None, 'unknown', 'unavailable') or _finite_or_none(boiler_context.get('modulation_percent')) is not None) else 'plant_sensors_unavailable',
+        'status': 'telemetry_observed' if (plant.get('water_temperature') is not None or plant.get('water_return_temperature') is not None or boiler_context.get('burner_state') not in (None, 'unknown', 'unavailable') or _finite_or_none(boiler_context.get('modulation_percent', boiler_context.get('modulation'))) is not None) else 'plant_sensors_unavailable',
         'note': 'No water-side heat output is calculated without flow rate and a validated flow/return measurement pair.',
     }
     nodes['plant:heating'] = plant_node
-    # Ventilation conductance can be estimated when both room volume and
-    # ACH are configured. rho*cp/3600 converts m3/h into W/K.
+    # Ventilation conductance is a property of configured volume and ACH;
+    # it does not depend on whether an outdoor-temperature reading is live.
+    # rho*cp/3600 converts m3/h into W/K.
     ventilation_paths = []
     ventilation_factor_w_per_k_per_m3_ach = 1.2 * 1005.0 / 3600.0
-    if "boundary:outdoors" in nodes:
-        for room_id, room in rooms.items():
-            volume = _finite_or_none(room.get("volume_m3"))
-            ach = _finite_or_none(room.get("air_changes_per_hour"))
-            if volume is None or ach is None or volume <= 0 or ach <= 0:
-                continue
-            ventilation_paths.append({
-                "from": "room:" + room_id,
-                "to": "boundary:outdoors",
-                "path": "ventilation",
-                "conductance_w_per_k": round(
-                    ventilation_factor_w_per_k_per_m3_ach * volume * ach, 4
-                ),
-                "source": "configured_room_volume_and_ach",
-                "volume_m3": volume,
-                "air_changes_per_hour": ach,
-                "status": "estimated_from_configured_inputs",
-            })
+    for room_id, room in rooms.items():
+        volume = _finite_or_none(room.get("volume_m3"))
+        ach = _finite_or_none(room.get("air_changes_per_hour"))
+        if volume is None or ach is None or volume <= 0 or ach <= 0:
+            continue
+        nominal_conductance = ventilation_factor_w_per_k_per_m3_ach * volume * ach
+        ventilation_paths.append({
+            "from": "room:" + room_id,
+            "to": "boundary:outdoors",
+            "path": "ventilation",
+            "conductance_w_per_k": round(nominal_conductance, 4),
+            "sensitivity_ach_minus_10_percent_w_per_k": round(nominal_conductance * 0.9, 4),
+            "sensitivity_ach_plus_10_percent_w_per_k": round(nominal_conductance * 1.1, 4),
+            "sensitivity_note": (
+                "Illustrative +/-10% ACH input scenario only; not a measured uncertainty "
+                "interval or confidence bound."
+            ),
+            "source": "configured_room_volume_and_ach",
+            "volume_m3": volume,
+            "air_changes_per_hour": ach,
+            "status": "estimated_from_configured_inputs",
+        })
+    if ventilation_paths and "boundary:outdoors" not in nodes:
+        nodes["boundary:outdoors"] = {
+            "kind": "fixed_boundary",
+            "name": "Outdoors",
+            "temperature_c": None,
+            "temperature_entity": None,
+            "status": "temperature_unavailable",
+        }
 
     # Conductive roof and ceiling paths are only exposed when both U-value
     # and area were explicitly entered in the house assessment.
@@ -314,18 +368,176 @@ def build_multizone_observation_model(
 
     observed_rooms = sum(1 for node in nodes.values() if node["kind"] == "room_air" and node["temperature_c"] is not None)
     room_count = len(rooms)
+    rooms_with_volume = sum(
+        1 for room in rooms.values()
+        if (_finite_or_none(room.get("volume_m3")) or 0) > 0
+    )
+    total_configured_volume = sum(
+        float(room["volume_m3"]) for room in rooms.values()
+        if (_finite_or_none(room.get("volume_m3")) or 0) > 0
+    )
+    air_capacity_wh_per_k = 1.2 * 1005.0 / 3600.0 * total_configured_volume
+    total_ventilation_conductance = sum(
+        item["conductance_w_per_k"] for item in ventilation_paths
+    )
+    rooms_with_volume_and_ach = sum(
+        1 for room in rooms.values()
+        if (_finite_or_none(room.get("volume_m3")) or 0) > 0
+        and (_finite_or_none(room.get("air_changes_per_hour")) or 0) > 0
+    )
+    ventilation_coverage_complete = bool(room_count) and rooms_with_volume_and_ach == room_count
+    house_heat_loss = _finite_or_none(plant.get("house_heat_loss_coefficient_w_k"))
+    if house_heat_loss is None:
+        house_heat_loss = _finite_or_none(
+            (profile.get("house_effective_rc_calibration") or {}).get("heat_loss_coefficient_w_k")
+        )
+    if house_heat_loss is None:
+        house_heat_loss = _finite_or_none(profile.get("house_heat_loss_coefficient_w_k"))
+    aggregate_capacity = _finite_or_none(
+        (profile.get("house_effective_rc_calibration") or {}).get(
+            "effective_building_thermal_capacity_wh_per_k"
+        )
+    )
+    if aggregate_capacity is None:
+        aggregate_capacity = _finite_or_none(
+            profile.get("effective_building_thermal_capacity_wh_per_k")
+        )
+    capacity_budget = {
+        "status": "withheld_incomplete_room_volume_coverage",
+        "effective_building_capacity_wh_per_k": round(aggregate_capacity, 2) if aggregate_capacity is not None else None,
+        "configured_air_only_capacity_wh_per_k": round(air_capacity_wh_per_k, 2),
+        "implied_non_air_capacity_wh_per_k": None,
+        "volume_coverage_percent": round(100 * rooms_with_volume / room_count) if room_count else None,
+        "rooms_with_volume": rooms_with_volume,
+        "configured_rooms": room_count,
+        "room_capacity_allocation": None,
+        "note": (
+            "This is an aggregate consistency check only. It does not allocate effective "
+            "capacity to individual rooms; wall, furnishing, floor and slab storage remain "
+            "unresolved. The subtraction is meaningful only when all configured room volumes "
+            "are represented and the effective building estimate describes the same conditioned zone."
+        ),
+    }
+    if rooms_with_volume != room_count or room_count == 0:
+        capacity_budget["status"] = "withheld_incomplete_room_volume_coverage"
+    elif aggregate_capacity is None or aggregate_capacity <= 0:
+        capacity_budget["status"] = "withheld_effective_building_capacity_unavailable"
+    elif aggregate_capacity < air_capacity_wh_per_k:
+        capacity_budget["status"] = "inconsistent_effective_capacity_below_air_only"
+        capacity_budget["note"] += (
+            " The estimated whole-building effective capacity is below the calculated air-only "
+            "capacity; inspect the heat-loss estimate, cooling fit, room volumes and zone boundary."
+        )
+    else:
+        capacity_budget["status"] = "aggregate_non_air_capacity_available"
+        capacity_budget["implied_non_air_capacity_wh_per_k"] = round(
+            aggregate_capacity - air_capacity_wh_per_k, 2
+        )
+    envelope_decomposition = {
+        "status": "withheld_incomplete_ventilation_coverage",
+        "total_house_heat_loss_coefficient_w_k": round(house_heat_loss, 3) if house_heat_loss is not None else None,
+        "ventilation_heat_loss_coefficient_w_k": round(total_ventilation_conductance, 3),
+        "residual_envelope_heat_loss_coefficient_w_k": None,
+        "rooms_with_volume_and_ach": rooms_with_volume_and_ach,
+        "configured_rooms": room_count,
+        "ventilation_coverage_complete": ventilation_coverage_complete,
+        "note": (
+            "Residual envelope loss is withheld unless every configured room has positive "
+            "volume and ACH and a positive independently estimated whole-house heat-loss "
+            "coefficient is supplied. The subtraction assumes the whole-house coefficient "
+            "already includes ventilation loss and uses the same indoor/outdoor boundary."
+        ),
+    }
+    if not ventilation_coverage_complete:
+        envelope_decomposition["status"] = "withheld_incomplete_ventilation_coverage"
+    elif house_heat_loss is None or house_heat_loss <= 0:
+        envelope_decomposition["status"] = "withheld_house_heat_loss_unavailable"
+    elif total_ventilation_conductance >= house_heat_loss:
+        envelope_decomposition["status"] = "withheld_ventilation_not_below_total"
+        envelope_decomposition["note"] += (
+            " Configured ventilation conductance is not below the aggregate coefficient; "
+            "check ACH, room volumes, heat-loss assumptions and boundary consistency."
+        )
+    else:
+        envelope_decomposition["status"] = "conditional_residual_available"
+        envelope_decomposition["residual_envelope_heat_loss_coefficient_w_k"] = round(
+            house_heat_loss - total_ventilation_conductance, 3
+        )
     missing_capacity = [node_id for node_id, node in nodes.items() if node["kind"] != "fixed_boundary" and node.get("thermal_capacity_wh_per_k") is None]
     missing_links = [
         node_id for node_id, node in nodes.items()
         if node["kind"] == "room_air"
     ]
+    room_node_ids = [node_id for node_id, node in nodes.items() if node["kind"] == "room_air"]
+    interzone_pairs = [
+        {"from": left, "to": right, "status": "conductance_not_identified"}
+        for index, left in enumerate(room_node_ids)
+        for right in room_node_ids[index + 1:]
+    ]
+    room_parameter_readiness = {}
+    for node_id in room_node_ids:
+        node = nodes[node_id]
+        room_parameter_readiness[node_id] = {
+            "air_only_capacity_wh_per_k": node.get("air_thermal_capacity_wh_per_k"),
+            "effective_room_capacity_wh_per_k": node.get("thermal_capacity_wh_per_k"),
+            "capacity_status": (
+                "effective_capacity_available"
+                if node.get("thermal_capacity_wh_per_k") is not None
+                else "air_only_capacity_only"
+                if node.get("air_thermal_capacity_wh_per_k") is not None
+                else "capacity_unavailable"
+            ),
+            "envelope_conductance_w_per_k": None,
+            "envelope_conductance_status": "not_identified_or_not_distributed",
+            "interzone_links": [
+                pair for pair in interzone_pairs
+                if pair["from"] == node_id or pair["to"] == node_id
+            ],
+        }
+    simulation_blockers = []
+    if missing_capacity:
+        simulation_blockers.append("effective_thermal_capacity_missing")
+    if room_node_ids:
+        simulation_blockers.append("room_envelope_conductances_not_identified")
+    if interzone_pairs:
+        simulation_blockers.append("interzone_conductances_not_identified")
+    simulation_readiness = {
+        "status": "withheld_missing_physical_parameters" if simulation_blockers else "physical_parameters_available",
+        "blockers": simulation_blockers,
+        "rooms": room_parameter_readiness,
+        "unidentified_interzone_pairs": interzone_pairs,
+        "note": (
+            "Air-only room capacities are not substitutes for effective room capacities. "
+            "Aggregate house capacity and residual envelope loss are not distributed to rooms, "
+            "and normalized G/C response rates are not converted to W/K conductances."
+        ),
+    }
     return {
         "model": "multi_zone_lumped_rc",
         "status": "observations_ready_parameters_incomplete" if nodes else "waiting_for_configured_sensors",
-        "simulation_status": "withheld_missing_physical_parameters",
+        "simulation_status": simulation_readiness["status"],
+        "simulation_readiness": simulation_readiness,
         "nodes": nodes,
         "configured_connections": connections,
         "ventilation_paths": ventilation_paths,
+        "house_heat_loss_decomposition": envelope_decomposition,
+        "aggregate_capacity_budget": capacity_budget,
+        "air_only_thermal_inventory": {
+            "status": "partial_configured_volume" if rooms_with_volume < room_count else (
+                "available" if room_count else "no_configured_rooms"
+            ),
+            "rooms_with_volume": rooms_with_volume,
+            "configured_rooms": room_count,
+            "volume_coverage_percent": round(100 * rooms_with_volume / room_count) if room_count else None,
+            "total_configured_room_volume_m3": round(total_configured_volume, 3),
+            "air_only_capacity_wh_per_k": round(air_capacity_wh_per_k, 3),
+            "known_ventilation_conductance_w_per_k": round(total_ventilation_conductance, 4),
+            "interpretation": (
+                "Air-only sensible heat capacity from configured room volumes using rho=1.2 kg/m3 "
+                "and cp=1005 J/kg/K. It excludes walls, furnishings, floors and slab storage; "
+                "it is not the effective room or building thermal capacity."
+            ),
+        },
         "pending_paths": pending_paths,
         "floor_nodes": floor_nodes,
         "plant": plant_node,
@@ -337,7 +549,8 @@ def build_multizone_observation_model(
             "rooms_with_co2": sum(1 for room in rooms.values() if _finite_or_none(room.get("co2_ppm")) is not None),
             "rooms_with_humidity": sum(1 for room in rooms.values() if _finite_or_none(room.get("humidity")) is not None),
             "rooms_with_ach": sum(1 for room in rooms.values() if _finite_or_none(room.get("air_changes_per_hour")) is not None),
-            "rooms_with_volume_and_ach": sum(1 for room in rooms.values() if _finite_or_none(room.get("volume_m3")) is not None and _finite_or_none(room.get("air_changes_per_hour")) is not None),
+            "rooms_with_volume_and_ach": sum(1 for room in rooms.values() if (_finite_or_none(room.get("volume_m3")) or 0) > 0 and (_finite_or_none(room.get("air_changes_per_hour")) or 0) > 0),
+            "rooms_with_air_capacity_estimate": rooms_with_volume,
             "attic_temperature_available": attic_c is not None,
             "outdoor_temperature_available": outdoor_c is not None,
             "ufh_floor_nodes": len(floor_nodes),

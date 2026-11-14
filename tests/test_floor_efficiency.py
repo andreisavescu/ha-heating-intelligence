@@ -57,4 +57,24 @@ def test_weather_model_produces_weather_adjusted_daily_gas():
     assert len(result["recent_days"]) == 30
     assert result["reference_expected_gas_kwh"] > 0
     assert all(item["weather_normalised_gas_kwh"] >= 0 for item in result["recent_days"])
+    validation = result["holdout_validation"]
+    assert validation["method"] == "chronological_70_30_holdout"
+    assert validation["training_end"] < validation["holdout_start"]
+    assert validation["mae_kwh"] >= 0
+    assert validation["training_mean_baseline_mae_kwh"] >= 0
+    assert all("was_holdout" in item for item in result["recent_days"])
     assert "solar_radiation_w_m2" in result["reference_conditions"]
+
+
+def test_weather_model_withholds_when_holdout_is_too_small():
+    daily = {}
+    for day in range(1, 18):
+        daily[f"2026-10-{day:02d}"] = {
+            "outdoor_sum": 10, "outdoor_count": 1,
+            "delta_t_sum": 8 + day % 3, "delta_t_count": 1,
+            "solar_sum": 100 + day * 5, "solar_count": 1,
+            "gas_kwh": 5 + day * 0.1,
+        }
+    result = MODULE.weather_normalised_efficiency(daily, "2026-11-01", minimum_days=17)
+    assert result["status"] == "insufficient_train_or_holdout_history"
+    assert result["holdout_validation"] is None

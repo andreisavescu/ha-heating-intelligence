@@ -23,10 +23,12 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_CALIBRATION_HISTORY_DAYS,
+    DEFAULT_CALIBRATION_HISTORY_DAYS,
     CONF_COMFORT_TARGET_C,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
@@ -59,6 +61,9 @@ from .const import (
     CONF_TEMPERATURE_ENTITY,
     CONF_WATER_TEMPERATURE_ENTITY,
     CONF_RETURN_WATER_TEMPERATURE_ENTITY,
+    CONF_WATER_FLOW_RATE_ENTITY,
+    CONF_GROUND_FLOOR_THERMAL_OUTPUT_ENTITY,
+    CONF_UPSTAIRS_THERMAL_OUTPUT_ENTITY,
     CONF_WINDOW_ENTITY,
     CONF_HUMIDITY_ENTITY,
     CONF_CO2_ENTITY,
@@ -77,6 +82,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self._store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_pump_history")
         self._history: dict = {"pumps": {}, "sync_mismatch_count": 0, "last_sync_result": "unknown"}
+        self._calibration_dataset_samples: list[dict] = []
         super().__init__(
             hass,
             logger=_LOGGER,
@@ -111,12 +117,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             self._history.setdefault("sync_mismatch_count", 0)
             self._history.setdefault("last_sync_result", "unknown")
 
-    async def _async_recorder_history_summary(self, now):
+    async def _async_recorder_history_summary(self, now, efficiency=None):
         """Read a bounded Recorder window at most every six hours."""
         last_value = self._history.get("recorder_history_checked_at")
         last_check = dt_util.parse_datetime(last_value) if last_value else None
         cached = self._history.get("recorder_history_summary")
-        if last_check and cached and (now - last_check).total_seconds() < 6 * 3600:
+        if last_check and cached and self._calibration_dataset_samples and (now - last_check).total_seconds() < 6 * 3600:
             return cached
 
         entity_ids = set()
@@ -124,9 +130,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             CONF_OUTDOOR_TEMPERATURE_ENTITY, CONF_SOLAR_RADIATION_ENTITY,
             CONF_ATTIC_TEMPERATURE_ENTITY, CONF_ATTIC_HUMIDITY_ENTITY,
             CONF_GAS_CONSUMPTION_ENTITY, CONF_WATER_TEMPERATURE_ENTITY,
-            CONF_RETURN_WATER_TEMPERATURE_ENTITY, CONF_AC_POWER_ENTITY,
+            CONF_RETURN_WATER_TEMPERATURE_ENTITY, CONF_WATER_FLOW_RATE_ENTITY,
+            CONF_GROUND_FLOOR_THERMAL_OUTPUT_ENTITY, CONF_UPSTAIRS_THERMAL_OUTPUT_ENTITY, CONF_AC_POWER_ENTITY,
             CONF_AC_ENERGY_ENTITY, CONF_BOILER_BURNER_ENTITY,
-            CONF_BOILER_MODULATION_ENTITY,
+            CONF_BOILER_MODULATION_ENTITY, CONF_ELECTRICITY_BOILER_POWER_ENTITY,
+            CONF_ELECTRICITY_BOILER_ENERGY_ENTITY, CONF_ELECTRICITY_BOILER_ENTITY,
         )
         for key in option_keys:
             entity_id = self.entry.options.get(key)
@@ -156,7 +164,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "raw_history_retained": False,
             }
 
-        start = now - timedelta(days=7)
+        history_days = int(self.entry.options.get(CONF_CALIBRATION_HISTORY_DAYS, DEFAULT_CALIBRATION_HISTORY_DAYS))
+        history_days = max(7, min(365, history_days))
+        start = now - timedelta(days=history_days)
         try:
             from homeassistant.components.recorder import get_instance
             from homeassistant.components.recorder.history import get_significant_states
@@ -168,15 +178,135 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 True, False, True, True,
             )
             summary = build_recorder_history_summary(history, start, now)
+            summary["requested_history_days"] = history_days
+            summary["control_event_resolution"] = "native_recorder_timestamps"
+            summary["control_event_note"] = ("State changes retain their original Recorder timestamps; "
+                "they are not downsampled to the 30-minute thermal-model cadence. "
+                "Use the raw event timestamps to reconstruct PWM pulse timing.")
+            configured_rooms = self.entry.options.get(CONF_ROOMS, [])
+            control_entity_roles = {}
+            for room in configured_rooms:
+                demand_entity = room.get(CONF_DEMAND_ENTITY)
+                if demand_entity:
+                    control_entity_roles.setdefault(demand_entity, []).append(
+                        f"room:{room.get('id', 'unknown')}:demand"
+                    )
+            burner_entity = self.entry.options.get(CONF_BOILER_BURNER_ENTITY)
+            if burner_entity:
+                control_entity_roles.setdefault(burner_entity, []).append("boiler:burner")
+            summary["control_event_inventory"] = build_control_event_inventory(
+                history, control_entity_roles
+            )
+            calibration_channels = {
+                "outdoor_temperature": self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY),
+                "solar_radiation": self.entry.options.get(CONF_SOLAR_RADIATION_ENTITY),
+                "attic_temperature": self.entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY),
+                "attic_humidity": self.entry.options.get(CONF_ATTIC_HUMIDITY_ENTITY),
+                "gas_consumption": self.entry.options.get(CONF_GAS_CONSUMPTION_ENTITY),
+                "boiler_power": self.entry.options.get(CONF_ELECTRICITY_BOILER_POWER_ENTITY),
+                "boiler_energy": self.entry.options.get(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY) or self.entry.options.get(CONF_ELECTRICITY_BOILER_ENTITY),
+                "ac_power": self.entry.options.get(CONF_AC_POWER_ENTITY),
+                "ac_energy": self.entry.options.get(CONF_AC_ENERGY_ENTITY),
+                "water_supply_temperature": self.entry.options.get(CONF_WATER_TEMPERATURE_ENTITY),
+                "water_return_temperature": self.entry.options.get(CONF_RETURN_WATER_TEMPERATURE_ENTITY),
+                "water_flow_rate": self.entry.options.get(CONF_WATER_FLOW_RATE_ENTITY),
+                "ground_floor_thermal_output": self.entry.options.get(CONF_GROUND_FLOOR_THERMAL_OUTPUT_ENTITY),
+                "upstairs_thermal_output": self.entry.options.get(CONF_UPSTAIRS_THERMAL_OUTPUT_ENTITY),
+                "boiler_burner": self.entry.options.get(CONF_BOILER_BURNER_ENTITY),
+                "boiler_modulation": self.entry.options.get(CONF_BOILER_MODULATION_ENTITY),
+            }
+            for pump in self.entry.options.get(CONF_PUMPS, []):
+                pump_id = pump.get("id", "pump")
+                calibration_channels[f"pump:{pump_id}:power"] = pump.get("power_entity")
+                calibration_channels[f"pump:{pump_id}:energy"] = pump.get("energy_entity")
+            aligned_dataset = build_recorder_calibration_dataset(
+                history, configured_rooms, calibration_channels, start, now,
+                interval_minutes=30, max_age_minutes=45, include_samples=True,
+            )
+            self._calibration_dataset_samples = aligned_dataset.pop("samples", [])
+            summary["calibration_dataset"] = aligned_dataset
+            summary["room_level_excitation_identifiability"] = build_room_level_excitation_identifiability(
+                self._calibration_dataset_samples, configured_rooms, interval_minutes=30, minimum_mode_intervals=4,
+            )
+            summary["thermal_input_room_response_alignment"] = build_thermal_input_room_response_alignment(
+                self._calibration_dataset_samples, configured_rooms, interval_minutes=30, max_age_minutes=45,
+            )
+            summary["thermal_input_energy_observability"] = build_thermal_input_energy_observability(
+                self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
+            )
+            summary["solar_room_response_analysis"] = build_solar_room_response_analysis(
+                self._calibration_dataset_samples, configured_rooms,
+                interval_minutes=30, max_age_minutes=45,
+                maximum_lag_intervals=4, minimum_pairs=32,
+            )
+            summary["floor_thermal_output_observability"] = build_floor_thermal_output_observability(
+                self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
+            )
+            summary["floor_room_heat_allocation_inference"] = build_floor_room_heat_allocation_inference(
+                self._calibration_dataset_samples, configured_rooms,
+                interval_minutes=30, max_age_minutes=45, minimum_intervals=24,
+            )
+            summary["floor_room_demand_lag_analysis"] = build_floor_room_demand_lag_analysis(
+                self._calibration_dataset_samples, configured_rooms,
+                interval_minutes=30, max_age_minutes=45,
+                maximum_lag_intervals=4, minimum_pairs=20,
+            )
+            summary["water_side_thermal_output"] = build_water_side_thermal_output(
+                self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
+            )
+            summary["ufh_slab_observability"] = build_ufh_slab_observability(
+                self._calibration_dataset_samples, configured_rooms, interval_minutes=30,
+            )
+            summary["multizone_response_identification"] = build_multizone_response_identification(
+                self._calibration_dataset_samples,
+                configured_rooms,
+                interval_minutes=30,
+                train_fraction=0.7,
+                require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
+                require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
+                require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
+                max_age_minutes=45,
+            )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
             ac_unit = (ac_state.attributes.get("unit_of_measurement") or "") if ac_state else ""
             ac_scale = {"kW": 1000.0, "MW": 1_000_000.0, "mW": 0.001}.get(ac_unit.strip(), 1.0)
+            configured_rooms = self.entry.options.get(CONF_ROOMS, [])
             summary["room_response"] = build_recorder_room_response(
-                history,
-                self.entry.options.get(CONF_ROOMS, []),
-                ac_power_entity,
-                ac_scale,
+                history, configured_rooms, ac_power_entity, ac_scale,
+            )
+            outdoor_entity = self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY)
+            summary["preliminary_calibration"] = build_preliminary_room_calibration(
+                history, configured_rooms, outdoor_entity,
+            )
+            summary["held_out_validation"] = build_held_out_room_validation(
+                history, configured_rooms, outdoor_entity,
+            )
+            efficiency = efficiency or {}
+            house_u = _as_float(efficiency.get("heat_loss_u_value_7d"))
+            envelope_area = _as_float(efficiency.get("thermal_model_envelope_area_m2"))
+            house_heat_loss = house_u * envelope_area if house_u and envelope_area else None
+            h_sensitivity = (
+                (efficiency.get("heat_loss_assumption_sensitivity_30d") or {}).get("heat_loss_coefficient_range_w_k")
+                or (efficiency.get("heat_loss_assumption_sensitivity_7d") or {}).get("heat_loss_coefficient_range_w_k")
+            )
+            summary["house_effective_rc_calibration"] = build_house_effective_rc_calibration(
+                history, configured_rooms, outdoor_entity, house_heat_loss,
+                self.entry.options.get(CONF_SOLAR_RADIATION_ENTITY),
+                heat_loss_sensitivity_range_w_k=h_sensitivity,
+            )
+            summary["multizone_physical_calibration_readiness"] = build_multizone_physical_calibration_readiness(
+                self._calibration_dataset_samples,
+                configured_rooms,
+                summary["multizone_response_identification"],
+                summary["thermal_input_energy_observability"],
+                summary["ufh_slab_observability"],
+                summary["water_side_thermal_output"],
+                summary["house_effective_rc_calibration"],
+                summary["floor_thermal_output_observability"],
+                summary["floor_room_heat_allocation_inference"],
+                summary["floor_room_demand_lag_analysis"],
+                summary["solar_room_response_analysis"],
             )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")
@@ -627,24 +757,41 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         result["efficiency"].update(thermal_performance_statistics(self._history, now_local,
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
             float(self.entry.options.get(CONF_ENVELOPE_AREA, 361.26)),
-            float(self.entry.options.get(CONF_AC_HEATING_COP, 3.0))))
+            float(self.entry.options.get(CONF_AC_HEATING_COP, 3.0)),
+            float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55))))
         weather_model = weather_normalised_efficiency(
             self._history.get("efficiency_daily", {}),
             local_date,
         )
         result["efficiency"]["weather_normalised"] = weather_model
         result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
-        result["thermal_model"]["historical_validation"] = await self._async_recorder_history_summary(now)
+        result["thermal_model"]["historical_validation"] = await self._async_recorder_history_summary(now, result["efficiency"])
+        house_profile = dict(self.entry.options.get("house_assessment", {}))
+        house_profile["house_effective_rc_calibration"] = (
+            result["thermal_model"]["historical_validation"].get("house_effective_rc_calibration", {})
+        )
         result["thermal_model"]["multi_zone"] = build_multizone_observation_model(
             result["rooms"],
             result["weather"],
             result["attic_thermal"],
-            self.entry.options.get("house_assessment", {}),
+            house_profile,
             {
                 "water_temperature": result.get("water_temperature"),
                 "water_return_temperature": result.get("water_return_temperature"),
                 "boiler_context": result.get("boiler_context", {}),
                 "pumps": result.get("pumps", {}),
+                "ufh_slab_observability": (
+                    result["thermal_model"]["historical_validation"].get("ufh_slab_observability", {})
+                ),
+                # This 7-day measured-performance coefficient is the aggregate
+                # indoor/outdoor loss boundary, including ventilation.
+                "house_heat_loss_coefficient_w_k": (
+                    _as_float(result["efficiency"].get("heat_loss_u_value_7d"))
+                    * _as_float(result["efficiency"].get("thermal_model_envelope_area_m2"))
+                    if _as_float(result["efficiency"].get("heat_loss_u_value_7d")) is not None
+                    and _as_float(result["efficiency"].get("thermal_model_envelope_area_m2")) is not None
+                    else None
+                ),
             },
         )
         result["thermal_model"]["ac_heating_filter"] = (

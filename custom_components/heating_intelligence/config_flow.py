@@ -11,6 +11,8 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_CALIBRATION_HISTORY_DAYS,
+    DEFAULT_CALIBRATION_HISTORY_DAYS,
     CONF_COMFORT_TARGET_C,
     CONF_FLOOR,
     CONF_AREA,
@@ -48,6 +50,9 @@ from .const import (
     CONF_TEMPERATURE_ENTITY,
     CONF_WATER_TEMPERATURE_ENTITY,
     CONF_RETURN_WATER_TEMPERATURE_ENTITY,
+    CONF_WATER_FLOW_RATE_ENTITY,
+    CONF_GROUND_FLOOR_THERMAL_OUTPUT_ENTITY,
+    CONF_UPSTAIRS_THERMAL_OUTPUT_ENTITY,
     CONF_WINDOW_ENTITY,
     CONF_HUMIDITY_ENTITY,
     CONF_CO2_ENTITY,
@@ -165,6 +170,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         entity_options = (
             CONF_WATER_TEMPERATURE_ENTITY,
             CONF_RETURN_WATER_TEMPERATURE_ENTITY,
+            CONF_WATER_FLOW_RATE_ENTITY,
+            CONF_GROUND_FLOOR_THERMAL_OUTPUT_ENTITY,
+            CONF_UPSTAIRS_THERMAL_OUTPUT_ENTITY,
             CONF_OUTDOOR_TEMPERATURE_ENTITY,
             CONF_SOLAR_RADIATION_ENTITY,
             CONF_WIND_SPEED_ENTITY,
@@ -210,6 +218,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             data[CONF_BOILER_EFFICIENCY] = float(user_input.get(CONF_BOILER_EFFICIENCY) or 0.90)
             data[CONF_ENVELOPE_AREA] = float(user_input.get(CONF_ENVELOPE_AREA) or 361.26)
             data[CONF_AC_HEATING_COP] = float(user_input.get(CONF_AC_HEATING_COP) or 3.0)
+            data[CONF_CALIBRATION_HISTORY_DAYS] = int(user_input.get(CONF_CALIBRATION_HISTORY_DAYS) or self.config_entry.options.get(CONF_CALIBRATION_HISTORY_DAYS, DEFAULT_CALIBRATION_HISTORY_DAYS))
             return self.async_create_entry(title="", data=data)
 
         current = self.config_entry.options
@@ -225,6 +234,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             for key in (
                 CONF_WATER_TEMPERATURE_ENTITY,
                 CONF_RETURN_WATER_TEMPERATURE_ENTITY,
+                CONF_WATER_FLOW_RATE_ENTITY,
+                CONF_GROUND_FLOOR_THERMAL_OUTPUT_ENTITY,
+                CONF_UPSTAIRS_THERMAL_OUTPUT_ENTITY,
                 CONF_OUTDOOR_TEMPERATURE_ENTITY,
                 CONF_SOLAR_RADIATION_ENTITY,
                 CONF_WIND_SPEED_ENTITY,
@@ -264,6 +276,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 selector.NumberSelector(selector.NumberSelectorConfig(min=10, max=2000, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional(CONF_AC_HEATING_COP, default=current.get(CONF_AC_HEATING_COP, 3.0)):
                 selector.NumberSelector(selector.NumberSelectorConfig(min=1.0, max=8.0, step=0.1, mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional(CONF_CALIBRATION_HISTORY_DAYS, default=current.get(CONF_CALIBRATION_HISTORY_DAYS, DEFAULT_CALIBRATION_HISTORY_DAYS)):
+                selector.NumberSelector(selector.NumberSelectorConfig(min=7, max=365, step=1, unit_of_measurement="days", mode=selector.NumberSelectorMode.BOX)),
         })
         return self.async_show_form(step_id="global_settings", data_schema=schema)
 

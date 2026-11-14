@@ -76,12 +76,30 @@ infiltration remains unknown rather than silently assigned a default.
 
 ## Implementation stages
 
-- Stage 1: pure RC network solver and numerical tests (this initial branch).
-- Stage 2: configurable zone topology and mapping of existing HA sensors.
-- Stage 3: parameter estimation, data-quality checks and confidence reporting.
-- Stage 4: overview entities and Lovelace visualization, with explicit
-  measured / inferred / unavailable labels.
+- Stage 1: pure RC network solver and numerical tests (implemented).
+- Stage 2: observation mapping for configured rooms, CO2/humidity/ACH,
+  outdoor weather, attic, UFH floor context and boiler/pump telemetry
+  (initial implementation; physical connections remain incomplete).
+- Stage 3: parameter estimation, data-quality checks and confidence reporting
+  (in progress; no calibrated parameters are claimed yet).
+- Stage 4: overview entity exposure and initial Lovelace status/coverage view
+  (in progress; detailed network visualization remains outstanding).
 - Stage 5: validation against real operating history and documentation.
+
+## Current implementation boundary
+
+The coordinator now publishes a multi-zone observation inventory under
+`thermal_model.multi_zone`. It includes room-air observations, an attic node
+when configured, an outdoor boundary, floor-level UFH context, and a heating
+plant telemetry summary. A roof conductance is exposed only when both roof
+U-value and roof area are explicitly configured. The attic-floor path is
+retained as pending until it can be coupled to an upstairs thermal zone.
+
+UFH slab temperature/capacity and plant thermal output are intentionally
+unavailable: room-air temperature, screed thickness, water temperatures and
+pump electrical power alone do not identify those quantities. The dashboard
+shows this readiness state and the missing parameter lists. The RC solver is
+not yet run against this incomplete inventory.
 
 ## Safety and interpretation
 

@@ -8,6 +8,8 @@ A read-only Home Assistant custom integration for analysing underfloor-heating b
 
 ## Current scope (0.14.0 development)
 
+- Add an editable, optional multi-step house assessment covering envelope construction, glazing/orientation/shading, heating plant and thermal mass, ventilation, occupancy and internal gains. Known values are prefilled; unknown values remain optional. Assessment is exposed in the overview attributes for model transparency.
+
 - Configure an optional relative-humidity sensor per room and an optional CO2 sensor using an explicit enable checkbox followed by sensor selection.
 - Expose live room humidity (%) and CO2 (ppm) sensors and interpret indicative humidity and CO2 bands in the room detail card. These are ventilation/comfort indicators, not health or mould-risk diagnoses.
 

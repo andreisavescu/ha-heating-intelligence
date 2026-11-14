@@ -115,11 +115,11 @@ def simulate_thermal_step(
             if source not in fixed:
                 net_w[source] -= flow_w
             else:
-                boundary_heat_exchange_wh -= flow_w * dt_hours
+                boundary_heat_exchange_wh += flow_w * dt_hours
             if target not in fixed:
                 net_w[target] += flow_w
             else:
-                boundary_heat_exchange_wh += flow_w * dt_hours
+                boundary_heat_exchange_wh -= flow_w * dt_hours
         for node_id, capacity in capacities.items():
             temperatures[node_id] += net_w[node_id] * dt_hours / capacity
 

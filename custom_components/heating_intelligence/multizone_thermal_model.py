@@ -350,9 +350,11 @@ def build_multizone_observation_model(
         and (_finite_or_none(room.get("air_changes_per_hour")) or 0) > 0
     )
     ventilation_coverage_complete = bool(room_count) and rooms_with_volume_and_ach == room_count
-    house_heat_loss = _finite_or_none(
-        (profile.get("house_effective_rc_calibration") or {}).get("heat_loss_coefficient_w_k")
-    )
+    house_heat_loss = _finite_or_none(plant.get("house_heat_loss_coefficient_w_k"))
+    if house_heat_loss is None:
+        house_heat_loss = _finite_or_none(
+            (profile.get("house_effective_rc_calibration") or {}).get("heat_loss_coefficient_w_k")
+        )
     if house_heat_loss is None:
         house_heat_loss = _finite_or_none(profile.get("house_heat_loss_coefficient_w_k"))
     envelope_decomposition = {

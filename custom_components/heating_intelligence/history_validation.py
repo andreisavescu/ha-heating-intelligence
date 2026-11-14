@@ -3674,6 +3674,7 @@ def build_multizone_physical_calibration_readiness(
     floor_thermal_output: dict[str, Any] | None = None,
     floor_room_allocation_inference: dict[str, Any] | None = None,
     floor_room_demand_lag_analysis: dict[str, Any] | None = None,
+    solar_room_response_analysis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarise which absolute multi-zone parameters are evidenced vs blocked.
 
@@ -3689,6 +3690,7 @@ def build_multizone_physical_calibration_readiness(
     floor_thermal_output = floor_thermal_output or {}
     floor_room_allocation_inference = floor_room_allocation_inference or {}
     floor_room_demand_lag_analysis = floor_room_demand_lag_analysis or {}
+    solar_room_response_analysis = solar_room_response_analysis or {}
     aggregate_capacity = _finite_number_or_none(
         aggregate_capacity_calibration.get("effective_building_thermal_capacity_wh_per_k")
     )
@@ -3891,6 +3893,18 @@ def build_multizone_physical_calibration_readiness(
             ],
             "physical_room_allocation_identified": False,
             "interpretation": "Demand-to-floor-output lag scans are descriptive timing evidence, not measured room heat delivery or slab capacity.",
+        },
+        "solar_room_response_evidence": {
+            "status": solar_room_response_analysis.get("status", "not_available"),
+            "rooms_with_repeatable_association": list(
+                solar_room_response_analysis.get("rooms_with_repeatable_association") or []
+            ),
+            "solar_gain_w_identified": False,
+            "physical_room_parameters_identified": False,
+            "interpretation": (
+                "Solar/room-temperature associations are adjusted observational timing evidence; "
+                "they do not identify transmitted solar watts, glazing gain coefficients or room RC parameters."
+            ),
         },
         "measured_floor_thermal_output": {
             "status": floor_thermal_output.get("status", "not_available"),

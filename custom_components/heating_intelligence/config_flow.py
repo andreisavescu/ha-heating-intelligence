@@ -166,6 +166,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         entity_options = (
             CONF_WATER_TEMPERATURE_ENTITY,
             CONF_RETURN_WATER_TEMPERATURE_ENTITY,
+            CONF_WATER_FLOW_RATE_ENTITY,
             CONF_OUTDOOR_TEMPERATURE_ENTITY,
             CONF_SOLAR_RADIATION_ENTITY,
             CONF_WIND_SPEED_ENTITY,

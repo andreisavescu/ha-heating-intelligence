@@ -153,3 +153,19 @@ seven-day window should fit; if entities are excluded from Recorder or
 history retention is shorter, coverage will be incomplete. This stage is
 data-readiness assessment, not yet a claim that the RC parameters have been
 calibrated or independently validated.
+
+
+### Historical room-response comparison
+
+The same Recorder query also computes a separate historical heating/coasting
+temperature slope per configured room. It aligns room temperature changes with
+the most recent recorded demand and window states, accepts only known demand
+modes and confirmed closed windows, and excludes AC-active periods when an AC
+power sensor is configured. The AC power threshold is 50 W after converting
+the sensor's configured unit.
+
+These Recorder-derived rates are shown separately from the integration's
+rolling in-memory learner. They provide an independent comparison and data
+quality signal; they are not used as thermal capacities, envelope conductances
+or a claim of calibrated multi-zone simulation. Each mode needs at least six
+valid intervals before a rate is exposed.

@@ -53,10 +53,6 @@
         "title": "Select room",
         "description": "Choose the room whose floor area you want to configure."
       },
-      "add_room_co2": {
-        "title": "Add room CO2 sensor",
-        "description": "Select the CO2 sensor for {room_name}."
-      },
       "set_room_area": {
         "title": "Room floor area",
         "description": "Set the floor area for {room_name}. Leave empty if unknown.",

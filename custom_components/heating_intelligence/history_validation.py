@@ -1186,6 +1186,185 @@ def build_floor_room_heat_allocation_inference(
 
 
 
+
+def build_floor_room_demand_lag_analysis(
+    samples: list[dict[str, Any]],
+    rooms: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    max_age_minutes: float = 45.0,
+    maximum_lag_intervals: int = 4,
+    minimum_pairs: int = 20,
+) -> dict[str, Any]:
+    """Scan demand-to-floor-output timing as descriptive evidence, not heat allocation.
+
+    Each room's demand is compared with measured floor output at delays from zero
+    to the configured maximum. Correlations are selected on the early timeline
+    and checked, unchanged, on the later holdout. This does not identify room
+    heat delivery: common plant control, hydraulic coupling and stored slab heat
+    remain potential confounders.
+    """
+    if interval_minutes <= 0 or max_age_minutes < 0:
+        raise ValueError("Invalid floor demand lag analysis thresholds")
+    if maximum_lag_intervals < 0 or maximum_lag_intervals > 12 or minimum_pairs < 8:
+        raise ValueError("Invalid floor demand lag analysis limits")
+
+    parsed = []
+    for sample in samples:
+        try:
+            stamp = datetime.fromisoformat(str(sample.get("timestamp", "")).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            parsed.append((stamp.astimezone(timezone.utc), sample))
+        except (TypeError, ValueError):
+            continue
+    parsed.sort(key=lambda item: item[0])
+
+    def correlation(xs, ys):
+        if len(xs) < 3:
+            return None
+        x_mean, y_mean = sum(xs) / len(xs), sum(ys) / len(ys)
+        x_var = sum((value - x_mean) ** 2 for value in xs)
+        y_var = sum((value - y_mean) ** 2 for value in ys)
+        if x_var <= 1e-9 or y_var <= 1e-9:
+            return None
+        return sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, ys)) / math.sqrt(x_var * y_var)
+
+    floors = {}
+    for floor_id, output_key in (
+        ("ground_floor", "ground_floor_thermal_output"),
+        ("upstairs", "upstairs_thermal_output"),
+    ):
+        floor_rooms = [
+            str(room.get("id", "unknown")) for room in rooms
+            if room.get("floor", "ground_floor") == floor_id
+        ]
+        if not floor_rooms:
+            floors[floor_id] = {"status": "no_rooms_configured", "rooms": {}}
+            continue
+
+        timeline = []
+        excluded = {"invalid_output": 0, "stale_output": 0, "unsupported_output_unit": 0,
+                    "invalid_or_stale_room_demand": 0}
+        for stamp, sample in parsed:
+            channels = sample.get("channels") or {}
+            raw_output = _finite_number_or_none(channels.get(output_key))
+            output_age = _finite_number_or_none(channels.get(output_key + "_age_minutes"))
+            unit = str(channels.get(output_key + "_unit") or "").strip().lower()
+            if raw_output is None or raw_output < 0:
+                output_w = None
+                excluded["invalid_output"] += 1
+            elif output_age is not None and output_age > max_age_minutes:
+                output_w = None
+                excluded["stale_output"] += 1
+            elif unit in ("w", "watt", "watts"):
+                output_w = raw_output
+            elif unit in ("kw", "kilowatt", "kilowatts"):
+                output_w = raw_output * 1000
+            else:
+                output_w = None
+                excluded["unsupported_output_unit"] += 1
+
+            room_states = {}
+            observed_rooms = sample.get("rooms") or {}
+            for room_id in floor_rooms:
+                room_data = observed_rooms.get(room_id, {})
+                demand = _switch_state(room_data.get("demand"))
+                age = _finite_number_or_none(room_data.get("demand_age_minutes"))
+                if demand is None or (age is not None and age > max_age_minutes):
+                    room_states[room_id] = None
+                    excluded["invalid_or_stale_room_demand"] += 1
+                else:
+                    room_states[room_id] = float(demand)
+            timeline.append((stamp, output_w, room_states))
+
+        room_results = {}
+        for room_id in floor_rooms:
+            lag_results = []
+            for lag in range(maximum_lag_intervals + 1):
+                pairs = []
+                for index in range(lag, len(timeline)):
+                    source_stamp, _, source_rooms = timeline[index - lag]
+                    target_stamp, output_w, _ = timeline[index]
+                    expected_minutes = lag * interval_minutes
+                    actual_minutes = (target_stamp - source_stamp).total_seconds() / 60
+                    if abs(actual_minutes - expected_minutes) > 1:
+                        continue
+                    demand = source_rooms.get(room_id)
+                    if demand is None or output_w is None:
+                        continue
+                    pairs.append((demand, output_w, target_stamp))
+                split = int(len(pairs) * 0.7)
+                training, holdout = pairs[:split], pairs[split:]
+                train_r = correlation([item[0] for item in training], [item[1] for item in training])
+                holdout_r = correlation([item[0] for item in holdout], [item[1] for item in holdout])
+                lag_results.append({
+                    "lag_intervals": lag,
+                    "lag_minutes": lag * interval_minutes,
+                    "paired_intervals": len(pairs),
+                    "training_intervals": len(training),
+                    "holdout_intervals": len(holdout),
+                    "training_pearson_r": round(train_r, 4) if train_r is not None else None,
+                    "holdout_pearson_r": round(holdout_r, 4) if holdout_r is not None else None,
+                    "holdout_same_direction": (
+                        train_r is not None and holdout_r is not None and train_r * holdout_r > 0
+                    ),
+                })
+
+            eligible = [
+                item for item in lag_results
+                if item["paired_intervals"] >= minimum_pairs
+                and item["training_pearson_r"] is not None
+                and item["holdout_pearson_r"] is not None
+            ]
+            eligible.sort(key=lambda item: abs(item["training_pearson_r"]), reverse=True)
+            selected = eligible[0] if eligible else None
+            if selected is None:
+                status = "insufficient_or_constant_demand_output_pairs"
+                ambiguous = None
+            else:
+                runner_up = eligible[1] if len(eligible) > 1 else None
+                ambiguous = bool(
+                    runner_up
+                    and abs(selected["training_pearson_r"]) - abs(runner_up["training_pearson_r"]) <= 0.05
+                )
+                stable = selected["holdout_same_direction"]
+                status = (
+                    "descriptive_lag_association_repeatable"
+                    if stable and not ambiguous
+                    else "lag_association_unstable_or_ambiguous"
+                )
+            room_results[room_id] = {
+                "status": status,
+                "selected_training_lag_minutes": selected["lag_minutes"] if selected else None,
+                "selected_training_pearson_r": selected["training_pearson_r"] if selected else None,
+                "selected_holdout_pearson_r": selected["holdout_pearson_r"] if selected else None,
+                "neighbouring_lag_peak_ambiguous": ambiguous,
+                "lag_scan": lag_results,
+                "interpretation": (
+                    "Timing association only. The selected lag is not a measured UFH slab time constant "
+                    "or room heat-delivery delay; room demand is not a heat meter."
+                ),
+            }
+        repeatable = sum(item["status"] == "descriptive_lag_association_repeatable"
+                         for item in room_results.values())
+        floors[floor_id] = {
+            "status": "descriptive_room_demand_lag_evidence_available" if repeatable else "no_repeatable_room_demand_lag_evidence",
+            "rooms": room_results,
+            "excluded_samples": excluded,
+            "maximum_lag_minutes": maximum_lag_intervals * interval_minutes,
+            "physical_room_allocation_identified": False,
+        }
+    return {
+        "status": "descriptive_lag_evidence_available" if any(
+            item.get("status") == "descriptive_room_demand_lag_evidence_available"
+            for item in floors.values()
+        ) else "no_repeatable_room_demand_lag_evidence",
+        "floors": floors,
+        "physical_room_allocation_identified": False,
+        "note": "Lag scans are descriptive timing evidence only; they do not measure room-level heat output or identify slab thermal capacity.",
+    }
+
+
 def build_water_side_thermal_output(
     samples: list[dict[str, Any]],
     interval_minutes: int = 30,

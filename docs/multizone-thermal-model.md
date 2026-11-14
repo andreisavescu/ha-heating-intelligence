@@ -102,8 +102,11 @@ retained as pending until it can be coupled to an upstairs thermal zone.
 UFH slab temperature/capacity and plant thermal output are intentionally
 unavailable: room-air temperature, screed thickness, water temperatures and
 pump electrical power alone do not identify those quantities. The dashboard
-shows this readiness state and the missing parameter lists. The RC solver is
-not yet run against this incomplete inventory.
+shows this readiness state and the missing parameter lists. Solar radiation,
+window areas by orientation, glazing/shading descriptions and internal-gain
+classification are exposed as context only; no solar or occupancy heat watts
+are invented without the missing calibrated inputs. The RC solver is not yet
+run against this incomplete inventory.
 
 ## Safety and interpretation
 

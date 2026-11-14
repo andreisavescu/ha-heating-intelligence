@@ -2168,3 +2168,39 @@ def test_physical_readiness_room_coverage_counts_only_fresh_sensor_states():
     assert result["rooms"]["living"]["temperature_samples"] == 2
     assert result["rooms"]["living"]["temperature_and_state_samples"] == 1
 
+def test_multizone_identification_converts_ac_power_units_before_heating_filter():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    def make_samples(value, unit):
+        return [{
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0 + math.sin(index / 7.0),
+                "solar_radiation": 0.0,
+                "ac_power": value,
+                "ac_power_unit": unit,
+                "ac_power_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {"temperature": 21.0 - index * 0.01, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": 20.0 - index * 0.008, "demand": "off", "window": "off"},
+            },
+        } for index in range(40)]
+    active = MODULE.build_multizone_response_identification(
+        make_samples(0.1, "kW"),
+        [{"id": "living"}, {"id": "bedroom"}],
+        require_ac_power=True,
+    )
+    idle = MODULE.build_multizone_response_identification(
+        make_samples(0.02, "kW"),
+        [{"id": "living"}, {"id": "bedroom"}],
+        require_ac_power=True,
+    )
+    unsupported = MODULE.build_multizone_response_identification(
+        make_samples(0.0, "kWh"),
+        [{"id": "living"}, {"id": "bedroom"}],
+        require_ac_power=True,
+    )
+    assert active["rooms"]["living"]["excluded_intervals"]["ac_heating_active_or_unavailable"] > 0
+    assert idle["rooms"]["living"]["excluded_intervals"]["ac_heating_active_or_unavailable"] == 0
+    assert unsupported["rooms"]["living"]["excluded_intervals"]["unsupported_ac_power_unit"] > 0
+

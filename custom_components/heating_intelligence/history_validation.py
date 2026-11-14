@@ -1927,6 +1927,117 @@ def _symmetric_matrix_eigenvalues(matrix: list[list[float]]) -> list[float]:
     return [values[index][index] for index in range(size)]
 
 
+def _multizone_holdout_diagnostics(
+    holdout: list[tuple[datetime, list[float], float]],
+    physical: list[float],
+    intercept: float,
+    interval_minutes: int,
+    minimum_resamples: int = 20,
+    replicates: int = 80,
+) -> dict[str, Any]:
+    """Describe chronological holdout residuals and block-resampling sensitivity."""
+    if not holdout:
+        return {
+            "status": "insufficient_holdout",
+            "interval_count": 0,
+            "mean_bias_c": None,
+            "residual_standard_deviation_c": None,
+            "lag_one_residual_correlation": None,
+            "residual_linear_trend_c_per_day": None,
+            "block_error_sensitivity": None,
+        }
+    residuals = [
+        (intercept + sum(physical[j] * row[1][j] for j in range(len(physical)))
+         - row[2]) * interval_minutes / 60
+        for row in holdout
+    ]
+    count = len(residuals)
+    mean_error = sum(residuals) / count
+    variance = sum((value - mean_error) ** 2 for value in residuals) / count
+    lag_correlation = None
+    if count >= 3:
+        left, right = residuals[:-1], residuals[1:]
+        left_mean, right_mean = sum(left) / len(left), sum(right) / len(right)
+        numerator = sum((a - left_mean) * (b - right_mean) for a, b in zip(left, right))
+        denominator = math.sqrt(
+            sum((a - left_mean) ** 2 for a in left)
+            * sum((b - right_mean) ** 2 for b in right)
+        )
+        if denominator > 1e-12:
+            lag_correlation = numerator / denominator
+    elapsed_days = (
+        (holdout[-1][0] - holdout[0][0]).total_seconds() / 86400
+        if count > 1 else 0.0
+    )
+    trend = None
+    if count >= 3 and elapsed_days > 0:
+        xs = [(row[0] - holdout[0][0]).total_seconds() / 86400 for row in holdout]
+        x_mean = sum(xs) / count
+        denominator = sum((value - x_mean) ** 2 for value in xs)
+        if denominator > 1e-12:
+            trend = sum(
+                (x - x_mean) * (error - mean_error)
+                for x, error in zip(xs, residuals)
+            ) / denominator
+    block_length = min(4, max(1, count // 4))
+    mae_values, rmse_values = [], []
+    requested = replicates if count >= 20 else 0
+    if requested:
+        for replicate in range(requested):
+            selected = []
+            block_number = 0
+            while len(selected) < count:
+                max_start = count - block_length
+                start_index = (replicate * 29 + block_number * 13) % (max_start + 1)
+                selected.extend(residuals[start_index:start_index + block_length])
+                block_number += 1
+            selected = selected[:count]
+            mae_values.append(sum(abs(value) for value in selected) / count)
+            rmse_values.append(math.sqrt(sum(value * value for value in selected) / count))
+    def percentile(values, fraction):
+        ordered = sorted(values)
+        return ordered[int(fraction * (len(ordered) - 1))] if ordered else None
+    sensitivity = None
+    if len(mae_values) >= minimum_resamples:
+        sensitivity = {
+            "method": "deterministic_moving_block_resampling",
+            "block_length_intervals": block_length,
+            "requested_replicates": requested,
+            "successful_replicates": len(mae_values),
+            "mae_5th_50th_95th_c": [
+                round(percentile(mae_values, q), 4) for q in (0.05, 0.5, 0.95)
+            ],
+            "rmse_5th_50th_95th_c": [
+                round(percentile(rmse_values, q), 4) for q in (0.05, 0.5, 0.95)
+            ],
+            "interpretation": "Holdout error sensitivity range, not a confidence interval.",
+        }
+    timestamps = [row[0] for row in holdout]
+    gaps = [
+        (second - first).total_seconds() / 60
+        for first, second in zip(timestamps, timestamps[1:])
+    ]
+    return {
+        "status": "holdout_residuals_available",
+        "interval_count": count,
+        "start": timestamps[0].isoformat(),
+        "end": timestamps[-1].isoformat(),
+        "span_hours": round(elapsed_days * 24, 2),
+        "median_gap_minutes": round(sorted(gaps)[len(gaps) // 2], 2) if gaps else None,
+        "cadence_deviation_intervals": sum(abs(gap - interval_minutes) > 1 for gap in gaps),
+        "mean_bias_c": round(mean_error, 4),
+        "residual_standard_deviation_c": round(math.sqrt(variance), 4),
+        "maximum_absolute_residual_c": round(max(abs(value) for value in residuals), 4),
+        "lag_one_residual_correlation": round(lag_correlation, 4) if lag_correlation is not None else None,
+        "residual_linear_trend_c_per_day": round(trend, 4) if trend is not None else None,
+        "block_error_sensitivity": sensitivity,
+        "note": (
+            "Residual autocorrelation and trend are descriptive diagnostics. Block resampling "
+            "summarises sensitivity of holdout errors and is not a confidence interval."
+        ),
+    }
+
+
 def build_multizone_response_identification(
     samples: list[dict[str, Any]],
     rooms: list[dict[str, Any]],
@@ -2493,6 +2604,12 @@ def build_multizone_response_identification(
                 mae = sum(abs(pred - obs) for pred, obs in zip(errors, holdout_changes)) / len(errors)
                 rmse = math.sqrt(sum((pred - obs) ** 2 for pred, obs in zip(errors, holdout_changes)) / len(errors))
                 baseline_mae = sum(abs(value) for value in holdout_changes) / len(holdout_changes)
+                result["holdout_residual_diagnostics"] = _multizone_holdout_diagnostics(
+                    holdout, physical, intercept, interval_minutes,
+                )
+                result["physical_parameter_identification_status"] = (
+                    "withheld_independent_capacity_and_room_heat_input"
+                )
                 result.update({
                     "status": "holdout_better_than_persistence" if mae < baseline_mae else "holdout_not_better_than_persistence",
                     "normalized_rates_per_hour": {
@@ -2551,6 +2668,16 @@ def build_multizone_response_identification(
         "rooms_validated": len(validated_rooms),
         "configured_rooms": len(room_ids),
         "holdout_room_intervals": holdout_count,
+        "rooms_better_than_persistence": sum(
+            1 for item in validated_rooms if item.get("status") == "holdout_better_than_persistence"
+        ),
+        "rooms_not_better_than_persistence": sum(
+            1 for item in validated_rooms if item.get("status") == "holdout_not_better_than_persistence"
+        ),
+        "holdout_residual_diagnostics_available_rooms": sum(
+            1 for item in validated_rooms
+            if item.get("holdout_residual_diagnostics", {}).get("status") == "holdout_residuals_available"
+        ),
         "weighted_mae_c": round(aggregate_holdout_mae, 4) if aggregate_holdout_mae is not None else None,
         "weighted_rmse_c": round(aggregate_holdout_rmse, 4) if aggregate_holdout_rmse is not None else None,
         "persistence_baseline_weighted_mae_c": round(aggregate_baseline_mae, 4) if aggregate_baseline_mae is not None else None,

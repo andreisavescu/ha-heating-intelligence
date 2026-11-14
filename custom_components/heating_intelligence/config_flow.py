@@ -48,6 +48,7 @@ from .const import (
     CONF_TEMPERATURE_ENTITY,
     CONF_WATER_TEMPERATURE_ENTITY,
     CONF_RETURN_WATER_TEMPERATURE_ENTITY,
+    CONF_WATER_FLOW_RATE_ENTITY,
     CONF_WINDOW_ENTITY,
     CONF_HUMIDITY_ENTITY,
     CONF_CO2_ENTITY,
@@ -225,6 +226,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             for key in (
                 CONF_WATER_TEMPERATURE_ENTITY,
                 CONF_RETURN_WATER_TEMPERATURE_ENTITY,
+                CONF_WATER_FLOW_RATE_ENTITY,
                 CONF_OUTDOOR_TEMPERATURE_ENTITY,
                 CONF_SOLAR_RADIATION_ENTITY,
                 CONF_WIND_SPEED_ENTITY,

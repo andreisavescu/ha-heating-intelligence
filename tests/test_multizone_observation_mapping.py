@@ -115,3 +115,31 @@ def test_empty_boiler_context_does_not_claim_live_plant_telemetry():
         {"boiler_context": {"burner_state": None, "burner_on": None, "modulation_percent": None}},
     )
     assert result["plant"]["status"] == "plant_sensors_unavailable"
+
+
+def test_ventilation_conductance_requires_explicit_room_volume_and_ach():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "measured": {
+                "name": "Measured room",
+                "floor": "ground_floor",
+                "temperature": 20.0,
+                "volume_m3": 100.0,
+                "air_changes_per_hour": 0.5,
+            },
+            "volume_missing": {
+                "name": "No volume",
+                "floor": "upstairs",
+                "temperature": 20.0,
+                "air_changes_per_hour": 0.5,
+            },
+        },
+        {"outdoor_temperature": {"value": 5.0}},
+    )
+    assert len(result["ventilation_paths"]) == 1
+    path = result["ventilation_paths"][0]
+    assert path["from"] == "room:measured"
+    assert path["to"] == "boundary:outdoors"
+    assert path["conductance_w_per_k"] == 16.75
+    assert path["source"] == "configured_room_volume_and_ach"
+    assert result["coverage"]["rooms_with_volume_and_ach"] == 1

@@ -1516,6 +1516,20 @@ def build_ufh_slab_observability(
             if room.get("floor", "ground_floor") == floor_id
         ]
         room_ids = [str(room.get("id", "unknown")) for room in floor_rooms]
+        if not room_ids:
+            results[floor_id] = {
+                "status": "no_rooms_configured",
+                "pump_on_intervals": 0,
+                "pump_off_intervals": 0,
+                "skipped_intervals": 0,
+                "excluded_observations": {},
+                "room_response": {},
+                "slab_temperature_available": False,
+                "thermal_output_w": None,
+                "slab_capacity_wh_per_k": None,
+                "note": "No configured rooms exist on this floor; no room response is calculated.",
+            }
+            continue
         pump_key = f"pump:{floor_id}:power"
         on_rates, off_rates, on_water_delta = [], [], []
         per_room_rates = {room_id: {"pump_on": [], "pump_off": []} for room_id in room_ids}

@@ -28,6 +28,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(WaterTemperatureSensor(coordinator))
     for room in entry.options.get(CONF_ROOMS, []):
         entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
+        if room.get("humidity_entity"):
+            entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "humidity"))
+        if room.get("co2_entity"):
+            entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "co2_ppm"))
         entities.extend(
             RoomAnalyticsSensor(coordinator, room["id"], room["name"], metric)
             for metric in ROOM_ANALYTICS_METRICS
@@ -481,3 +485,28 @@ class PumpDailyCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity
     @property
     def native_value(self):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("daily_cycle_count", 0)
+
+
+class RoomAirQualitySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Live room humidity or CO2 measurement."""
+
+    _attr_should_poll = False
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.metric = metric
+        self._attr_name = f"{room_name} {'Humidity' if metric == 'humidity' else 'CO2'}"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+        self._attr_native_unit_of_measurement = "%" if metric == "humidity" else "ppm"
+        self._attr_icon = "mdi:water-percent" if metric == "humidity" else "mdi:molecule-co2"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get(self.metric)
+
+    @property
+    def extra_state_attributes(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        key = "humidity_status" if self.metric == "humidity" else "co2_status"
+        return {"air_quality_status": room.get(key)}

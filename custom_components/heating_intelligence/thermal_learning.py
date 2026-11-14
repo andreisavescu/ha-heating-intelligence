@@ -31,10 +31,10 @@ def _learn_mode(
             continue
         if cutoff <= stamp <= now.astimezone(timezone.utc):
             external_heating = bool(item.get("external_heating", False)) or (require_external_flag and "external_heating" not in item)
-            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), external_heating))
+            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), external_heating, bool(item.get("window_state_known", False))))
     points.sort(key=lambda point: point[0])
 
-    eligible = [point for point in points if point[2] == demand and not point[3] and not point[4]]
+    eligible = [point for point in points if point[2] == demand and not point[3] and not point[4] and point[5]]
     excluded_external = sum(1 for point in points if point[4])
     rates = []
     for first, second in zip(points, points[1:]):
@@ -43,6 +43,7 @@ def _learn_mode(
             first[2] == demand and second[2] == demand
             and not first[3] and not second[3]
             and not first[4] and not second[4]
+            and first[5] and second[5]
             and MIN_INTERVAL_MINUTES <= minutes <= MAX_INTERVAL_MINUTES
         ):
             rates.append((second[1] - first[1]) / (minutes / 60))
@@ -57,7 +58,7 @@ def _learn_mode(
             "span_hours": round(span, 1),
             "rate_c_per_hour": None,
             "noise_c_per_hour": None,
-            "note": f"Needs at least {MIN_INTERVALS} valid consecutive intervals spanning {MIN_SPAN_HOURS:g} hours.",
+            "note": f"Needs at least {MIN_INTERVALS} valid consecutive intervals spanning {MIN_SPAN_HOURS:g} hours, with a configured and available window contact confirming closed windows.",
         }
     rate = median(rates)
     noise = median([abs(value - rate) for value in rates])
@@ -71,7 +72,7 @@ def _learn_mode(
         "span_hours": round(span, 1),
         "rate_c_per_hour": round(rate, 3),
         "noise_c_per_hour": round(noise, 3),
-        "note": "Median temperature-change rate from consecutive closed-window observations without detected or unclassified AC heating in this mode, learned over a rolling 30-day window.",
+        "note": "Median temperature-change rate from consecutive observations with a configured closed-window contact and no detected or unclassified AC heating in this mode, learned over a rolling 30-day window.",
     }
 
 

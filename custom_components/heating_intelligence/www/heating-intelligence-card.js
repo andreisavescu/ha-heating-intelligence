@@ -169,7 +169,6 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div><span>Valve signature</span><strong>${this._fmt(p.valve_level_w, "W", 1)}</strong></div>
         </div>
         <div class="pump-values">
-        <div class="pump-values">
           <div><span>Power</span><strong>${this._fmt(p.power, "W")}</strong></div>
           <div><span>Energy total</span><strong>${this._fmt(p.energy, "kWh", 2)}</strong></div>
           <div><span>Cycles</span><strong>${p.cycle_count ?? 0}</strong></div>

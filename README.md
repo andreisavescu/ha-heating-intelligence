@@ -13,6 +13,13 @@ A read-only Home Assistant custom integration for analysing underfloor-heating b
 - Rolling self-learning room thermal-response model. It learns separate heating and coasting temperature-change rates only from consecutive, closed-window observations over a rolling 30-day window, reports sample sufficiency and confidence, and produces 1/3/6/12-hour projections when enough data exists. The overview combines these room models with the existing measured whole-house heat-loss estimates.
 - The overview card exposes the house profile, measured thermal-performance status, whole-house air analysis and learned room model. All outputs remain read-only and descriptive; occupancy, solar gains, thermal storage and operating changes can affect observed rates.
 
+### 0.14.0 model interpretation
+
+- House-profile completeness is a count of populated optional fields, not a rating of building quality. Insulation thickness and construction labels are never converted directly into U-values.
+- Whole-house heat-loss estimates retain their explicit assumptions (boiler seasonal efficiency, AC heating COP and configured envelope area) and report the number of valid completed days used.
+- CO2 bands are indicative: below 800 ppm, 800–1199 ppm, 1200–1999 ppm and 2000 ppm or higher. Humidity bands are below 30%, 30–60% and above 60%. Room exceptions remain visible even when the whole-house average is lower.
+- Each thermal mode needs at least six valid consecutive closed-window intervals spanning two hours. The model learns from the rolling last 30 days and reports "learning" rather than inventing a forecast when the evidence is insufficient. Forecasts assume the current demand mode and closed windows continue.
+
 
 ## Current scope (0.14.0)
 

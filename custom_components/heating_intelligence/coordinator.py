@@ -41,6 +41,8 @@ from .const import (
     CONF_WATER_TEMPERATURE_ENTITY,
     CONF_RETURN_WATER_TEMPERATURE_ENTITY,
     CONF_WINDOW_ENTITY,
+    CONF_HUMIDITY_ENTITY,
+    CONF_CO2_ENTITY,
     DOMAIN,
 )
 
@@ -270,6 +272,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             temperature = self.hass.states.get(room[CONF_TEMPERATURE_ENTITY])
             window_id = room.get(CONF_WINDOW_ENTITY)
             window = self.hass.states.get(window_id) if window_id else None
+            humidity_id = room.get(CONF_HUMIDITY_ENTITY)
+            humidity_state = self.hass.states.get(humidity_id) if humidity_id else None
+            co2_id = room.get(CONF_CO2_ENTITY)
+            co2_state = self.hass.states.get(co2_id) if co2_id else None
+            humidity_value = _as_float(humidity_state.state) if humidity_state else None
+            co2_value = _as_float(co2_state.state) if co2_state else None
+            humidity_status = ("low" if humidity_value < 30 else "high" if humidity_value > 60 else "comfortable") if humidity_value is not None else None
+            co2_status = ("good" if co2_value < 800 else "elevated" if co2_value < 1200 else "high" if co2_value < 2000 else "very_high") if co2_value is not None else None
             demand_state = demand.state if demand else None
             demand_active = demand_is_active(demand_state)
             room_history = update_room_history(
@@ -326,6 +336,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 ],
                 "temperature_entity": room[CONF_TEMPERATURE_ENTITY],
                 "temperature": temperature_value,
+                "humidity_entity": humidity_id,
+                "humidity": humidity_value,
+                "humidity_status": humidity_status,
+                "co2_entity": co2_id,
+                "co2_ppm": co2_value,
+                "co2_status": co2_status,
                 "window_entity": window_id,
                 "window_state": window.state if window else None,
                 "window_open": window_open,

@@ -2704,3 +2704,141 @@ def build_multizone_response_identification(
             "can still bias the fit."
         ),
     }
+
+
+def build_multizone_physical_calibration_readiness(
+    samples: list[dict[str, Any]],
+    rooms: list[dict[str, Any]],
+    response_identification: dict[str, Any] | None = None,
+    energy_observability: dict[str, Any] | None = None,
+    ufh_observability: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Summarise which absolute multi-zone parameters are evidenced vs blocked.
+
+    This deliberately separates useful normalized response fits and system-level
+    energy meters from the missing room-level heat allocation and storage evidence.
+    It never promotes pump electrical power or water delta-T to thermal output.
+    """
+    response_identification = response_identification or {}
+    energy_observability = energy_observability or {}
+    ufh_observability = ufh_observability or {}
+    room_ids = [str(room.get("id", "unknown")) for room in rooms]
+    response_rooms = response_identification.get("rooms") or {}
+    energy_meters = energy_observability.get("meters") or {}
+
+    room_coverage = {}
+    for room in rooms:
+        room_id = str(room.get("id", "unknown"))
+        valid_temperatures = 0
+        valid_states = 0
+        for sample in samples:
+            observed = (sample.get("rooms") or {}).get(room_id, {})
+            if _finite_number_or_none(observed.get("temperature")) is not None:
+                valid_temperatures += 1
+            if (
+                _finite_number_or_none(observed.get("temperature")) is not None
+                and _switch_state(observed.get("demand")) is not None
+                and _switch_state(observed.get("window")) is not None
+            ):
+                valid_states += 1
+        fit = response_rooms.get(room_id, {})
+        coefficients = fit.get("normalized_rates_per_hour") or {}
+        bootstrap = fit.get("coefficient_uncertainty") or {}
+        temporal = fit.get("temporal_coefficient_stability") or {}
+        room_coverage[room_id] = {
+            "temperature_samples": valid_temperatures,
+            "temperature_and_state_samples": valid_states,
+            "volume_m3_configured": (
+                _finite_number_or_none(room.get("volume_m3"))
+                if (_finite_number_or_none(room.get("volume_m3")) or 0) > 0 else None
+            ),
+            "ach_configured": (
+                _finite_number_or_none(room.get("air_changes_per_hour"))
+                if (_finite_number_or_none(room.get("air_changes_per_hour")) or 0) > 0 else None
+            ),
+            "normalized_response_fit_status": fit.get("status", "not_available"),
+            "normalized_rates_per_hour": coefficients or None,
+            "holdout_mae_c": fit.get("holdout_mae_c"),
+            "holdout_baseline_mae_c": fit.get("persistence_baseline_mae_c"),
+            "coefficient_resampling_status": (
+                "available" if any(
+                    item.get("stability") in ("relatively_stable", "high_uncertainty")
+                    for item in bootstrap.values()
+                ) else "insufficient_or_unavailable"
+            ),
+            "temporal_stability_status": (
+                "available" if any(
+                    item.get("valid_windows", 0) >= 2 for item in temporal.values()
+                ) else "insufficient_or_unavailable"
+            ),
+            "effective_room_capacity_wh_per_k": None,
+            "room_heat_input_w": None,
+            "absolute_conductance_w_per_k": None,
+            "absolute_parameter_status": "withheld_missing_independent_capacity_and_room_heat_input",
+        }
+
+    measured_energy_channels = [
+        key for key, item in energy_meters.items()
+        if item.get("measured_energy_kwh") is not None
+    ]
+    room_heat_output_channels = [
+        key for key in ("room_heat_output_w", "zone_heat_output_w")
+        if any(
+            _finite_number_or_none((sample.get("channels") or {}).get(key)) is not None
+            for sample in samples
+        )
+    ]
+    water_flow_channels = [
+        key for key in ("water_flow_rate", "water_flow_l_min", "water_flow_m3_h")
+        if any(
+            _finite_number_or_none((sample.get("channels") or {}).get(key)) is not None
+            for sample in samples
+        )
+    ]
+    blockers = []
+    if not measured_energy_channels:
+        blockers.append("no_verified_system_energy_meter")
+    if not water_flow_channels:
+        blockers.append("no_water_flow_measurement_for_water_side_output")
+    if not room_heat_output_channels:
+        blockers.append("no_independent_room_or_zone_heat_output_measurement")
+    blockers.append("no_independent_effective_room_capacity_measurement")
+    blockers.append("no_validated_room_level_heat_allocation")
+    if any(
+        item.get("normalized_rates_per_hour") is None
+        for item in room_coverage.values()
+    ):
+        blockers.append("one_or_more_rooms_lack_identifiable_normalized_response")
+    return {
+        "status": (
+            "normalized_response_evidence_available_absolute_parameters_withheld"
+            if any(item.get("normalized_rates_per_hour") for item in room_coverage.values())
+            else "absolute_parameters_withheld_insufficient_response_evidence"
+        ),
+        "configured_rooms": len(room_ids),
+        "rooms_with_normalized_response_fit": sum(
+            1 for item in room_coverage.values()
+            if item.get("normalized_rates_per_hour")
+        ),
+        "system_energy_meters_with_verified_deltas": measured_energy_channels,
+        "water_flow_measurement_channels": water_flow_channels,
+        "independent_room_heat_output_channels": room_heat_output_channels,
+        "ufh_observability_status": ufh_observability.get("status", "not_available"),
+        "absolute_room_parameters_identified": False,
+        "physical_simulation_ready": False,
+        "blockers": blockers,
+        "rooms": room_coverage,
+        "next_required_evidence": [
+            "Calibrated water flow rate paired with supply and return temperatures, or another independently measured delivered-heat source",
+            "A defensible method to allocate measured plant heat to individual rooms or zones",
+            "Independent effective room thermal capacities, including UFH slab storage where applicable",
+            "Held-out validation against measured thermal output, not only room-temperature persistence",
+        ],
+        "interpretation": (
+            "Normalized G/C coefficients and whole-system gas/AC energy are useful directional evidence, "
+            "but they do not identify absolute W/K conductances or Wh/K capacities. Pump electrical "
+            "consumption and supply-return delta-T without flow are not thermal output. Absolute parameters "
+            "and physical simulation remain withheld."
+        ),
+    }
+

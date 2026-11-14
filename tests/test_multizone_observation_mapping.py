@@ -164,3 +164,47 @@ def test_solar_and_internal_gains_remain_context_without_calibrated_gain_watts()
     assert gains["solar_gain_w"] is None
     assert gains["internal_gain_w"] is None
     assert gains["status"] == "context_only_missing_solar_transmittance_and_orientation_model"
+
+
+
+def test_room_response_is_exposed_as_observation_not_physical_rc_parameter():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "living": {
+                "name": "Living room",
+                "temperature": 21.0,
+                "thermal_model": {
+                    "heating": {
+                        "status": "available",
+                        "rate_c_per_hour": 0.42,
+                        "confidence": 76,
+                        "valid_intervals": 24,
+                    },
+                    "coasting": {
+                        "status": "available",
+                        "rate_c_per_hour": -0.18,
+                        "confidence": 83,
+                        "valid_intervals": 31,
+                    },
+                },
+            }
+        },
+    )
+    evidence = result["nodes"]["room:living"]["thermal_response_evidence"]
+    assert evidence["status"] == "observed_response_available"
+    assert evidence["heating_rate_c_per_hour"] == 0.42
+    assert evidence["coasting_rate_c_per_hour"] == -0.18
+    assert evidence["heating_confidence"] == 76
+    assert evidence["coasting_valid_intervals"] == 31
+    assert result["nodes"]["room:living"]["thermal_capacity_wh_per_k"] is None
+    assert "cannot identify room heat capacity" in evidence["note"]
+
+
+def test_room_response_without_learning_remains_unavailable():
+    result = MODEL.build_multizone_observation_model(
+        {"bedroom": {"temperature": 20.0}},
+    )
+    evidence = result["nodes"]["room:bedroom"]["thermal_response_evidence"]
+    assert evidence["status"] == "not_available"
+    assert evidence["heating_rate_c_per_hour"] is None
+    assert evidence["coasting_rate_c_per_hour"] is None

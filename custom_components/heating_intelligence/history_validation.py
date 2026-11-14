@@ -1234,6 +1234,16 @@ def _partial_correlation_diagnostics(
         (a - mean_x) * (b - mean_y) for a, b in zip(residual_x, residual_y)
     ) / math.sqrt(var_x * var_y)
     condition_proxy = max(orthogonal_norms) / max(min(orthogonal_norms), 1e-12)
+    if condition_proxy > 100.0:
+        return {
+            "status": "ill_conditioned_adjustment_design",
+            "paired_intervals": n,
+            "covariates": names,
+            "partial_pearson_r": None,
+            "design_rank": len(orthogonal),
+            "design_columns": len(columns),
+            "condition_proxy": round(condition_proxy, 3),
+        }
     return {
         "status": "adjusted_association_available",
         "paired_intervals": n,
@@ -1441,6 +1451,17 @@ def build_thermal_input_room_response_alignment(
             })
         valid_lags = [item for item in lag_results if item["paired_intervals"] >= minimum_intervals and item["pearson_r"] is not None]
         best_lag = max(valid_lags, key=lambda item: abs(item["pearson_r"])) if valid_lags else None
+        adjusted_valid_lags = [
+            item for item in lag_results
+            if item["paired_intervals"] >= minimum_intervals
+            and item["confounder_adjustment"]["status"] == "adjusted_association_available"
+            and item["confounder_adjustment"]["covariates"]
+            and item["confounder_adjustment"]["partial_pearson_r"] is not None
+        ]
+        best_adjusted_lag = max(
+            adjusted_valid_lags,
+            key=lambda item: abs(item["confounder_adjustment"]["partial_pearson_r"]),
+        ) if adjusted_valid_lags else None
         ranked_lags = sorted(valid_lags, key=lambda item: abs(item["pearson_r"]), reverse=True)
         lag_peak_status = "insufficient_valid_lags"
         if ranked_lags:
@@ -1479,18 +1500,27 @@ def build_thermal_input_room_response_alignment(
             evidence_status = "withheld_weak_plant_input_excitation"
         elif response_stability != "same_direction_across_history_halves":
             evidence_status = "withheld_non_repeatable_response"
-        elif correlation_uncertainty_status != "interval_excludes_zero":
-            evidence_status = "withheld_uncertain_correlation"
+        elif not adjusted_valid_lags:
+            evidence_status = "withheld_confounder_adjustment_unavailable"
         elif lag_peak_status != "distinct_descriptive_peak":
             evidence_status = "descriptive_lag_ambiguous"
         else:
-            evidence_status = "repeatable_descriptive_association_only"
+            evidence_status = "repeatable_adjusted_descriptive_association_only"
         results[key] = {
             "status": "lagged_input_response_pairs_available" if valid_lags else "insufficient_verified_input_response_pairs",
             "evidence_status": evidence_status,
             "plant_input_excitation_status": "sufficient_variation_for_association_screen" if enough_input_excitation else "weak_or_flat_input_variation",
             "response_stability_status": response_stability,
             "correlation_uncertainty_status": correlation_uncertainty_status,
+            "confounder_adjusted_lag_count": len(adjusted_valid_lags),
+            "strongest_adjusted_lag_minutes": best_adjusted_lag["lag_minutes"] if best_adjusted_lag else None,
+            "strongest_adjusted_partial_pearson_r": (
+                best_adjusted_lag["confounder_adjustment"]["partial_pearson_r"]
+                if best_adjusted_lag else None
+            ),
+            "confounder_adjustment_status": (
+                "available" if adjusted_valid_lags else "withheld_no_well_conditioned_covariate_model"
+            ),
             "lag_peak_status": lag_peak_status,
             "paired_intervals_at_zero_lag": lag_results[0]["paired_intervals"],
             "lag_scan": lag_results,

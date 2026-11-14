@@ -4141,13 +4141,14 @@ def build_control_event_inventory(
         off_durations: list[float] = []
         transitions = 0
         interrupted_on_intervals = 0
+        complete_cycles = 0
         previous_state: bool | None = None
         previous_stamp: datetime | None = None
         active_since: datetime | None = None
         inactive_since: datetime | None = None
         continuity_broken = True
         for stamp, raw in points:
-                current = _switch_state(raw)
+            current = _switch_state(raw)
             if current is None:
                 counts["unknown"] += 1
                 if previous_state is True or active_since is not None:

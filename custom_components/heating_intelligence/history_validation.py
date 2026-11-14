@@ -1233,6 +1233,7 @@ def _partial_correlation_diagnostics(
     correlation = sum(
         (a - mean_x) * (b - mean_y) for a, b in zip(residual_x, residual_y)
     ) / math.sqrt(var_x * var_y)
+    residual_diagnostics = _pearson_diagnostics(residual_x, residual_y)
     condition_proxy = max(orthogonal_norms) / max(min(orthogonal_norms), 1e-12)
     if condition_proxy > 100.0:
         return {
@@ -1243,6 +1244,7 @@ def _partial_correlation_diagnostics(
             "design_rank": len(orthogonal),
             "design_columns": len(columns),
             "condition_proxy": round(condition_proxy, 3),
+            "confidence_interval_95": residual_diagnostics["confidence_interval_95"],
         }
     return {
         "status": "adjusted_association_available",
@@ -1252,6 +1254,8 @@ def _partial_correlation_diagnostics(
         "design_rank": len(orthogonal),
         "design_columns": len(columns),
         "condition_proxy": round(condition_proxy, 3),
+        "confidence_interval_95": residual_diagnostics["confidence_interval_95"],
+        "confidence_interval_method": "nominal_fisher_z_on_residuals_independent_pairs",
     }
 
 
@@ -1502,6 +1506,14 @@ def build_thermal_input_room_response_alignment(
             evidence_status = "withheld_non_repeatable_response"
         elif not adjusted_valid_lags:
             evidence_status = "withheld_confounder_adjustment_unavailable"
+        elif not (
+            best_adjusted_lag["confounder_adjustment"]["confidence_interval_95"] is not None
+            and (
+                best_adjusted_lag["confounder_adjustment"]["confidence_interval_95"][0] > 0
+                or best_adjusted_lag["confounder_adjustment"]["confidence_interval_95"][1] < 0
+            )
+        ):
+            evidence_status = "withheld_uncertain_adjusted_correlation"
         elif lag_peak_status != "distinct_descriptive_peak":
             evidence_status = "descriptive_lag_ambiguous"
         else:

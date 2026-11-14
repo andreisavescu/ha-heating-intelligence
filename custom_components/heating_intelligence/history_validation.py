@@ -873,6 +873,90 @@ def build_recorder_calibration_dataset(
 
 
 
+
+def build_floor_thermal_output_observability(
+    samples: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    max_age_minutes: int = 45,
+) -> dict[str, Any]:
+    """Summarise independently metered thermal output for each hydronic floor.
+
+    These inputs must be thermal-output sensors (W/kW), not pump electrical
+    consumption. Floor totals still do not identify delivery to individual rooms.
+    """
+    if interval_minutes <= 0 or max_age_minutes < 0:
+        raise ValueError("Invalid floor thermal-output sampling thresholds")
+    floors = {}
+    for floor_id, channel in (
+        ("ground_floor", "ground_floor_thermal_output"),
+        ("upstairs", "upstairs_thermal_output"),
+    ):
+        valid = []
+        excluded = {"missing_or_stale": 0, "unsupported_unit": 0, "negative_output": 0}
+        for sample in samples:
+            channels = sample.get("channels") or {}
+            value = _finite_number_or_none(channels.get(channel))
+            age = _finite_number_or_none(channels.get(channel + "_age_minutes"))
+            unit = str(channels.get(channel + "_unit") or "").strip().lower()
+            if value is None or (age is not None and age > max_age_minutes):
+                excluded["missing_or_stale"] += 1
+                continue
+            if unit in ("w", "watt", "watts"):
+                watts = value
+            elif unit in ("kw", "kilowatt", "kilowatts"):
+                watts = value * 1000.0
+            else:
+                excluded["unsupported_unit"] += 1
+                continue
+            if watts < 0:
+                excluded["negative_output"] += 1
+                continue
+            try:
+                stamp = datetime.fromisoformat(str(sample.get("timestamp")).replace("Z", "+00:00"))
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone.utc)
+                valid.append((stamp, watts))
+            except (TypeError, ValueError):
+                excluded["missing_or_stale"] += 1
+        valid.sort(key=lambda item: item[0])
+        integrated_wh = 0.0
+        intervals = 0
+        for previous, current in zip(valid, valid[1:]):
+            elapsed = (current[0] - previous[0]).total_seconds() / 60
+            if abs(elapsed - interval_minutes) <= 2:
+                integrated_wh += (previous[1] + current[1]) / 2 * elapsed / 60
+                intervals += 1
+        values = sorted(value for _, value in valid)
+        median = (
+            (values[(len(values) - 1) // 2] + values[len(values) // 2]) / 2
+            if values else None
+        )
+        floors[floor_id] = {
+            "status": "floor_thermal_output_available" if valid else "withheld_no_valid_floor_thermal_output",
+            "source_channel": channel,
+            "valid_samples": len(valid),
+            "median_thermal_output_w": round(median, 1) if median is not None else None,
+            "integrated_valid_intervals": intervals,
+            "integrated_thermal_energy_kwh": round(integrated_wh / 1000, 4) if intervals else None,
+            "excluded_samples": excluded,
+            "room_heat_allocation_w": None,
+            "scope": "measured_floor_total_not_room_level_delivery",
+        }
+    available = [floor for floor in floors.values() if floor["valid_samples"] > 0]
+    return {
+        "status": "floor_thermal_output_available" if available else "withheld_no_floor_thermal_output_sensors",
+        "floors": floors,
+        "independent_floor_totals_available": len(available) == 2,
+        "room_level_delivery_identified": False,
+        "note": (
+            "Only explicitly configured thermal-output power sensors in W or kW are accepted. "
+            "Pump electrical power is not thermal output. Floor totals do not establish how heat "
+            "is divided among rooms on that floor."
+        ),
+    }
+
+
+
 def build_water_side_thermal_output(
     samples: list[dict[str, Any]],
     interval_minutes: int = 30,

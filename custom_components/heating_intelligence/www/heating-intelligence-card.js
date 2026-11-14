@@ -337,6 +337,19 @@ class HeatingIntelligenceCard extends HTMLElement {
             }).join("") || '<p class="subtle">The model starts learning from retained room-temperature history.</p>'}
           </div>
           <div class="subtle">${this._esc(attrs.thermal_model?.interpretation || "")}</div>
+          <div class="subsection-title">Multi-zone physical model</div>
+          <div class="overview">
+            <div class="metric"><span>Observation mapping</span><strong>${this._esc(attrs.thermal_model?.multi_zone?.status || "Waiting")}</strong></div>
+            <div class="metric"><span>Simulation</span><strong>${this._esc(attrs.thermal_model?.multi_zone?.simulation_status || "Not available")}</strong></div>
+            <div class="metric"><span>Room temperature coverage</span><strong>${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_temperature ?? 0} / ${attrs.thermal_model?.multi_zone?.coverage?.configured_rooms ?? 0}</strong></div>
+            <div class="metric"><span>CO₂ / humidity / ACH</span><strong>${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_co2 ?? 0} / ${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_humidity ?? 0} / ${attrs.thermal_model?.multi_zone?.coverage?.rooms_with_ach ?? 0} rooms</strong></div>
+            <div class="metric"><span>UFH floor observations</span><strong>${attrs.thermal_model?.multi_zone?.coverage?.ufh_floor_nodes ?? 0}</strong></div>
+            <div class="metric"><span>Water supply / return</span><strong>${this._fmt(attrs.thermal_model?.multi_zone?.plant?.supply_water_temperature_c)} / ${this._fmt(attrs.thermal_model?.multi_zone?.plant?.return_water_temperature_c)}</strong></div>
+          </div>
+          <div class="subtle">Thermal capacities awaiting identification: ${(attrs.thermal_model?.multi_zone?.missing_parameters?.thermal_capacities || []).map(id => this._esc(id)).join(", ") || "None"}.</div>
+          <div class="subtle">Room envelope/inter-zone links awaiting calibration: ${(attrs.thermal_model?.multi_zone?.missing_parameters?.room_envelope_and_interzone_conductances || []).map(id => this._esc(id)).join(", ") || "None"}.</div>
+          <div class="subtle">${this._esc(attrs.thermal_model?.multi_zone?.plant?.note || "Plant telemetry is observational; heat output is not inferred from pump electricity.")}</div>
+
         </div>
         <div class="section"><div class="section-title">Today's heating activity</div>
           <div class="overview">

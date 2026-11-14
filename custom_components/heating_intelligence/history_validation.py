@@ -3831,13 +3831,25 @@ def build_multizone_physical_calibration_readiness(
         valid_states = 0
         for sample in samples:
             observed = (sample.get("rooms") or {}).get(room_id, {})
-            if _finite_number_or_none(observed.get("temperature")) is not None:
+            temperature = _finite_number_or_none(observed.get("temperature"))
+            temperature_age = _finite_number_or_none(observed.get("temperature_age_minutes"))
+            demand_age = _finite_number_or_none(observed.get("demand_age_minutes"))
+            window_age = _finite_number_or_none(observed.get("window_age_minutes"))
+            temperature_fresh = (
+                temperature is not None
+                and (temperature_age is None or temperature_age <= 45.0)
+            )
+            demand_fresh = (
+                _switch_state(observed.get("demand")) is not None
+                and (demand_age is None or demand_age <= 45.0)
+            )
+            window_fresh = (
+                _switch_state(observed.get("window")) is not None
+                and (window_age is None or window_age <= 45.0)
+            )
+            if temperature_fresh:
                 valid_temperatures += 1
-            if (
-                _finite_number_or_none(observed.get("temperature")) is not None
-                and _switch_state(observed.get("demand")) is not None
-                and _switch_state(observed.get("window")) is not None
-            ):
+            if temperature_fresh and demand_fresh and window_fresh:
                 valid_states += 1
         fit = response_rooms.get(room_id, {})
         coefficients = fit.get("normalized_rates_per_hour") or {}

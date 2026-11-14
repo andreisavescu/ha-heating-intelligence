@@ -161,3 +161,52 @@ def test_preliminary_calibration_withholds_when_window_state_is_unknown():
         "sensor.outdoor",
     )
     assert result["rooms"]["room"]["status"] == "insufficient_or_non_identifiable_data"
+
+
+def test_held_out_validation_uses_chronological_holdout_and_beats_persistence():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {
+        "sensor.outdoor": [{"state": "5", "last_changed": (end - timedelta(hours=24)).isoformat()}],
+        "sensor.room": [],
+        "binary_sensor.demand": [{"state": "off", "last_changed": (end - timedelta(hours=24)).isoformat()}],
+        "binary_sensor.window": [{"state": "off", "last_changed": (end - timedelta(hours=24)).isoformat()}],
+    }
+    temp = 25.0
+    for index in range(25):
+        stamp = end - timedelta(hours=24 - index)
+        history["sensor.room"].append({"state": str(temp), "last_changed": stamp.isoformat()})
+        temp = 5 + (temp - 5) * (2.718281828 ** (-1 / 12))
+    result = MODULE.build_held_out_room_validation(
+        history,
+        [{"id": "living", "temperature_entity": "sensor.room",
+          "demand_entity": "binary_sensor.demand", "window_entity": "binary_sensor.window"}],
+        "sensor.outdoor",
+    )
+    room = result["rooms"]["living"]
+    assert room["training_intervals"] >= 8
+    assert room["holdout_intervals"] >= 4
+    assert room["status"] == "improved_over_persistence"
+    assert room["holdout_mae_c"] < room["persistence_baseline_mae_c"]
+    assert "not a physical capacity" in room["interpretation"]
+
+
+def test_held_out_validation_rejects_stale_outdoor_observations():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {
+        "sensor.outdoor": [{"state": "5", "last_changed": (end - timedelta(hours=12)).isoformat()}],
+        "sensor.room": [
+            {"state": str(22 - index * 0.1), "last_changed": (end - timedelta(hours=12) + timedelta(minutes=30 * index)).isoformat()}
+            for index in range(25)
+        ],
+        "binary_sensor.demand": [{"state": "off", "last_changed": (end - timedelta(hours=12)).isoformat()}],
+        "binary_sensor.window": [{"state": "off", "last_changed": (end - timedelta(hours=12)).isoformat()}],
+    }
+    result = MODULE.build_held_out_room_validation(
+        history,
+        [{"id": "room", "temperature_entity": "sensor.room",
+          "demand_entity": "binary_sensor.demand", "window_entity": "binary_sensor.window"}],
+        "sensor.outdoor",
+    )
+    room = result["rooms"]["room"]
+    assert room["valid_intervals"] == 0
+    assert room["excluded_intervals"]["outdoor_missing_or_stale"] > 0

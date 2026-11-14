@@ -1306,10 +1306,33 @@ def build_thermal_input_room_response_alignment(
                 exclusions[key]["incomplete_room_temperature_coverage"] += 1
             interval_rows.append(None)
             continue
+        response_channels = second.get("channels") or {}
+        response_rooms = second.get("rooms") or {}
+        demand_states = [
+            _switch_state(response_rooms.get(room_id, {}).get("demand"))
+            for room_id in room_ids
+        ]
+        window_states = [
+            _switch_state(response_rooms.get(room_id, {}).get("window"))
+            for room_id in room_ids
+        ]
+        covariates = {
+            "outdoor_temperature_c": _finite_number_or_none(response_channels.get("outdoor_temperature")),
+            "solar_radiation_w_m2": _finite_number_or_none(response_channels.get("solar_radiation")),
+            "room_demand_fraction": (
+                sum(value is True for value in demand_states) / len(demand_states)
+                if all(value is not None for value in demand_states) else None
+            ),
+            "open_window_fraction": (
+                sum(value is True for value in window_states) / len(window_states)
+                if all(value is not None for value in window_states) else None
+            ),
+        }
         interval_rows.append({
             "stamp": stamp0,
             "aggregate_slope": sum(slopes.values()) / len(slopes),
             "room_slopes": slopes,
+            "covariates": covariates,
             "meters": {},
         })
         row = interval_rows[-1]
@@ -1359,12 +1382,37 @@ def build_thermal_input_room_response_alignment(
                 if response_row is None or key not in input_row["meters"]:
                     continue
                 input_power = input_row["meters"][key]
-                pairs.append((input_power, response_row["aggregate_slope"]))
+                pairs.append((
+                    input_power,
+                    response_row["aggregate_slope"],
+                    response_row["covariates"],
+                ))
                 for room_id in room_ids:
                     room_pairs[room_id].append((input_power, response_row["room_slopes"][room_id]))
-            xs, ys = [x for x, _ in pairs], [y for _, y in pairs]
+            xs, ys = [item[0] for item in pairs], [item[1] for item in pairs]
             correlation = pearson(xs, ys)
             diagnostics = _pearson_diagnostics(xs, ys)
+            candidate_covariates = (
+                "outdoor_temperature_c", "solar_radiation_w_m2",
+                "room_demand_fraction", "open_window_fraction",
+            )
+            selected_covariates = [
+                name for name in candidate_covariates
+                if pairs and sum(item[2].get(name) is not None for item in pairs) / len(pairs) >= 0.7
+            ]
+            adjusted_pairs = [
+                item for item in pairs
+                if all(item[2].get(name) is not None for name in selected_covariates)
+            ]
+            adjusted_covariate_values = {
+                name: [item[2][name] for item in adjusted_pairs]
+                for name in selected_covariates
+            }
+            adjusted_diagnostics = _partial_correlation_diagnostics(
+                [item[0] for item in adjusted_pairs],
+                [item[1] for item in adjusted_pairs],
+                adjusted_covariate_values,
+            )
             input_mean = sum(xs) / len(xs) if xs else 0.0
             input_std = math.sqrt(sum((value - input_mean) ** 2 for value in xs) / len(xs)) if xs else 0.0
             lag_results.append({
@@ -1378,6 +1426,7 @@ def build_thermal_input_room_response_alignment(
                     "Nominal interval assumes independent pairs; serial correlation can make it optimistic."
                 ),
                 "split_half": diagnostics["split_half"],
+                "confounder_adjustment": adjusted_diagnostics,
                 "input_power_range_w": round(max(xs) - min(xs), 3) if xs else None,
                 "input_power_std_w": round(input_std, 3) if xs else None,
                 "mean_input_power_w": round(sum(xs) / len(xs), 2) if len(pairs) >= minimum_intervals else None,

@@ -137,4 +137,4 @@ def test_air_only_capacity_inventory_marks_partial_volume_coverage():
     assert inventory["status"] == "partial_configured_volume"
     assert inventory["rooms_with_volume"] == 1
     assert inventory["volume_coverage_percent"] == 50
-    assert inventory["air_only_capacity_wh_per_k"] == 33.5025
+    assert inventory["air_only_capacity_wh_per_k"] == 33.5

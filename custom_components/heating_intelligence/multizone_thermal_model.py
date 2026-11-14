@@ -175,6 +175,7 @@ def build_multizone_observation_model(
             "co2_ppm": _finite_or_none(room.get("co2_ppm")),
             "humidity_percent": _finite_or_none(room.get("humidity")),
             "thermal_capacity_wh_per_k": None,
+            "thermal_response_evidence": _room_response_evidence(room.get("thermal_model")),
             "status": "observed" if _finite_or_none(room.get("temperature")) is not None else "temperature_unavailable",
         }
 
@@ -351,6 +352,39 @@ def build_multizone_observation_model(
             "Room, attic and outdoor observations are mapped from configured entities. "
             "The physical network is not simulated until thermal capacities and the "
             "required envelope/inter-zone conductances are available; no values are fabricated."
+        ),
+    }
+
+
+def _room_response_evidence(model: Any) -> dict[str, Any]:
+    """Expose learned room response as evidence, never as an RC parameter."""
+    if not isinstance(model, dict):
+        return {
+            "status": "not_available",
+            "heating_rate_c_per_hour": None,
+            "coasting_rate_c_per_hour": None,
+            "heating_confidence": 0,
+            "coasting_confidence": 0,
+            "note": "No validated room-response model is available.",
+        }
+    heating = model.get("heating") if isinstance(model.get("heating"), dict) else {}
+    coasting = model.get("coasting") if isinstance(model.get("coasting"), dict) else {}
+    heating_rate = _finite_or_none(heating.get("rate_c_per_hour"))
+    coasting_rate = _finite_or_none(coasting.get("rate_c_per_hour"))
+    heating_confidence = int(_finite_or_none(heating.get("confidence")) or 0)
+    coasting_confidence = int(_finite_or_none(coasting.get("confidence")) or 0)
+    available = heating_rate is not None or coasting_rate is not None
+    return {
+        "status": "observed_response_available" if available else "collecting_clean_response_history",
+        "heating_rate_c_per_hour": heating_rate,
+        "coasting_rate_c_per_hour": coasting_rate,
+        "heating_confidence": heating_confidence,
+        "coasting_confidence": coasting_confidence,
+        "heating_valid_intervals": int(heating.get("valid_intervals") or 0),
+        "coasting_valid_intervals": int(coasting.get("valid_intervals") or 0),
+        "note": (
+            "Observed temperature response only. Without a measured thermal input and independently "
+            "identified storage capacity, these rates cannot identify room heat capacity or envelope conductance."
         ),
     }
 

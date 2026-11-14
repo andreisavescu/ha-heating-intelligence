@@ -348,3 +348,11 @@ A configured room/zone heat-output channel is counted as independent measured th
 Water-flow evidence in the physical-readiness audit is counted only for positive fresh readings with a supported volumetric or mass-flow unit. This is separate from the water-side output calculation, which additionally requires fresh supply/return temperatures and a positive delta-T.
 Room coverage in the physical-readiness audit uses the same 45-minute freshness rule for temperature, demand and window state. Stale readings no longer inflate the apparent amount of calibration-ready history.
 Historical AC power is normalized from W, kW, MW and mW before the passive-fit AC-heating exclusion threshold is applied. Unsupported explicit units are excluded rather than compared as if they were watts; missing legacy units retain the native-watt assumption.
+
+### Native control-event and PWM timing inventory
+- The Recorder calibration report now inventories configured room-demand switches and the configured boiler-burner entity using their original `last_changed` timestamps.
+- Explicit `on`→`off` and `off`→`on` transitions produce measured dwell intervals; complete on/off cycles are counted only within uninterrupted known-state sequences.
+- `unknown` and `unavailable` states break continuity. The inventory never converts them into `off`, bridges across them, or invents pulse durations.
+- Reports per-entity sample counts, explicit transitions, complete on/off intervals and cycle counts, dwell-time median/minimum/maximum, and interrupted active intervals. Raw history is not retained in the summary.
+- This is controller-event timing evidence, not proof of PWM duty-cycle accuracy or delivered heat. A switch stream that alternates `on`/`unavailable` cannot establish pulse durations until explicit `off` transitions are recorded.
+- High-resolution event timestamps remain separate from the 30-minute thermal identification dataset; no synthetic 10-second rows are generated.

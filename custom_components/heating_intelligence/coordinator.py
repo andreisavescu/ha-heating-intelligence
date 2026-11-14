@@ -481,8 +481,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "dew_point": read_sensor(CONF_DEW_POINT_ENTITY),
             "solar_radiation": read_sensor(CONF_SOLAR_RADIATION_ENTITY),
         }
-        result["efficiency"]["weather"] = result["weather"]
-
         update_efficiency_history(
             self._history,
             readings,
@@ -492,6 +490,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
         )
         result["efficiency"] = efficiency_statistics(self._history, now_local)
+        result["efficiency"]["weather"] = result["weather"]
         from .thermal_performance import thermal_performance_statistics
         result["efficiency"].update(thermal_performance_statistics(self._history, now_local,
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),

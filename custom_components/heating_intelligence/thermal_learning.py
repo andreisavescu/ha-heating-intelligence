@@ -31,7 +31,7 @@ def _learn_mode(
             continue
         if cutoff <= stamp <= now.astimezone(timezone.utc):
             external_heating = bool(item.get("external_heating", False)) or (require_external_flag and "external_heating" not in item)
-            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), external_heating, bool(item.get("window_state_known", False)), bool(item.get("demand_state_known", False))))
+            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), external_heating, bool(item.get("window_state_known", False)), bool(item.get("demand_state_known", "demand" in item))))
     points.sort(key=lambda point: point[0])
 
     eligible = [point for point in points if point[2] == demand and not point[3] and not point[4] and point[5] and point[6]]

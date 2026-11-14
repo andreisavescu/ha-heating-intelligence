@@ -58,6 +58,8 @@ from .const import (
     CONF_WINDOW_ENTITY,
     CONF_HUMIDITY_ENTITY,
     CONF_CO2_ENTITY,
+    CONF_BOILER_BURNER_ENTITY,
+    CONF_BOILER_MODULATION_ENTITY,
     DOMAIN,
 )
 
@@ -96,6 +98,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "thermal_model": {},
             "weather": {},
             "attic_thermal": {},
+            "boiler_operation": {},
         }
 
     async def async_load_history(self) -> None:
@@ -148,6 +151,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "efficiency": {},
             "weather": {},
             "attic_thermal": {},
+            "boiler_operation": {},
         }
         water_entity = self.entry.options.get(CONF_WATER_TEMPERATURE_ENTITY)
         if water_entity:
@@ -160,6 +164,17 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["water_return_temperature_entity"] = return_entity
             result["water_return_temperature"] = _as_float(return_state.state) if return_state else None
 
+        burner_id = self.entry.options.get(CONF_BOILER_BURNER_ENTITY)
+        modulation_id = self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)
+        burner_state = self.hass.states.get(burner_id) if burner_id else None
+        modulation_state = self.hass.states.get(modulation_id) if modulation_id else None
+        burner_on = burner_state.state == "on" if burner_state and burner_state.state in ("on", "off") else None
+        result["boiler_operation"] = {
+            "burner_entity": burner_id,
+            "burner_on": burner_on,
+            "burner_modulation_percent": _as_float(modulation_state.state) if modulation_state else None,
+            "modulation_entity": modulation_id,
+        }
         configured_pumps = self.entry.options.get(CONF_PUMPS, [])
         changed = False
 
@@ -247,6 +262,20 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             cycle_start = dt_util.parse_datetime(history.get("cycle_start") or "")
             running = bool(history.get("running", False))
             current_duration = max(0.0, (now - cycle_start).total_seconds()) if running and cycle_start else 0.0
+            # A second power rise is only a candidate for circulation, not proof.
+            stage = history.setdefault("power_stage", {})
+            if not running:
+                stage.clear()
+            elif power is not None:
+                if "low_power_w" not in stage:
+                    stage.update({"low_power_w": power, "candidate_surge_at": None})
+                if cycle_start and (now - cycle_start).total_seconds() >= 60:
+                    low = stage["low_power_w"]
+                    if stage["candidate_surge_at"] is None and power >= low + 8:
+                        stage["candidate_surge_at"] = now.isoformat()
+                        stage["candidate_surge_w"] = round(power - low, 1)
+                        stage["burner_on_at_surge"] = burner_on
+                    stage["low_power_w"] = min(low, power)
             result["pumps"][pump_id] = {
                 "id": pump_id,
                 "name": pump["name"],
@@ -256,6 +285,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "energy": energy,
                 "energy_unit": energy_state.attributes.get("unit_of_measurement") if energy_state else None,
                 "running": running,
+                "candidate_circulation_surge_at": history.get("power_stage", {}).get("candidate_surge_at"),
+                "candidate_surge_w": history.get("power_stage", {}).get("candidate_surge_w"),
+                "burner_on_at_candidate_surge": history.get("power_stage", {}).get("burner_on_at_surge"),
                 "power_source_state": power_state.state if power_state else "missing",
                 "energy_source_state": energy_state.state if energy_state else "missing",
                 "cycle_count": int(history.get("cycle_count", 0)),

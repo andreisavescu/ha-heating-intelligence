@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_ufh_slab_observability
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -196,6 +196,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             self._calibration_dataset_samples = aligned_dataset.pop("samples", [])
             summary["calibration_dataset"] = aligned_dataset
+            summary["ufh_slab_observability"] = build_ufh_slab_observability(
+                self._calibration_dataset_samples, configured_rooms, interval_minutes=30,
+            )
             summary["multizone_response_identification"] = build_multizone_response_identification(
                 self._calibration_dataset_samples,
                 configured_rooms,
@@ -699,6 +702,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "water_return_temperature": result.get("water_return_temperature"),
                 "boiler_context": result.get("boiler_context", {}),
                 "pumps": result.get("pumps", {}),
+                "ufh_slab_observability": (
+                    result["thermal_model"]["historical_validation"].get("ufh_slab_observability", {})
+                ),
                 # This 7-day measured-performance coefficient is the aggregate
                 # indoor/outdoor loss boundary, including ventilation.
                 "house_heat_loss_coefficient_w_k": (

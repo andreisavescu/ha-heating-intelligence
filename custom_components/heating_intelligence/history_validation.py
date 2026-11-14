@@ -957,6 +957,193 @@ def build_floor_thermal_output_observability(
 
 
 
+
+def build_floor_room_heat_allocation_inference(
+    samples: list[dict[str, Any]],
+    rooms: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    max_age_minutes: float = 45.0,
+    minimum_intervals: int = 24,
+) -> dict[str, Any]:
+    """Estimate demand-associated floor-output contributions, never room heat meters.
+
+    A floor's measured thermal output is regressed against its rooms' demand
+    states. Independent demand patterns and repeatable coefficients are required.
+    Results remain observational marginal associations: slab inertia, valve
+    flow balance, room gains and controller behaviour can confound them.
+    """
+    if interval_minutes <= 0 or max_age_minutes < 0 or minimum_intervals < 4:
+        raise ValueError("Invalid room heat allocation inference thresholds")
+
+    def solve(matrix, vector):
+        size = len(vector)
+        augmented = [list(matrix[row]) + [vector[row]] for row in range(size)]
+        for column in range(size):
+            pivot = max(range(column, size), key=lambda row: abs(augmented[row][column]))
+            if abs(augmented[pivot][column]) < 1e-9:
+                return None
+            augmented[column], augmented[pivot] = augmented[pivot], augmented[column]
+            scale = augmented[column][column]
+            augmented[column] = [value / scale for value in augmented[column]]
+            for row in range(size):
+                if row == column:
+                    continue
+                factor = augmented[row][column]
+                augmented[row] = [
+                    value - factor * pivot_value
+                    for value, pivot_value in zip(augmented[row], augmented[column])
+                ]
+        return [augmented[row][-1] for row in range(size)]
+
+    parsed = []
+    for sample in samples:
+        try:
+            stamp = datetime.fromisoformat(str(sample.get("timestamp", "")).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            parsed.append((stamp.astimezone(timezone.utc), sample))
+        except (TypeError, ValueError):
+            continue
+    parsed.sort(key=lambda item: item[0])
+    floors = {}
+    for floor_id, output_key in (
+        ("ground_floor", "ground_floor_thermal_output"),
+        ("upstairs", "upstairs_thermal_output"),
+    ):
+        floor_rooms = [
+            str(room.get("id", "unknown")) for room in rooms
+            if room.get("floor", "ground_floor") == floor_id
+        ]
+        if not floor_rooms:
+            floors[floor_id] = {"status": "no_rooms_configured", "rooms": {}}
+            continue
+        rows = []
+        excluded = {"invalid_interval": 0, "missing_or_stale_floor_output": 0,
+                    "unsupported_floor_output_unit": 0, "incomplete_or_stale_room_demand": 0}
+        for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
+            elapsed = (stamp1 - stamp0).total_seconds() / 60
+            if abs(elapsed - interval_minutes) > 1:
+                excluded["invalid_interval"] += 1
+                continue
+            channels0, channels1 = first.get("channels") or {}, second.get("channels") or {}
+            output = _finite_number_or_none(channels1.get(output_key))
+            age = _finite_number_or_none(channels1.get(output_key + "_age_minutes"))
+            unit = str(channels1.get(output_key + "_unit") or "").strip().lower()
+            if output is None or (age is not None and age > max_age_minutes):
+                excluded["missing_or_stale_floor_output"] += 1
+                continue
+            if unit in ("w", "watt", "watts"):
+                output_w = output
+            elif unit in ("kw", "kilowatt", "kilowatts"):
+                output_w = output * 1000
+            else:
+                excluded["unsupported_floor_output_unit"] += 1
+                continue
+            if output_w < 0:
+                excluded["missing_or_stale_floor_output"] += 1
+                continue
+            first_rooms, second_rooms = first.get("rooms") or {}, second.get("rooms") or {}
+            demand = []
+            valid = True
+            for room_id in floor_rooms:
+                state0 = _switch_state(first_rooms.get(room_id, {}).get("demand"))
+                state1 = _switch_state(second_rooms.get(room_id, {}).get("demand"))
+                age0 = _finite_number_or_none(first_rooms.get(room_id, {}).get("demand_age_minutes"))
+                age1 = _finite_number_or_none(second_rooms.get(room_id, {}).get("demand_age_minutes"))
+                if (state0 is None or state1 is None
+                        or (age0 is not None and age0 > max_age_minutes)
+                        or (age1 is not None and age1 > max_age_minutes)):
+                    valid = False
+                    break
+                # Use the interval's mean demand state to avoid assigning a
+                # whole interval to a transition that occurred at its endpoint.
+                demand.append((float(state0) + float(state1)) / 2)
+            if not valid:
+                excluded["incomplete_or_stale_room_demand"] += 1
+                continue
+            rows.append((demand, output_w, stamp1))
+
+        feature_count = len(floor_rooms) + 1
+        def fit(subset):
+            if len(subset) < max(minimum_intervals // 2, feature_count + 2):
+                return None
+            design = [[1.0] + row[0] for row in subset]
+            targets = [row[1] for row in subset]
+            gram = [[sum(vector[i] * vector[j] for vector in design)
+                     for j in range(feature_count)] for i in range(feature_count)]
+            rhs = [sum(vector[i] * target for vector, target in zip(design, targets))
+                   for i in range(feature_count)]
+            coefficients = solve(gram, rhs)
+            if coefficients is None:
+                return None
+            predictions = [sum(a * b for a, b in zip(vector, coefficients)) for vector in design]
+            mean_target = sum(targets) / len(targets)
+            residual = sum((actual - predicted) ** 2 for actual, predicted in zip(targets, predictions))
+            total = sum((actual - mean_target) ** 2 for actual in targets)
+            return {"coefficients": coefficients, "r_squared": 1 - residual / total if total > 1e-9 else None,
+                    "residual_rmse_w": math.sqrt(residual / len(targets))}
+
+        overall = fit(rows)
+        midpoint = len(rows) // 2
+        first_fit, second_fit = fit(rows[:midpoint]), fit(rows[midpoint:])
+        if len(rows) < minimum_intervals or overall is None:
+            floors[floor_id] = {
+                "status": "insufficient_or_collinear_floor_output_and_room_demand_history",
+                "valid_intervals": len(rows), "minimum_intervals": minimum_intervals,
+                "excluded_intervals": excluded, "rooms": {},
+                "interpretation": "No room contribution is estimated without sufficient independent demand excitation.",
+            }
+            continue
+        coefficients = overall["coefficients"]
+        room_betas = coefficients[1:]
+        split_stable = bool(first_fit and second_fit) and all(
+            first_fit["coefficients"][index + 1] * second_fit["coefficients"][index + 1] > 0
+            for index in range(len(floor_rooms))
+        )
+        positive_total = sum(max(0.0, beta) for beta in room_betas)
+        room_results = {}
+        for index, room_id in enumerate(floor_rooms):
+            beta = room_betas[index]
+            room_results[room_id] = {
+                "demand_associated_marginal_output_w": round(beta, 1),
+                "relative_positive_demand_association": (
+                    round(max(0.0, beta) / positive_total, 4) if positive_total > 0 else None
+                ),
+                "not_a_measured_room_heat_share": True,
+            }
+        status = "repeatable_demand_association_not_physical_room_allocation" if split_stable else "unstable_or_unverified_demand_association"
+        floors[floor_id] = {
+            "status": status,
+            "valid_intervals": len(rows),
+            "excluded_intervals": excluded,
+            "model_r_squared": round(overall["r_squared"], 4) if overall["r_squared"] is not None else None,
+            "model_residual_rmse_w": round(overall["residual_rmse_w"], 1),
+            "baseline_intercept_w": round(coefficients[0], 1),
+            "history_half_coefficients_same_sign": split_stable,
+            "first_half_r_squared": round(first_fit["r_squared"], 4) if first_fit and first_fit["r_squared"] is not None else None,
+            "second_half_r_squared": round(second_fit["r_squared"], 4) if second_fit and second_fit["r_squared"] is not None else None,
+            "rooms": room_results,
+            "room_heat_output_w": None,
+            "physical_room_allocation_identified": False,
+            "interpretation": (
+                "Regression coefficients describe associations between room demand states and measured "
+                "floor output. They are not direct room heat measurements; UFH slab storage, hydraulic "
+                "balancing, bypass flow, room gains and controller logic can confound the relationship."
+            ),
+        }
+    inferred = [
+        floor for floor in floors.values()
+        if floor.get("status") == "repeatable_demand_association_not_physical_room_allocation"
+    ]
+    return {
+        "status": "demand_association_available_not_physical_room_allocation" if inferred else "no_repeatable_room_demand_output_association",
+        "floors": floors,
+        "physical_room_allocation_identified": False,
+        "note": "Requires independently measured floor thermal output. Demand is a valve/controller request, not a heat meter.",
+    }
+
+
+
 def build_water_side_thermal_output(
     samples: list[dict[str, Any]],
     interval_minutes: int = 30,

@@ -1378,3 +1378,53 @@ def test_water_side_thermal_output_rejects_stale_invalid_and_unsupported_inputs(
     assert result["excluded_samples"]["missing_or_stale_flow"] == 1
     assert result["excluded_samples"]["unsupported_flow_unit"] == 1
     assert result["excluded_samples"]["nonpositive_supply_return_delta"] == 1
+
+
+def test_floor_thermal_output_uses_only_explicit_watt_sensors_and_keeps_room_allocation_unknown():
+    samples = [
+        {"timestamp": "2026-11-14T12:00:00+00:00", "channels": {
+            "ground_floor_thermal_output": 2.5,
+            "ground_floor_thermal_output_unit": "kW",
+            "ground_floor_thermal_output_age_minutes": 0,
+            "upstairs_thermal_output": 900,
+            "upstairs_thermal_output_unit": "W",
+            "upstairs_thermal_output_age_minutes": 0,
+            "pump:ground_floor:power": 45,
+        }},
+        {"timestamp": "2026-11-14T12:30:00+00:00", "channels": {
+            "ground_floor_thermal_output": 2.7,
+            "ground_floor_thermal_output_unit": "kW",
+            "ground_floor_thermal_output_age_minutes": 0,
+            "upstairs_thermal_output": 1100,
+            "upstairs_thermal_output_unit": "W",
+            "upstairs_thermal_output_age_minutes": 0,
+            "pump:ground_floor:power": 48,
+        }},
+    ]
+    result = MODULE.build_floor_thermal_output_observability(samples)
+    assert result["status"] == "floor_thermal_output_available"
+    assert result["independent_floor_totals_available"] is True
+    assert result["floors"]["ground_floor"]["median_thermal_output_w"] == pytest.approx(2600)
+    assert result["floors"]["upstairs"]["median_thermal_output_w"] == pytest.approx(1000)
+    assert result["floors"]["ground_floor"]["integrated_thermal_energy_kwh"] == pytest.approx(1.3)
+    assert result["floors"]["upstairs"]["integrated_thermal_energy_kwh"] == pytest.approx(0.5)
+    assert result["room_level_delivery_identified"] is False
+    assert result["floors"]["ground_floor"]["room_heat_allocation_w"] is None
+
+
+def test_floor_thermal_output_rejects_pump_power_as_thermal_output_and_stale_values():
+    samples = [
+        {"timestamp": "2026-11-14T12:00:00+00:00", "channels": {
+            "ground_floor_thermal_output": 40,
+            "ground_floor_thermal_output_unit": "W electrical",
+            "ground_floor_thermal_output_age_minutes": 0,
+            "upstairs_thermal_output": 500,
+            "upstairs_thermal_output_unit": "W",
+            "upstairs_thermal_output_age_minutes": 60,
+        }},
+    ]
+    result = MODULE.build_floor_thermal_output_observability(samples)
+    assert result["floors"]["ground_floor"]["valid_samples"] == 0
+    assert result["floors"]["ground_floor"]["excluded_samples"]["unsupported_unit"] == 1
+    assert result["floors"]["upstairs"]["valid_samples"] == 0
+    assert result["floors"]["upstairs"]["excluded_samples"]["missing_or_stale"] == 1

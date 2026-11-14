@@ -18,6 +18,8 @@ from .prediction_engine import build_predictions
 from .floor_efficiency import build_floor_performance, weather_normalised_efficiency
 from .advanced_heating import update_advanced_history
 from .house_assessment import build_house_assessment
+from .indoor_air_quality import build_indoor_air_analysis
+from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -77,6 +79,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "daily": {},
             "floor_analysis": {},
             "efficiency": {},
+            "house_assessment": {},
+            "indoor_air_quality": {},
+            "thermal_model": {},
         }
 
     async def async_load_history(self) -> None:
@@ -262,6 +267,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         }
 
         prediction_rooms = {}
+        learned_room_models = {}
         floor_analysis = {
             "ground_floor": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("ground_floor", {}).get("running")), "pump_power_w": result["pumps"].get("ground_floor", {}).get("power")},
             "upstairs": {"active_rooms": 0, "pump_running": bool(result["pumps"].get("upstairs", {}).get("running")), "pump_power_w": result["pumps"].get("upstairs", {}).get("power")},
@@ -306,6 +312,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 room_history, now_local, temperature_value, demand_active, window_open
             )
             thermal = thermal_statistics(room_history, now_local)
+            learned_model = build_room_thermal_model(room_history, now_local, temperature_value, demand_active)
+            learned_room_models[room_id] = learned_model
             floor = room.get(CONF_FLOOR, "unassigned")
             floor_data = floor_analysis.setdefault(floor, {"active_rooms": 0})
             daily_key = "room_demand_" + room_id
@@ -329,6 +337,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "demand": demand_active,
                 **stats,
                 **thermal,
+                "thermal_model": learned_model,
                 "window_open_demand_seconds_today": round(float(room_history.get("window_open_demand_seconds_today", 0))),
                 "temperature_history": [
                     {"time": sample.get("time"), "temperature": sample.get("temperature"),
@@ -349,6 +358,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "daily_demand_seconds": round(demand_seconds),
                 "demand_history": [{"start": item.get("start"), "end": item.get("end"), "duration_seconds": item.get("duration_seconds")} for item in room_history.get("cycles", []) if item.get("start") and item.get("end")][-500:] + ([{"start": room_history.get("cycle_start"), "end": now_local.isoformat(), "duration_seconds": max(0, (now_local - dt_util.parse_datetime(room_history["cycle_start"])).total_seconds()), "active": True}] if room_history.get("last_demand") is True and room_history.get("cycle_start") else []),
             }
+        result["indoor_air_quality"] = build_indoor_air_analysis(result["rooms"])
+        result["thermal_model"] = build_house_thermal_model(learned_room_models)
         for floor_id in ("ground_floor", "upstairs"):
             floor_data = floor_analysis[floor_id]
             floor_data["demand_hours_today"] = round(sum(float(daily.get("room_demand_" + room["id"], 0.0)) for room in self.entry.options.get(CONF_ROOMS, []) if room.get(CONF_FLOOR, "unassigned") == floor_id) / 3600, 2)

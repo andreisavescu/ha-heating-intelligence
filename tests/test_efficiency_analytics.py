@@ -102,6 +102,21 @@ def test_three_pump_meter_reset_does_not_create_negative_energy():
     assert history["efficiency_daily"]["2026-11-12"]["electricity_boiler_kwh"] == 0
 
 
+def test_gas_meter_records_raw_m3_delta_and_conversion_basis():
+    history = {}
+    now = datetime(2026, 11, 13, tzinfo=timezone.utc)
+    EFFICIENCY.update_efficiency_history(history, {
+        "gas": {"value": 100.0, "unit": "m³", "entity_id": "sensor.gas"}
+    }, now, 0, False, 10.55)
+    EFFICIENCY.update_efficiency_history(history, {
+        "gas": {"value": 101.5, "unit": "m³", "entity_id": "sensor.gas"}
+    }, now + timedelta(minutes=1), 60, False, 10.55)
+    day = history["efficiency_daily"]["2026-11-13"]
+    assert day["gas_meter_volume_m3"] == 1.5
+    assert day["gas_meter_conversion_basis"] == "volume_m3"
+    assert day["gas_kwh"] == 1.5 * 10.55
+
+
 def test_existing_daily_record_is_backfilled_with_new_fields():
     now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
     history = {

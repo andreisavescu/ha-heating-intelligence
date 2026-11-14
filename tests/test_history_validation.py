@@ -1550,3 +1550,51 @@ def test_floor_room_demand_lag_scan_does_not_bridge_missing_cadence():
     assert lag_one["paired_intervals"] == 47
     assert result["physical_room_allocation_identified"] is False
 
+def test_floor_room_demand_lag_scan_converts_kw_and_excludes_stale_output():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(40):
+        demand = index % 3 == 0
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "ground_floor_thermal_output": 1.8 if demand else 1.0,
+                "ground_floor_thermal_output_unit": "kW",
+                "ground_floor_thermal_output_age_minutes": 60 if index % 7 == 0 else 0,
+            },
+            "rooms": {
+                "living": {"demand": "on" if demand else "off", "demand_age_minutes": 0},
+            },
+        })
+    result = MODULE.build_floor_room_demand_lag_analysis(
+        samples, [{"id": "living", "floor": "ground_floor"}],
+        maximum_lag_intervals=0, minimum_pairs=8,
+    )
+    floor = result["floors"]["ground_floor"]
+    assert floor["excluded_samples"]["stale_output"] == 6
+    assert floor["rooms"]["living"]["lag_scan"][0]["paired_intervals"] == 34
+
+
+def test_floor_room_demand_lag_scan_withholds_constant_or_missing_demand():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(32):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "ground_floor_thermal_output": 1200 + index,
+                "ground_floor_thermal_output_unit": "W",
+                "ground_floor_thermal_output_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {"demand": "on", "demand_age_minutes": 0},
+            },
+        })
+    result = MODULE.build_floor_room_demand_lag_analysis(
+        samples, [{"id": "living", "floor": "ground_floor"}],
+        maximum_lag_intervals=2, minimum_pairs=8,
+    )
+    room = result["floors"]["ground_floor"]["rooms"]["living"]
+    assert room["status"] == "insufficient_or_constant_demand_output_pairs"
+    assert room["selected_training_lag_minutes"] is None
+

@@ -222,14 +222,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
                 require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
             )
-            summary["multizone_physical_calibration_readiness"] = build_multizone_physical_calibration_readiness(
-                self._calibration_dataset_samples,
-                configured_rooms,
-                summary["multizone_response_identification"],
-                summary["thermal_input_energy_observability"],
-                summary["ufh_slab_observability"],
-                summary["water_side_thermal_output"],
-            )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
             ac_unit = (ac_state.attributes.get("unit_of_measurement") or "") if ac_state else ""
@@ -257,6 +249,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 history, configured_rooms, outdoor_entity, house_heat_loss,
                 self.entry.options.get(CONF_SOLAR_RADIATION_ENTITY),
                 heat_loss_sensitivity_range_w_k=h_sensitivity,
+            )
+            summary["multizone_physical_calibration_readiness"] = build_multizone_physical_calibration_readiness(
+                self._calibration_dataset_samples,
+                configured_rooms,
+                summary["multizone_response_identification"],
+                summary["thermal_input_energy_observability"],
+                summary["ufh_slab_observability"],
+                summary["water_side_thermal_output"],
+                summary["house_effective_rc_calibration"],
             )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")

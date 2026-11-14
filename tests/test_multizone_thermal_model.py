@@ -107,21 +107,21 @@ def test_room_volume_provides_air_only_capacity_and_ventilation_conductance():
         weather={"outdoor_temperature": {"value": 5.0}},
     )
     living = result["nodes"]["room:living"]
-    assert living["air_thermal_capacity_wh_per_k"] == 33.5025
+    assert living["air_thermal_capacity_wh_per_k"] == 33.5
     assert len(result["ventilation_paths"]) == 2
     living_path = next(
         item for item in result["ventilation_paths"] if item["from"] == "room:living"
     )
-    assert living_path["conductance_w_per_k"] == 16.7513
-    assert living_path["sensitivity_ach_minus_10_percent_w_per_k"] == 15.0761
-    assert living_path["sensitivity_ach_plus_10_percent_w_per_k"] == 18.4264
+    assert living_path["conductance_w_per_k"] == 16.75
+    assert living_path["sensitivity_ach_minus_10_percent_w_per_k"] == 15.075
+    assert living_path["sensitivity_ach_plus_10_percent_w_per_k"] == 18.425
     assert "not a measured uncertainty" in living_path["sensitivity_note"]
     inventory = result["air_only_thermal_inventory"]
     assert inventory["status"] == "available"
     assert inventory["rooms_with_volume"] == 2
     assert inventory["total_configured_room_volume_m3"] == 150.0
-    assert inventory["air_only_capacity_wh_per_k"] == 50.254
-    assert inventory["known_ventilation_conductance_w_per_k"] == 43.5533
+    assert inventory["air_only_capacity_wh_per_k"] == 50.25
+    assert inventory["known_ventilation_conductance_w_per_k"] == 30.15
     assert "excludes walls" in inventory["interpretation"]
 
 

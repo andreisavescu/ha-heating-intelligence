@@ -278,6 +278,40 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="metric"><span>Total pump power</span><strong>${this._fmt(attrs.total_pump_power, "W")}</strong></div>
           <div class="metric"><span>Combined energy total</span><strong>${this._fmt(attrs.total_pump_energy, "kWh", 2)}</strong></div>
         </div>
+        <div class="section"><div class="section-title">Whole-house building assessment</div>
+          <div class="overview">
+            <div class="metric"><span>Profile completeness</span><strong>\${attrs.house_assessment?.profile_completeness_percent ?? 0}%</strong><div class="subtle">\${attrs.house_assessment?.profile_known_fields ?? 0} / \${attrs.house_assessment?.profile_total_fields ?? 0} characteristics recorded</div></div>
+            <div class="metric"><span>Measured thermal performance</span><strong>\${this._esc(attrs.house_assessment?.performance_status || "Collecting data")}</strong><div class="subtle">30-day \${this._fmt(attrs.house_assessment?.measured_performance?.heat_loss_u_value_30d, "W/m²K", 3)} · 7-day \${this._fmt(attrs.house_assessment?.measured_performance?.heat_loss_u_value_7d, "W/m²K", 3)}</div></div>
+            \${Object.entries(attrs.house_assessment?.sections || {}).map(([key,value]) => \`<div class="metric"><span>\${this._esc(key.replaceAll("_"," "))}</span><strong>\${value.completeness_percent}%</strong><div class="subtle">\${value.known_fields} / \${value.total_fields} fields known</div></div>\`).join("")}
+            <div class="metric"><span>Room area coverage</span><strong>\${this._fmt(attrs.house_assessment?.room_coverage?.configured_room_area_m2, "m²", 1)}</strong><div class="subtle">\${attrs.house_assessment?.room_coverage?.rooms_with_area ?? 0} / \${attrs.house_assessment?.room_coverage?.configured_rooms ?? 0} rooms · \${attrs.house_assessment?.room_coverage?.room_area_coverage_percent ?? "—"}%</div></div>
+          </div>
+          <div class="subtle">\${(attrs.house_assessment?.observations || []).map(item => this._esc(item)).join(" ") || "Complete the optional House assessment in integration settings to add building characteristics."}</div>
+          <div class="subtle">\${this._esc(attrs.house_assessment?.interpretation || "")}</div>
+        </div>
+        <div class="section"><div class="section-title">Whole-house indoor air analysis</div>
+          <div class="overview">
+            <div class="metric"><span>CO₂ status</span><strong>\${this._esc(attrs.indoor_air_quality?.co2?.status || "Not configured")}</strong><div class="subtle">Average \${this._fmt(attrs.indoor_air_quality?.co2?.average_ppm, "ppm", 0)} · highest \${this._fmt(attrs.indoor_air_quality?.co2?.highest_room?.ppm, "ppm", 0)}</div></div>
+            <div class="metric"><span>CO₂ coverage</span><strong>\${attrs.indoor_air_quality?.co2?.rooms_with_readings ?? 0} / \${attrs.indoor_air_quality?.co2?.configured_rooms ?? 0} rooms</strong><div class="subtle">\${attrs.indoor_air_quality?.co2?.coverage_percent ?? "—"}% with live readings</div></div>
+            <div class="metric"><span>Humidity status</span><strong>\${this._esc(attrs.indoor_air_quality?.humidity?.status || "Not configured")}</strong><div class="subtle">Average \${this._fmt(attrs.indoor_air_quality?.humidity?.average_percent, "%", 1)} · range \${this._fmt(attrs.indoor_air_quality?.humidity?.lowest_percent, "%", 1)}–\${this._fmt(attrs.indoor_air_quality?.humidity?.highest_percent, "%", 1)}</div></div>
+            <div class="metric"><span>Humidity coverage</span><strong>\${attrs.indoor_air_quality?.humidity?.rooms_with_readings ?? 0} / \${attrs.indoor_air_quality?.humidity?.configured_rooms ?? 0} rooms</strong><div class="subtle">\${attrs.indoor_air_quality?.humidity?.coverage_percent ?? "—"}% with live readings</div></div>
+          </div>
+          <div class="subtle">\${(attrs.indoor_air_quality?.observations || []).map(item => this._esc(item)).join(" ")}</div>
+          <div class="subtle">\${this._esc(attrs.indoor_air_quality?.interpretation || "")}</div>
+        </div>
+        <div class="section"><div class="section-title">Self-learning thermal model</div>
+          <div class="overview">
+            <div class="metric"><span>Model status</span><strong>\${this._esc(attrs.thermal_model?.status || "Learning")}</strong></div>
+            <div class="metric"><span>Rooms modelled</span><strong>\${attrs.thermal_model?.rooms_modelled ?? 0} / \${entries.length}</strong></div>
+            <div class="metric"><span>Average confidence</span><strong>\${this._fmt(attrs.thermal_model?.average_confidence, "%", 0)}</strong></div>
+          </div>
+          <div class="pumps">
+            \${Object.entries(attrs.thermal_model?.room_models || {}).map(([id,model]) => {
+              const room = rooms[id] || {};
+              return \`<div class="metric"><span>\${this._esc(room.name || id)} · \${this._esc(model.mode || "—")} · \${this._esc(model.status || "learning")}</span><strong>\${this._fmt(model.trend_c_per_hour, "°C/h", 3)} · \${model.confidence ?? 0}% confidence</strong><div class="subtle">Heating: \${this._fmt(model.heating?.rate_c_per_hour, "°C/h", 3)} (\${model.heating?.valid_intervals ?? 0} intervals) · coasting: \${this._fmt(model.coasting?.rate_c_per_hour, "°C/h", 3)} (\${model.coasting?.valid_intervals ?? 0} intervals)</div></div>\`;
+            }).join("") || '<p class="subtle">The model starts learning from retained room-temperature history.</p>'}
+          </div>
+          <div class="subtle">\${this._esc(attrs.thermal_model?.interpretation || "")}</div>
+        </div>
         <div class="section"><div class="section-title">Today's heating activity</div>
           <div class="overview">
             <div class="metric"><span>Pump energy today</span><strong>${this._fmt(attrs.daily_heating?.pump_energy_kwh, "kWh", 3)}</strong></div>

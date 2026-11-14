@@ -598,6 +598,63 @@ def build_house_effective_rc_calibration(
                 status = "effective_aggregate_capacity_estimate"
             else:
                 status = "non_identifiable_cooling_response"
+    # Resample contiguous cooling-response observations, preserving short
+    # temporal dependence. These are sensitivity ranges, not formal CIs.
+    capacity_resamples = []
+    bootstrap_block_length = min(4, max(1, n // 4))
+    bootstrap_replicates = 80 if n >= 40 else 0
+    if bootstrap_replicates:
+        for replicate in range(bootstrap_replicates):
+            selected = []
+            block_number = 0
+            while len(selected) < n:
+                max_start = n - bootstrap_block_length
+                start_index = (replicate * 37 + block_number * 17) % (max_start + 1)
+                selected.extend(observations[start_index:start_index + bootstrap_block_length])
+                block_number += 1
+            selected = selected[:n]
+            bx = [item[0] for item in selected]
+            by = [item[1] for item in selected]
+            bx_bar, by_bar = sum(bx) / n, sum(by) / n
+            denominator = sum((value - bx_bar) ** 2 for value in bx)
+            if denominator <= 1e-9:
+                continue
+            block_slope = sum(
+                (x - bx_bar) * (y - by_bar) for x, y in zip(bx, by)
+            ) / denominator
+            if block_slope < -1e-5:
+                capacity_resamples.append(heat_loss * (-1 / block_slope))
+
+    capacity_resampling = {
+        "method": "deterministic_moving_block_bootstrap",
+        "block_length_observations": bootstrap_block_length,
+        "requested_replicates": bootstrap_replicates,
+        "successful_replicates": len(capacity_resamples),
+        "lower_90_percentile_wh_per_k": None,
+        "median_wh_per_k": None,
+        "upper_90_percentile_wh_per_k": None,
+        "relative_90_percentile_width": None,
+        "status": "insufficient_history_for_resampling_sensitivity",
+        "note": (
+            "This is a resampling sensitivity range, not a formal confidence interval. "
+            "It does not include uncertainty in the independent heat-loss coefficient, "
+            "sensor bias, unmeasured gains or model misspecification."
+        ),
+    }
+    if len(capacity_resamples) >= 40:
+        capacity_resamples.sort()
+        lower = capacity_resamples[int(0.05 * (len(capacity_resamples) - 1))]
+        middle = capacity_resamples[int(0.50 * (len(capacity_resamples) - 1))]
+        upper = capacity_resamples[int(0.95 * (len(capacity_resamples) - 1))]
+        capacity_resampling.update({
+            "lower_90_percentile_wh_per_k": round(lower, 1),
+            "median_wh_per_k": round(middle, 1),
+            "upper_90_percentile_wh_per_k": round(upper, 1),
+            "relative_90_percentile_width": round(
+                (upper - lower) / max(abs(middle), 1e-6), 3
+            ),
+            "status": "resampling_sensitivity_available",
+        })
     return {
         "status": status,
         "method": "area_weighted_night_cooling_tau_times_independent_house_heat_loss",
@@ -608,6 +665,7 @@ def build_house_effective_rc_calibration(
         "intercept_c_per_hour": round(intercept, 6) if intercept is not None else None,
         "fit_r_squared": round(r_squared, 3) if r_squared is not None else None,
         "valid_intervals": n,
+        "capacity_resampling_sensitivity": capacity_resampling,
         "rooms_included": len(room_data),
         "exclusions": exclusions,
         "interpretation": (

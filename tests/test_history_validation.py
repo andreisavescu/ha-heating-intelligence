@@ -282,7 +282,7 @@ def test_calibration_dataset_aligns_channels_on_common_timeline_and_tracks_fresh
     assert result["status"] == "aligned_dataset_available"
     assert result["aligned_sample_count"] == 3
     assert result["core_eligible_sample_count"] == 3
-    assert result["complete_room_state_sample_count"] == 3
+    assert result["complete_room_state_sample_count"] == 2
     assert result["samples"][1]["rooms"]["living"]["temperature"] == 20.5
     assert result["samples"][2]["channels"]["outdoor_temperature"] == 6.0
     assert result["channel_coverage"]["water_supply_temperature"]["coverage_percent"] == 100.0

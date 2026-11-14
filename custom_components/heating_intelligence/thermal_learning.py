@@ -103,7 +103,11 @@ def build_room_thermal_model(
     if external_heating_active:
         result["note"] = "AC electrical input is currently above the active-use threshold; forecast withheld to avoid mixing heating systems."
         return result
-    if current_temperature is None or selected["status"] != "available":
+    if current_temperature is None:
+        result["note"] = "Current room temperature is unavailable."
+        return result
+    if selected["status"] != "available":
+        result["note"] = selected.get("note", "The current demand mode is still learning.")
         return result
     rate = selected["rate_c_per_hour"]
     noise = selected["noise_c_per_hour"]

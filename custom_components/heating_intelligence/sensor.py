@@ -62,7 +62,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             PumpDailyEnergySensor(coordinator, pump["id"], pump["name"]),
             PumpDailyRuntimeSensor(coordinator, pump["id"], pump["name"]),
             PumpDailyCycleCountSensor(coordinator, pump["id"], pump["name"]),
-            *(PumpStageDiagnosticSensor(coordinator, pump["id"], pump["name"], metric) for metric in PUMP_STAGE_METRICS),
         ])
     if len(entry.options.get(CONF_PUMPS, [])) == 2:
         entities.append(PumpSynchronizationSensor(coordinator))

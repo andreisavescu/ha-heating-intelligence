@@ -15,7 +15,7 @@ from .const import (
     CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
     CONF_ELECTRICITY_BOILER_ENTITY,
     CONF_AC_POWER_ENTITY, CONF_AC_ENERGY_ENTITY,
-    CONF_ATTIC_TEMPERATURE_ENTITY, CONF_ATTIC_HUMIDITY_ENTITY,
+    CONF_ATTIC_TEMPERATURE_ENTITY, CONF_ATTIC_HUMIDITY_ENTITY, CONF_WEATHER_ENTITY,
 )
 from .coordinator import HeatingIntelligenceCoordinator
 from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
@@ -85,11 +85,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     if entry.options.get(CONF_AC_ENERGY_ENTITY):
         entities.append(EfficiencySensor(coordinator, "ac_electricity_today_kwh"))
         entities.append(EfficiencySensor(coordinator, "estimated_ac_delivered_heat_today_kwh"))
-    if entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
+    if entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY) or entry.options.get(CONF_WEATHER_ENTITY):
         entities.append(EfficiencySensor(coordinator, "heating_degree_days"))
     if entry.options.get(CONF_PUMPS) or boiler_energy_configured:
         entities.append(EfficiencySensor(coordinator, "electricity_energy_today_kwh"))
-    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY):
+    if entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) and (entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY) or entry.options.get(CONF_WEATHER_ENTITY)):
         entities.append(EfficiencySensor(coordinator, "gas_kwh_per_degree_day"))
     if (entry.options.get(CONF_GAS_CONSUMPTION_ENTITY) or entry.options.get(CONF_AC_ENERGY_ENTITY)) and entry.options.get(CONF_DELTA_T_ENTITY):
         entities.extend(EfficiencySensor(coordinator, metric) for metric in (

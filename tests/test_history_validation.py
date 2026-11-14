@@ -1796,3 +1796,36 @@ def test_physical_readiness_surfaces_solar_association_without_promoting_gain_wa
     assert solar["physical_room_parameters_identified"] is False
     assert result["physical_simulation_ready"] is False
 
+def test_solar_room_response_does_not_bridge_irregular_timestamp_lag():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(50):
+        stamp = start + timedelta(minutes=30 * index + (30 if index >= 25 else 0))
+        samples.append({
+            "timestamp": stamp.isoformat(),
+            "channels": {
+                "solar_radiation": float((index * 29) % 97) * 7.0,
+                "solar_radiation_unit": "W/m2",
+                "solar_radiation_age_minutes": 0,
+                "outdoor_temperature": 7.0 + (index % 9) * 0.2,
+                "outdoor_temperature_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {
+                    "temperature": 20.0 + index * 0.02,
+                    "temperature_age_minutes": 0,
+                    "demand": "off" if index % 3 else "on",
+                    "demand_age_minutes": 0,
+                    "window": "off",
+                    "window_age_minutes": 0,
+                }
+            },
+        })
+    result = MODULE.build_solar_room_response_analysis(
+        samples, [{"id": "living"}], interval_minutes=30,
+        maximum_lag_intervals=2, minimum_pairs=12,
+    )
+    lag_two = result["rooms"]["living"]["lag_scan"][2]
+    assert lag_two["paired_intervals"] < 47
+    assert result["excluded_observations"]["living"]["invalid_cadence"] == 1
+

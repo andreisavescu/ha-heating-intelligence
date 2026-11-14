@@ -128,3 +128,139 @@ def simulate_thermal_step(
         "duration_seconds": duration,
         "model": "lumped_rc_network",
     }
+
+
+
+def build_multizone_observation_model(
+    rooms: dict[str, dict[str, Any]],
+    weather: dict[str, Any] | None = None,
+    attic: dict[str, Any] | None = None,
+    profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Map configured HA observations into a transparent, parameter-aware zone inventory.
+
+    This deliberately does not invent thermal capacities or room-to-room
+    conductances. The inventory is useful before those physical parameters
+    are identifiable; simulation remains withheld until required parameters
+    are explicitly configured or defensibly learned.
+    """
+    weather = weather or {}
+    attic = attic or {}
+    profile = profile or {}
+
+    def value(record):
+        if isinstance(record, dict):
+            return _finite_or_none(record.get("value"))
+        return _finite_or_none(record)
+
+    outdoor_record = weather.get("outdoor_temperature")
+    outdoor_c = value(outdoor_record)
+    nodes: dict[str, dict[str, Any]] = {}
+    for room_id, room in rooms.items():
+        nodes[f"room:{room_id}"] = {
+            "kind": "room_air",
+            "name": room.get("name", room_id),
+            "floor": room.get("floor", "unassigned"),
+            "temperature_c": _finite_or_none(room.get("temperature")),
+            "temperature_entity": room.get("temperature_entity"),
+            "demand": room.get("demand"),
+            "demand_state_known": room.get("demand_state_known", False),
+            "window_open": room.get("window_open"),
+            "window_state_known": room.get("window_state_known", False),
+            "area_m2": _finite_or_none(room.get("area_m2")),
+            "configured_ach": _finite_or_none(room.get("air_changes_per_hour")),
+            "co2_ppm": _finite_or_none(room.get("co2_ppm")),
+            "humidity_percent": _finite_or_none(room.get("humidity")),
+            "thermal_capacity_wh_per_k": None,
+            "status": "observed" if _finite_or_none(room.get("temperature")) is not None else "temperature_unavailable",
+        }
+
+    attic_c = _finite_or_none(attic.get("attic_temperature"))
+    if attic.get("temperature_entity") or attic_c is not None:
+        nodes["attic:air"] = {
+            "kind": "attic_air",
+            "name": "Attic",
+            "temperature_c": attic_c,
+            "temperature_entity": attic.get("temperature_entity"),
+            "humidity_percent": _finite_or_none(attic.get("attic_humidity")),
+            "thermal_capacity_wh_per_k": None,
+            "status": "observed" if attic_c is not None else "temperature_unavailable",
+        }
+    if outdoor_c is not None or outdoor_record:
+        nodes["boundary:outdoors"] = {
+            "kind": "fixed_boundary",
+            "name": "Outdoors",
+            "temperature_c": outdoor_c,
+            "temperature_entity": outdoor_record.get("entity_id") if isinstance(outdoor_record, dict) else None,
+            "status": "observed" if outdoor_c is not None else "temperature_unavailable",
+        }
+
+    # Conductive roof and ceiling paths are only exposed when both U-value
+    # and area were explicitly entered in the house assessment.
+    connections = []
+    for node_id, u_key, area_key, label in (
+        ("attic:air", "roof_u_value", "roof_area_m2", "roof"),
+        ("attic:air", "attic_floor_u_value", "attic_floor_area_m2", "attic_floor"),
+    ):
+        if node_id not in nodes or "boundary:outdoors" not in nodes:
+            continue
+        try:
+            u_value = float(profile.get(u_key))
+            area = float(profile.get(area_key))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(u_value) and math.isfinite(area) and u_value > 0 and area > 0:
+            connections.append({
+                "from": node_id,
+                "to": "boundary:outdoors" if label == "roof" else None,
+                "path": label,
+                "conductance_w_per_k": round(u_value * area, 4),
+                "source": "configured_u_value_times_area",
+            })
+            if label == "attic_floor":
+                connections[-1]["to"] = None
+                connections[-1]["status"] = "awaiting_upstairs_zone_coupling"
+            else:
+                connections[-1]["status"] = "configured"
+
+    observed_rooms = sum(1 for node in nodes.values() if node["kind"] == "room_air" and node["temperature_c"] is not None)
+    room_count = len(rooms)
+    missing_capacity = [node_id for node_id, node in nodes.items() if node["kind"] != "fixed_boundary" and node.get("thermal_capacity_wh_per_k") is None]
+    missing_links = [
+        node_id for node_id, node in nodes.items()
+        if node["kind"] == "room_air"
+    ]
+    return {
+        "model": "multi_zone_lumped_rc",
+        "status": "observations_ready_parameters_incomplete" if nodes else "waiting_for_configured_sensors",
+        "simulation_status": "withheld_missing_physical_parameters",
+        "nodes": nodes,
+        "configured_connections": connections,
+        "coverage": {
+            "configured_rooms": room_count,
+            "rooms_with_temperature": observed_rooms,
+            "room_temperature_coverage_percent": round(100 * observed_rooms / room_count) if room_count else None,
+            "rooms_with_co2": sum(1 for room in rooms.values() if _finite_or_none(room.get("co2_ppm")) is not None),
+            "rooms_with_humidity": sum(1 for room in rooms.values() if _finite_or_none(room.get("humidity")) is not None),
+            "rooms_with_ach": sum(1 for room in rooms.values() if _finite_or_none(room.get("air_changes_per_hour")) is not None),
+            "attic_temperature_available": attic_c is not None,
+            "outdoor_temperature_available": outdoor_c is not None,
+        },
+        "missing_parameters": {
+            "thermal_capacities": missing_capacity,
+            "room_envelope_and_interzone_conductances": missing_links,
+        },
+        "interpretation": (
+            "Room, attic and outdoor observations are mapped from configured entities. "
+            "The physical network is not simulated until thermal capacities and the "
+            "required envelope/inter-zone conductances are available; no values are fabricated."
+        ),
+    }
+
+
+def _finite_or_none(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None

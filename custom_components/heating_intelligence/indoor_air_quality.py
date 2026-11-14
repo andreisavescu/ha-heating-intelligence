@@ -73,6 +73,8 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
             "observations": findings,
             "recommendation": " ".join(findings) if findings else (
                 "Configured readings are within the indicative bands." if has_reading
+                else "Configured sensors are unavailable or not reporting numeric values; check their Home Assistant states."
+                if room.get("co2_entity") or room.get("humidity_entity")
                 else "Configure a CO2 or humidity sensor to enable room air analysis."
             ),
         }

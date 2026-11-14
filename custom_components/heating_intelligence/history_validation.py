@@ -1318,14 +1318,41 @@ def build_room_level_excitation_identifiability(
         }
         for (left, right), counts in pair_counts.items()
     }
-    independent_patterns = sum(1 for count in patterns.values() if count > 0)
     room_mode_coverage = sum(
         1 for item in room_results.values()
         if item["status"] == "both_demand_modes_observed"
     )
+    complete_patterns = [
+        [1.0 if pattern[index] == "1" else 0.0 for index in range(len(room_ids))]
+        for pattern, count in patterns.items() if count > 0
+    ]
+    column_means = [
+        sum(row[column] for row in complete_patterns) / len(complete_patterns)
+        for column in range(len(room_ids))
+    ] if complete_patterns else []
+    gram = [
+        [
+            sum((row[left] - column_means[left]) * (row[right] - column_means[right])
+                for row in complete_patterns) / len(complete_patterns)
+            for right in range(len(room_ids))
+        ]
+        for left in range(len(room_ids))
+    ] if complete_patterns else []
+    eigenvalues = _symmetric_matrix_eigenvalues(gram)
+    largest_eigenvalue = max(eigenvalues) if eigenvalues else 0.0
+    smallest_positive = min((value for value in eigenvalues if value > max(1e-10, largest_eigenvalue * 1e-10)), default=0.0)
+    demand_design_rank = sum(
+        value > max(1e-10, largest_eigenvalue * 1e-10) for value in eigenvalues
+    )
+    demand_design_condition = (
+        largest_eigenvalue / smallest_positive
+        if demand_design_rank == len(room_ids) and smallest_positive > 0 else None
+    )
+    independent_patterns = len(complete_patterns)
     independent_room_excitation = (
         room_mode_coverage == len(room_ids)
-        and len(patterns) >= min(2 ** len(room_ids), max(2, len(room_ids) + 1))
+        and independent_patterns >= len(room_ids) + 1
+        and demand_design_rank == len(room_ids)
     )
     return {
         "status": "room_demand_excitation_observed" if room_mode_coverage else "insufficient_room_demand_excitation",
@@ -1333,6 +1360,9 @@ def build_room_level_excitation_identifiability(
         "room_count": len(room_ids),
         "rooms_with_both_demand_modes": room_mode_coverage,
         "distinct_simultaneous_demand_patterns": independent_patterns,
+        "demand_design_matrix_rank": demand_design_rank,
+        "demand_design_matrix_full_rank": demand_design_rank == len(room_ids),
+        "demand_design_matrix_condition_number": round(demand_design_condition, 3) if demand_design_condition is not None else None,
         "observed_demand_patterns": patterns,
         "pairwise_demand_coactivation": pair_results,
         "rooms": room_results,

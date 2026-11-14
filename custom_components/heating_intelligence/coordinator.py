@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -176,9 +176,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             summary["room_response"] = build_recorder_room_response(
                 history, configured_rooms, ac_power_entity, ac_scale,
             )
+            outdoor_entity = self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY)
             summary["preliminary_calibration"] = build_preliminary_room_calibration(
-                history, configured_rooms,
-                self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY),
+                history, configured_rooms, outdoor_entity,
+            )
+            summary["held_out_validation"] = build_held_out_room_validation(
+                history, configured_rooms, outdoor_entity,
             )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")

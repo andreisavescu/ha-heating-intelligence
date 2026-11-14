@@ -22,6 +22,7 @@ from .house_assessment import build_house_assessment
 from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
+from .pump_stages import update_pump_stage
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -169,7 +170,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             energy_state = self.hass.states.get(pump["energy_entity"])
             power = _as_float(power_state.state) if power_state else None
             energy = _as_float(energy_state.state) if energy_state else None
-            observed_running = None if power is None else power > RUNNING_THRESHOLD_W
             history = self._history.setdefault("pumps", {}).setdefault(pump_id, {
                 "running": False,
                 "cycle_count": 0,
@@ -184,6 +184,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             })
             for key, default in (("daily_runtime_seconds", 0.0), ("daily_cycle_count", 0), ("daily_energy_kwh", 0.0), ("last_energy_reading", None)):
                 history.setdefault(key, default)
+            stage_data = update_pump_stage(
+                history.setdefault("stage_history", {}),
+                power,
+                dt_util.as_local(power_state.last_changed) if power_state else now_local,
+            )
+            observed_running = stage_data["stage"] == "pump_running"
             was_running = bool(history.get("running", False))
 
             if observed_running is True and not was_running:
@@ -256,6 +262,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "energy": energy,
                 "energy_unit": energy_state.attributes.get("unit_of_measurement") if energy_state else None,
                 "running": running,
+                "stage": stage_data["stage"],
+                "valve_opened_at": stage_data["valve_opened_at"],
+                "pump_started_at": stage_data["pump_started_at"],
+                "pump_stopped_at": stage_data["pump_stopped_at"],
+                "idle_baseline_w": stage_data["idle_baseline_w"],
+                "valve_level_w": stage_data["valve_level_w"],
+                "detection_basis": stage_data["detection_basis"],
                 "power_source_state": power_state.state if power_state else "missing",
                 "energy_source_state": energy_state.state if energy_state else "missing",
                 "cycle_count": int(history.get("cycle_count", 0)),

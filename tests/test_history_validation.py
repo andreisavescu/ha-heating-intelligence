@@ -1948,3 +1948,34 @@ def test_multizone_identification_excludes_stale_required_plant_telemetry():
     )
     assert result["rooms"]["living"]["excluded_intervals"]["stale_ac_or_boiler_telemetry"] >= 1
 
+def test_multizone_condition_number_uses_standardized_design_matrix_convention():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    living_temperature = 20.0
+    for index in range(120):
+        x = math.sin(2 * math.pi * 3 * index / 120)
+        orthogonal = math.cos(2 * math.pi * 3 * index / 120)
+        neighbour_offset = 2.0 * (0.8 * x + 0.6 * orthogonal)
+        outside = 8.0 + 2.0 * x
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"outdoor_temperature": outside, "solar_radiation": 0.0},
+            "rooms": {
+                "living": {"temperature": living_temperature, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": 20.0 + neighbour_offset, "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}],
+        minimum_train_intervals=20,
+        minimum_holdout_intervals=5,
+    )
+    living = result["rooms"]["living"]
+    correlation = abs(living["predictor_correlations"]["envelope__bedroom"])
+    expected = math.sqrt((1 + correlation) / (1 - correlation))
+    assert living["predictor_condition_number"] == pytest.approx(expected, rel=0.02)
+    assert result["identifiability_method"] == (
+        "pairwise_correlation_and_full_standardized_training_matrix_condition_number"
+    )
+

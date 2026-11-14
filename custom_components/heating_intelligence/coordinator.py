@@ -548,6 +548,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["efficiency"],
             result["rooms"],
         )
+        result["house_assessment"]["attic_thermal"] = result["attic_thermal"]
         result["house_assessment"]["cross_system_context"] = {
             "indoor_air_quality_status": result["indoor_air_quality"].get("co2", {}).get("status"),
             "humidity_status": result["indoor_air_quality"].get("humidity", {}).get("status"),

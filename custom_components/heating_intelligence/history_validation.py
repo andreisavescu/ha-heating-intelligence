@@ -1372,7 +1372,7 @@ def build_solar_room_response_analysis(
     interval_minutes: int = 30,
     max_age_minutes: float = 45.0,
     maximum_lag_intervals: int = 4,
-    minimum_pairs: int = 24,
+    minimum_pairs: int = 32,
 ) -> dict[str, Any]:
     """Screen room-temperature response to solar variation, without estimating watts.
 
@@ -1410,6 +1410,8 @@ def build_solar_room_response_analysis(
             "open_window": 0,
             "unknown_or_stale_window": 0,
             "invalid_or_stale_demand": 0,
+            "invalid_or_stale_co2": 0,
+            "invalid_or_stale_humidity": 0,
             "invalid_cadence": 0,
         } for room_id in room_ids
     }
@@ -1476,12 +1478,24 @@ def build_solar_room_response_analysis(
                 demand_value = None
             else:
                 demand_value = float(demand)
+            co2 = _finite_number_or_none(right.get("co2"))
+            co2_age = _finite_number_or_none(right.get("co2_age_minutes"))
+            if co2_age is not None and co2_age > max_age_minutes:
+                exclusions[room_id]["invalid_or_stale_co2"] += 1
+                co2 = None
+            humidity = _finite_number_or_none(right.get("humidity"))
+            humidity_age = _finite_number_or_none(right.get("humidity_age_minutes"))
+            if humidity_age is not None and humidity_age > max_age_minutes:
+                exclusions[room_id]["invalid_or_stale_humidity"] += 1
+                humidity = None
             room_intervals[room_id] = {
                 "slope": (t1 - t0) / (elapsed / 60),
                 "solar_w_m2": solar_w_m2,
                 "solar_valid": solar_w_m2 is not None,
                 "outdoor_c": outdoor,
                 "demand": demand_value,
+                "co2_ppm": co2,
+                "humidity_percent": humidity,
                 "window_unknown": window_invalid,
             }
             if solar_w_m2 is None:
@@ -1517,10 +1531,12 @@ def build_solar_room_response_analysis(
                     "slope": target["slope"],
                     "outdoor": target["outdoor_c"],
                     "demand": target["demand"],
+                    "co2": target["co2_ppm"],
+                    "humidity": target["humidity_percent"],
                 })
             split = int(len(pairs) * 0.7)
             training, holdout = pairs[:split], pairs[split:]
-            candidate_covariates = ("outdoor", "demand")
+            candidate_covariates = ("outdoor", "demand", "co2", "humidity")
             covariates = [
                 name for name in candidate_covariates
                 if training and sum(item[name] is not None for item in training) / len(training) >= 0.7

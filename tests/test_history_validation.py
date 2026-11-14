@@ -295,7 +295,10 @@ def test_calibration_dataset_does_not_carry_forward_stale_or_unknown_values():
     history = {
         "sensor.outdoor": [{"state": "5", "last_changed": start.isoformat()}],
         "sensor.room": [{"state": "20", "last_changed": start.isoformat()}],
-        "binary_sensor.demand": [{"state": "unknown", "last_changed": start.isoformat()}],
+        "binary_sensor.demand": [
+            {"state": "off", "last_changed": start.isoformat()},
+            {"state": "unknown", "last_changed": (start + timedelta(minutes=30)).isoformat()},
+        ],
         "binary_sensor.window": [{"state": "off", "last_changed": start.isoformat()}],
     }
     result = MODULE.build_recorder_calibration_dataset(
@@ -307,8 +310,9 @@ def test_calibration_dataset_does_not_carry_forward_stale_or_unknown_values():
     )
     assert result["core_eligible_sample_count"] == 2
     assert result["samples"][2]["channels"]["outdoor_temperature"] is None
-    assert result["samples"][0]["rooms"]["room"]["demand"] is None
-    assert result["complete_room_state_sample_count"] == 0
+    assert result["samples"][0]["rooms"]["room"]["demand"] == "off"
+    assert result["samples"][1]["rooms"]["room"]["demand"] is None
+    assert result["complete_room_state_sample_count"] == 1
     assert result["channel_coverage"]["outdoor_temperature"]["missing_or_stale_samples"] == 3
 
 

@@ -337,6 +337,13 @@ class HeatingIntelligenceCard extends HTMLElement {
             }).join("") || '<p class="subtle">The model starts learning from retained room-temperature history.</p>'}
           </div>
           <div class="subtle">${this._esc(attrs.thermal_model?.interpretation || "")}</div>
+          <div class="subsection-title">Historical data for calibration</div>
+          <div class="overview">
+            <div class="metric"><span>Recorder history</span><strong>${this._esc(attrs.thermal_model?.historical_validation?.status || "Waiting")}</strong></div>
+            <div class="metric"><span>Samples / entities</span><strong>${attrs.thermal_model?.historical_validation?.total_samples ?? 0} / ${attrs.thermal_model?.historical_validation?.entities_with_history ?? 0}</strong></div>
+            <div class="metric"><span>Lookback</span><strong>${this._fmt(attrs.thermal_model?.historical_validation?.window_hours, "h", 0)}</strong></div>
+          </div>
+          <div class="subtle">${this._esc(attrs.thermal_model?.historical_validation?.note || "Recorder history is queried locally every six hours; raw samples remain in Home Assistant.")}</div>
           <div class="subsection-title">Multi-zone physical model</div>
           <div class="overview">
             <div class="metric"><span>Observation mapping</span><strong>${this._esc(attrs.thermal_model?.multi_zone?.status || "Waiting")}</strong></div>

@@ -1500,78 +1500,127 @@ def build_ufh_slab_observability(
     minimum_on_intervals: int = 4,
     minimum_off_intervals: int = 4,
 ) -> dict[str, Any]:
-    """Assess UFH excitation and room response without inferring slab capacity.
+    """Assess UFH excitation using complete-room, cadence-valid observations.
 
-    Pump electrical power is used only as an on/off indicator. Supply/return
-    delta-T is a temperature observation, not thermal output without flow.
+    Pump electricity is only an on/off indicator. The room response is reported
+    per room and for the complete configured floor; partial-room averages are
+    deliberately rejected because changing sensor coverage can mimic heating.
     """
     if interval_minutes <= 0 or minimum_on_intervals < 1 or minimum_off_intervals < 1:
         raise ValueError("Invalid UFH observability thresholds")
+
     results = {}
     for floor_id in ("ground_floor", "upstairs"):
         floor_rooms = [
             room for room in rooms
             if room.get("floor", "ground_floor") == floor_id
         ]
+        room_ids = [str(room.get("id", "unknown")) for room in floor_rooms]
         pump_key = f"pump:{floor_id}:power"
         on_rates, off_rates, on_water_delta = [], [], []
+        per_room_rates = {room_id: {"pump_on": [], "pump_off": []} for room_id in room_ids}
         on_count = off_count = skipped = 0
+        exclusions = {
+            "incomplete_room_temperature": 0,
+            "open_window": 0,
+            "invalid_window_state": 0,
+            "invalid_or_stale_pump": 0,
+            "invalid_timestamp_or_cadence": 0,
+        }
         previous = None
+        parsed_samples = []
         for sample in samples:
-            channels = sample.get("channels") or {}
-            room_values = sample.get("rooms") or {}
             try:
                 stamp = datetime.fromisoformat(str(sample.get("timestamp")).replace("Z", "+00:00"))
                 if stamp.tzinfo is None:
                     stamp = stamp.replace(tzinfo=timezone.utc)
-                pump_power = _finite_number_or_none(channels.get(pump_key))
-                pump_age = _finite_number_or_none(channels.get(pump_key + "_age_minutes"))
-                if pump_power is None or (pump_age is not None and pump_age > 45):
-                    previous = None
-                    skipped += 1
-                    continue
-                temperatures = [
-                    _finite_number_or_none(room_values.get(str(room.get("id")), {}).get("temperature"))
-                    for room in floor_rooms
-                ]
-                temperatures = [value for value in temperatures if value is not None]
-                if not temperatures:
-                    previous = None
-                    skipped += 1
-                    continue
-                average_temp = sum(temperatures) / len(temperatures)
-                supply = _finite_number_or_none(channels.get("water_supply_temperature"))
-                return_temp = _finite_number_or_none(channels.get("water_return_temperature"))
-                supply_age = _finite_number_or_none(channels.get("water_supply_temperature_age_minutes"))
-                return_age = _finite_number_or_none(channels.get("water_return_temperature_age_minutes"))
-                water_delta = (
-                    supply - return_temp
-                    if supply is not None and return_temp is not None
-                    and (supply_age is None or supply_age <= 45)
-                    and (return_age is None or return_age <= 45)
-                    else None
-                )
+                parsed_samples.append((stamp.astimezone(timezone.utc), sample))
             except (TypeError, ValueError):
+                exclusions["invalid_timestamp_or_cadence"] += 1
+        parsed_samples.sort(key=lambda item: item[0])
+
+        for stamp, sample in parsed_samples:
+            channels = sample.get("channels") or {}
+            room_values = sample.get("rooms") or {}
+            pump_power = _finite_number_or_none(channels.get(pump_key))
+            pump_age = _finite_number_or_none(channels.get(pump_key + "_age_minutes"))
+            if pump_power is None or (pump_age is not None and pump_age > 45):
                 previous = None
                 skipped += 1
+                exclusions["invalid_or_stale_pump"] += 1
                 continue
-            current = (stamp, average_temp, pump_power > 5.0, water_delta)
+
+            temperatures = {}
+            invalid_temperature = False
+            open_window = False
+            invalid_window = False
+            for room_id in room_ids:
+                room_data = room_values.get(room_id, {})
+                temperature = _finite_number_or_none(room_data.get("temperature"))
+                temp_age = _finite_number_or_none(room_data.get("temperature_age_minutes"))
+                if temperature is None or (temp_age is not None and temp_age > 45):
+                    invalid_temperature = True
+                    break
+                temperatures[room_id] = temperature
+                # An explicitly open window invalidates this interval. Unknown
+                # window state is counted but does not imply that the window is
+                # open; integrations without a configured window sensor remain usable.
+                if "window" in room_data:
+                    window = _switch_state(room_data.get("window"))
+                    window_age = _finite_number_or_none(room_data.get("window_age_minutes"))
+                    if window is True and (window_age is None or window_age <= 45):
+                        open_window = True
+                    elif window is None or (window_age is not None and window_age > 45):
+                        invalid_window = True
+            if invalid_temperature:
+                previous = None
+                skipped += 1
+                exclusions["incomplete_room_temperature"] += 1
+                continue
+            if open_window:
+                previous = None
+                skipped += 1
+                exclusions["open_window"] += 1
+                continue
+            if invalid_window:
+                exclusions["invalid_window_state"] += 1
+
+            supply = _finite_number_or_none(channels.get("water_supply_temperature"))
+            return_temp = _finite_number_or_none(channels.get("water_return_temperature"))
+            supply_age = _finite_number_or_none(channels.get("water_supply_temperature_age_minutes"))
+            return_age = _finite_number_or_none(channels.get("water_return_temperature_age_minutes"))
+            water_delta = (
+                supply - return_temp
+                if supply is not None and return_temp is not None
+                and (supply_age is None or supply_age <= 45)
+                and (return_age is None or return_age <= 45)
+                else None
+            )
+            current = (stamp, temperatures, pump_power > 5.0, water_delta)
             if previous is not None:
                 elapsed = (stamp - previous[0]).total_seconds() / 60
                 if abs(elapsed - interval_minutes) <= 2:
-                    rate = (average_temp - previous[1]) / (elapsed / 60)
-                    # Use the current sample's pump state; room temperatures are
-                    # an observed response, not a direct measure of slab heat.
+                    rates = {
+                        room_id: (temperatures[room_id] - previous[1][room_id]) / (elapsed / 60)
+                        for room_id in room_ids
+                    }
                     if current[2]:
                         on_count += 1
-                        on_rates.append(rate)
+                        on_rates.append(sum(rates.values()) / len(rates))
+                        for room_id, rate in rates.items():
+                            per_room_rates[room_id]["pump_on"].append(rate)
                         if water_delta is not None:
                             on_water_delta.append(water_delta)
                     else:
                         off_count += 1
-                        off_rates.append(rate)
+                        off_rates.append(sum(rates.values()) / len(rates))
+                        for room_id, rate in rates.items():
+                            per_room_rates[room_id]["pump_off"].append(rate)
                 else:
                     skipped += 1
+                    exclusions["invalid_timestamp_or_cadence"] += 1
+                    previous = None
+                    continue
             previous = current
 
         def median_or_none(values):
@@ -1582,27 +1631,47 @@ def build_ufh_slab_observability(
             return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
 
         enough_excitation = on_count >= minimum_on_intervals and off_count >= minimum_off_intervals
+        room_response = {
+            room_id: {
+                "pump_on_intervals": len(values["pump_on"]),
+                "pump_off_intervals": len(values["pump_off"]),
+                "median_temperature_rate_pump_on_c_per_hour": (
+                    round(median_or_none(values["pump_on"]), 4) if values["pump_on"] else None
+                ),
+                "median_temperature_rate_pump_off_c_per_hour": (
+                    round(median_or_none(values["pump_off"]), 4) if values["pump_off"] else None
+                ),
+            }
+            for room_id, values in per_room_rates.items()
+        }
         results[floor_id] = {
             "status": (
                 "pump_on_off_excitation_observed_but_capacity_unidentifiable"
-                if enough_excitation else
-                "insufficient_pump_excitation_or_history"
+                if enough_excitation else "insufficient_pump_excitation_or_history"
             ),
             "pump_on_intervals": on_count,
             "pump_off_intervals": off_count,
             "skipped_intervals": skipped,
-            "median_room_temperature_rate_pump_on_c_per_hour": round(median_or_none(on_rates), 4) if on_rates else None,
-            "median_room_temperature_rate_pump_off_c_per_hour": round(median_or_none(off_rates), 4) if off_rates else None,
-            "median_supply_return_delta_t_pump_on_c": round(median_or_none(on_water_delta), 3) if on_water_delta else None,
+            "excluded_observations": exclusions,
+            "median_room_temperature_rate_pump_on_c_per_hour": (
+                round(median_or_none(on_rates), 4) if on_rates else None
+            ),
+            "median_room_temperature_rate_pump_off_c_per_hour": (
+                round(median_or_none(off_rates), 4) if off_rates else None
+            ),
+            "median_supply_return_delta_t_pump_on_c": (
+                round(median_or_none(on_water_delta), 3) if on_water_delta else None
+            ),
             "rooms_included": len(floor_rooms),
+            "room_response": room_response,
             "slab_temperature_available": False,
             "thermal_output_w": None,
             "slab_capacity_wh_per_k": None,
             "note": (
-                "Pump-on/off and adjacent-room temperature responses indicate whether useful UFH "
-                "excitation exists in Recorder history. They do not identify slab temperature or "
-                "absolute slab capacity. Supply-return delta-T is not heat output without water flow; "
-                "pump electrical power is auxiliary consumption, not delivered heat."
+                "Only intervals with fresh temperatures for every configured room are used; "
+                "explicitly open-window intervals and cadence gaps are excluded. Per-room rates "
+                "are descriptive responses, not delivered heat. Pump electricity is auxiliary "
+                "consumption, and supply-return delta-T is not thermal output without measured flow."
             ),
         }
     return {
@@ -1613,8 +1682,8 @@ def build_ufh_slab_observability(
         "interval_minutes": interval_minutes,
         "floors": results,
         "interpretation": (
-            "This is an excitation and observability screen only. It does not calibrate UFH slab "
-            "capacity or water-side thermal output."
+            "This is a complete-room excitation and observability screen only. It does not "
+            "calibrate UFH slab capacity, water-side output or room-level heat delivery."
         ),
     }
 

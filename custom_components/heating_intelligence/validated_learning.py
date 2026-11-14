@@ -65,7 +65,7 @@ def build_validated_learning_state(previous: dict[str, Any] | None, identificati
             "evidence": "chronological_holdout_and_moving_block_stability",
             "parameter_scope": "normalized_G_over_C_per_hour_only",
         }
-    fingerprint_payload = json.dumps(promoted, sort_keys=True, separators=(",", ":"))
+    fingerprint_payload = json.dumps({room: {key: value for key, value in data.items() if key != "accepted_at"} for room, data in promoted.items()}, sort_keys=True, separators=(",", ":"))
     fingerprint = hashlib.sha256(fingerprint_payload.encode("utf-8")).hexdigest()
     if promoted and fingerprint != state.get("accepted_fingerprint"):
         state["version"] = int(state.get("version", 0)) + 1

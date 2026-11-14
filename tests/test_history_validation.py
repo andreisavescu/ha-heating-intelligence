@@ -1194,6 +1194,47 @@ def test_multizone_physical_readiness_separates_normalized_fit_from_absolute_par
     assert result["rooms"]["living"]["effective_room_capacity_wh_per_k"] is None
 
 
+def test_room_capacity_allocation_scenarios_conserve_aggregate_but_remain_unidentified():
+    rooms = [
+        {"id": "living", "volume_m3": 60.0},
+        {"id": "bedroom", "volume_m3": 30.0},
+    ]
+    aggregate = {
+        "status": "effective_aggregate_capacity_estimate",
+        "effective_building_thermal_capacity_wh_per_k": 9000.0,
+    }
+    result = MODULE.build_multizone_physical_calibration_readiness(
+        [], rooms, aggregate_capacity_calibration=aggregate,
+    )
+    scenarios = result["room_capacity_allocation_scenarios"]
+    assert scenarios["status"] == "scenario_ranges_available_not_room_identification"
+    assert sum(
+        item["volume_weighted_scenario_wh_per_k"]
+        for item in scenarios["rooms"].values()
+    ) == pytest.approx(9000.0, abs=0.1)
+    assert sum(
+        item["equal_non_air_share_scenario_wh_per_k"]
+        for item in scenarios["rooms"].values()
+    ) == pytest.approx(9000.0, abs=0.1)
+    assert scenarios["rooms"]["living"]["identified_effective_capacity_wh_per_k"] is None
+    assert result["physical_simulation_ready"] is False
+
+
+def test_room_capacity_allocation_withholds_when_aggregate_is_below_air_only():
+    result = MODULE.build_multizone_physical_calibration_readiness(
+        [],
+        [{"id": "living", "volume_m3": 100.0}],
+        aggregate_capacity_calibration={
+            "status": "effective_aggregate_capacity_estimate",
+            "effective_building_thermal_capacity_wh_per_k": 20.0,
+        },
+    )
+    assert result["room_capacity_allocation_scenarios"]["status"] == (
+        "inconsistent_aggregate_capacity_below_configured_air_only"
+    )
+    assert result["room_capacity_allocation_scenarios"]["rooms"] == {}
+
+
 def test_multizone_readiness_reports_measured_system_water_output_without_room_allocation():
     samples = [
         {

@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -182,6 +182,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             summary["held_out_validation"] = build_held_out_room_validation(
                 history, configured_rooms, outdoor_entity,
+            )
+            efficiency = self.data.get("efficiency", {}) if isinstance(self.data, dict) else {}
+            house_u = _as_float(efficiency.get("heat_loss_u_value_7d"))
+            envelope_area = _as_float(efficiency.get("thermal_model_envelope_area_m2"))
+            house_heat_loss = house_u * envelope_area if house_u and envelope_area else None
+            summary["house_effective_rc_calibration"] = build_house_effective_rc_calibration(
+                history, configured_rooms, outdoor_entity, house_heat_loss,
+                self.entry.options.get(CONF_SOLAR_RADIATION_ENTITY),
             )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")

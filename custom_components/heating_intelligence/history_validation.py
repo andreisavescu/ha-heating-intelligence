@@ -768,6 +768,35 @@ def build_recorder_calibration_dataset(
 
 
 
+def _symmetric_matrix_eigenvalues(matrix: list[list[float]]) -> list[float]:
+    """Return eigenvalues of a small real symmetric matrix via Jacobi rotations."""
+    size = len(matrix)
+    values = [row[:] for row in matrix]
+    if size == 0:
+        return []
+    for _ in range(max(1, 50 * size * size)):
+        pivot = max(
+            ((abs(values[i][j]), i, j) for i in range(size) for j in range(i + 1, size)),
+            default=(0.0, 0, 0),
+        )
+        magnitude, p, q = pivot
+        if magnitude < 1e-12:
+            break
+        angle = 0.5 * math.atan2(2.0 * values[p][q], values[q][q] - values[p][p])
+        cosine, sine = math.cos(angle), math.sin(angle)
+        app, aqq, apq = values[p][p], values[q][q], values[p][q]
+        values[p][p] = cosine * cosine * app - 2 * sine * cosine * apq + sine * sine * aqq
+        values[q][q] = sine * sine * app + 2 * sine * cosine * apq + cosine * cosine * aqq
+        values[p][q] = values[q][p] = 0.0
+        for index in range(size):
+            if index in (p, q):
+                continue
+            aip, aiq = values[index][p], values[index][q]
+            values[index][p] = values[p][index] = cosine * aip - sine * aiq
+            values[index][q] = values[q][index] = sine * aip + cosine * aiq
+    return [values[index][index] for index in range(size)]
+
+
 def build_multizone_response_identification(
     samples: list[dict[str, Any]],
     rooms: list[dict[str, Any]],
@@ -781,6 +810,7 @@ def build_multizone_response_identification(
     require_boiler_burner_off: bool = False,
     require_boiler_modulation_zero: bool = False,
     max_predictor_correlation: float = 0.985,
+    max_predictor_condition_number: float = 1_000_000.0,
 ) -> dict[str, Any]:
     """Identify normalized passive room-to-room and envelope response rates.
 
@@ -794,6 +824,8 @@ def build_multizone_response_identification(
         raise ValueError("Invalid multi-zone identification cadence or split")
     if not 0 < max_predictor_correlation <= 1:
         raise ValueError("Maximum predictor correlation must be in (0, 1]")
+    if not math.isfinite(max_predictor_condition_number) or max_predictor_condition_number <= 1:
+        raise ValueError("Maximum predictor condition number must be finite and greater than 1")
     room_ids = [str(room.get("id", "unknown")) for room in rooms]
     if len(room_ids) < 2:
         return {
@@ -913,6 +945,9 @@ def build_multizone_response_identification(
             "max_abs_predictor_correlation": None,
             "predictor_correlations": {},
             "identifiability_threshold": max_predictor_correlation,
+            "predictor_condition_number": None,
+            "maximum_predictor_condition_number": max_predictor_condition_number,
+            "predictor_matrix_rank": None,
             "excluded_intervals": exclusions,
         }
         if len(train) >= minimum_train_intervals and len(holdout) >= minimum_holdout_intervals:
@@ -950,15 +985,51 @@ def build_multizone_response_identification(
                         max_abs_correlation = max(max_abs_correlation, abs(correlation))
                 result["predictor_correlations"] = correlations
                 result["max_abs_predictor_correlation"] = round(max_abs_correlation, 4)
-                if max_abs_correlation >= max_predictor_correlation:
-                    result["status"] = "non_identifiable_predictor_collinearity"
+                # Pairwise correlations can all look acceptable while a
+                # combination of three or more predictors is nearly dependent.
+                # Inspect the full standardized Gram/correlation matrix too.
+                correlation_matrix = [[0.0] * p for _ in range(p)]
+                for left in range(p):
+                    for right in range(p):
+                        numerator = sum(
+                            (row[1][left] - means[left]) * (row[1][right] - means[right])
+                            for row in train
+                        )
+                        correlation_matrix[left][right] = (
+                            numerator / (scales[left] * scales[right] * len(train))
+                        )
+                eigenvalues = _symmetric_matrix_eigenvalues(correlation_matrix)
+                largest_eigenvalue = max(eigenvalues) if eigenvalues else 0.0
+                smallest_eigenvalue = min(eigenvalues) if eigenvalues else 0.0
+                matrix_rank = sum(value > max(1e-10, largest_eigenvalue * 1e-10) for value in eigenvalues)
+                condition_number = (
+                    largest_eigenvalue / smallest_eigenvalue
+                    if smallest_eigenvalue > 1e-12 else float("inf")
+                )
+                result["predictor_matrix_rank"] = matrix_rank
+                result["predictor_condition_number"] = (
+                    round(condition_number, 2) if math.isfinite(condition_number) else None
+                )
+                collinear = max_abs_correlation >= max_predictor_correlation
+                ill_conditioned = (
+                    matrix_rank < p or not math.isfinite(condition_number)
+                    or condition_number > max_predictor_condition_number
+                )
+                if collinear or ill_conditioned:
+                    result["status"] = (
+                        "non_identifiable_predictor_collinearity" if collinear
+                        else "non_identifiable_predictor_matrix"
+                    )
                     result["identifiability_note"] = (
+                        "The full predictor matrix is rank-deficient or too ill-conditioned "
+                        "to allocate separate normalized response rates."
+                        if ill_conditioned else
                         "At least two thermal drivers are too strongly correlated in the training "
                         "history to separate their individual normalized response rates."
                     )
                     result["interpretation"] = (
-                        "Coefficients are withheld because the available training history cannot "
-                        "distinguish the correlated envelope and inter-room temperature drivers."
+                        "Coefficients are withheld because the available training history does not "
+                        "independently excite the complete set of envelope and inter-room drivers."
                     )
                     room_results[room_id] = result
                     continue

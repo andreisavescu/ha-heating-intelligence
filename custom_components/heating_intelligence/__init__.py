@@ -5,8 +5,6 @@ import logging
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .const import CARD_FILENAME, CARD_URL, DOMAIN, PLATFORMS
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -26,6 +24,7 @@ async def async_setup_entry(hass, entry) -> bool:
     from homeassistant.components.lovelace import LOVELACE_DATA, MODE_STORAGE
     from homeassistant.loader import async_get_loaded_integration
 
+    from .const import CARD_FILENAME, CARD_URL, DOMAIN, PLATFORMS
     from .coordinator import HeatingIntelligenceCoordinator
     from .devices import async_repair_entity_device_associations
 
@@ -62,6 +61,8 @@ async def _async_register_card_resource(
     get_loaded_integration,
 ) -> None:
     """Create or update the Lovelace resource with the installed integration version."""
+    from .const import CARD_FILENAME, CARD_URL, DOMAIN
+
     version = get_loaded_integration(hass, DOMAIN).version
     lovelace = hass.data.get(lovelace_data_key)
     if lovelace is None:
@@ -125,6 +126,8 @@ async def _async_options_updated(hass, entry) -> None:
 
 async def async_unload_entry(hass, entry) -> bool:
     """Unload an entry."""
+    from .const import DOMAIN, PLATFORMS
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)

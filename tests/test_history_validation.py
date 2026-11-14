@@ -735,3 +735,56 @@ def test_thermal_input_room_response_alignment_requires_complete_room_coverage()
     assert result["meters"]["gas_consumption"]["exclusions"]["incomplete_room_temperature_coverage"] == 2
     assert result["maximum_lag_minutes"] == 120
 
+
+
+def test_room_level_excitation_identifiability_detects_independent_demand_patterns():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    patterns = [(True, False), (False, True), (True, True), (False, False)] * 4
+    samples = []
+    for index in range(len(patterns)):
+        left, right = patterns[index]
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "pump:ground_floor:power": 30.0 if left else 0.0,
+                "pump:ground_floor:power_age_minutes": 0,
+                "pump:upstairs:power": 30.0 if right else 0.0,
+                "pump:upstairs:power_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {"demand": "on" if left else "off", "demand_age_minutes": 0, "temperature": 20.0 + index * 0.02},
+                "bedroom": {"demand": "on" if right else "off", "demand_age_minutes": 0, "temperature": 19.0 + index * 0.01},
+            },
+        })
+    result = MODULE.build_room_level_excitation_identifiability(
+        samples,
+        [{"id": "living", "floor": "ground_floor"}, {"id": "bedroom", "floor": "upstairs"}],
+        minimum_mode_intervals=3,
+    )
+    assert result["rooms_with_both_demand_modes"] == 2
+    assert result["distinct_simultaneous_demand_patterns"] == 4
+    assert result["room_specific_input_separation"] == "potentially_excited_but_not_identified"
+    assert result["floors"]["ground_floor"]["pump_transitions"] > 0
+
+
+def test_room_level_excitation_identifiability_withholds_when_demands_are_locked_together():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(12):
+        on = index % 2 == 0
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {},
+            "rooms": {
+                "living": {"demand": "on" if on else "off", "demand_age_minutes": 0, "temperature": 20.0 + index * 0.02},
+                "bedroom": {"demand": "on" if on else "off", "demand_age_minutes": 0, "temperature": 19.0 + index * 0.01},
+            },
+        })
+    result = MODULE.build_room_level_excitation_identifiability(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}],
+        minimum_mode_intervals=3,
+    )
+    assert result["rooms_with_both_demand_modes"] == 2
+    assert result["distinct_simultaneous_demand_patterns"] == 2
+    assert result["room_specific_input_separation"] == "insufficient_independent_room_demand_patterns"

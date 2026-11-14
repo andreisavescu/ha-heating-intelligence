@@ -1052,6 +1052,14 @@ def test_thermal_input_alignment_reports_weather_and_demand_adjustment():
     assert "solar_radiation_w_m2" in adjustment["covariates"]
     assert "room_demand_fraction" in adjustment["covariates"]
     assert adjustment["paired_intervals"] >= 8
+    assert adjustment["confidence_interval_degrees_of_freedom"] == (
+        adjustment["paired_intervals"] - len(adjustment["covariates"]) - 3
+    )
+    assert result["meters"]["gas_consumption"]["adjusted_lag_peak_status"] in (
+        "distinct_adjusted_descriptive_peak",
+        "ambiguous_adjusted_neighbouring_lag_peaks",
+        "insufficient_adjusted_lags",
+    )
 
 
 def test_partial_correlation_block_sensitivity_reports_resampling_range():

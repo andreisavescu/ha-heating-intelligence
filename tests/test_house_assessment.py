@@ -57,8 +57,12 @@ def test_room_area_coverage_uses_only_configured_positive_areas():
     }
     result = build_house_assessment({}, {}, rooms)
 
-    assert result["room_coverage"] == {
-        "configured_rooms": 3,
-        "rooms_with_area": 1,
-        "configured_room_area_m2": 35.5,
-    }
+    coverage = result["room_coverage"]
+    assert coverage["configured_rooms"] == 3
+    assert coverage["rooms_with_area"] == 1
+    assert coverage["configured_room_area_m2"] == 35.5
+    assert coverage["room_area_coverage_percent"] == 33
+    assert coverage["rooms_with_measured_ach"] == 0
+    assert coverage["average_measured_ach"] is None
+    assert coverage["minimum_measured_ach"] is None
+    assert coverage["maximum_measured_ach"] is None

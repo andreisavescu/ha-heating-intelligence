@@ -272,3 +272,6 @@ The Recorder calibration diagnostics now include a room-level excitation screen.
 
 
 The passive multi-zone fit now reports per-driver temperature-gradient excitation on its training segment: standard deviation, observed range, positive/negative/near-zero interval counts, and whether each room-to-room gradient reverses direction with adequate sample counts. Room links with weak or one-sided gradients are explicitly listed. This is an excitation-quality diagnostic, not a new physical parameter estimate; the existing full-matrix rank/condition checks still govern coefficient withholding, and holdout data are not used to assess training excitation.
+
+
+The normalized free-coasting multi-zone regression now includes deterministic moving-block bootstrap coefficient-stability diagnostics. It resamples contiguous four-interval blocks from the chronological training segment (80 deterministic replicates when at least 40 training intervals are available) and reports the 5th/50th/95th percentiles plus relative range for each normalized coefficient. These are resampling sensitivity ranges, not formal confidence intervals; they exclude sensor bias, unmeasured gains, model misspecification and uncertainty in delivered room heat. The chronological holdout remains untouched.

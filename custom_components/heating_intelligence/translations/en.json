@@ -20,7 +20,7 @@
           "global_settings": "Global settings",
           "pump_settings": "Pump settings",
           "edit_room": "Change a room's floor",
-          "room_area": "Set room floor areas",
+          "room_area": "Set room floor areas and measured ACH",
           "room_air_quality": "Configure room air quality",
           "house_assessment": "House assessment"
         }
@@ -40,11 +40,12 @@
       },
       "add_room": {
         "title": "Add a room",
-        "description": "Select the room's floor, thermostat demand relay and temperature sensor. Floor area is optional. The window contact is optional.",
+        "description": "Select the room's floor, thermostat demand relay and temperature sensor. Floor area, measured air changes and window contact are optional.",
         "data": {
           "area_m2": "Room floor area (m²)",
           "humidity_entity": "Room humidity sensor (%)",
-          "enable_co2": "Add a CO2 sensor for this room"
+          "enable_co2": "Add a CO2 sensor for this room",
+          "air_changes_per_hour": "Measured room air changes per hour (ACH)"
         }
       },
       "room_air_quality": {
@@ -68,10 +69,11 @@
         "description": "Choose the room whose floor area you want to configure."
       },
       "set_room_area": {
-        "title": "Room floor area",
-        "description": "Set the floor area for {room_name}. Leave empty if unknown.",
+        "title": "Room area and measured ventilation",
+        "description": "Set floor area and optional measured air changes per hour for {room_name}. Leave unknown values empty.",
         "data": {
-          "area_m2": "Room floor area (m²)"
+          "area_m2": "Room floor area (m²)",
+          "air_changes_per_hour": "Measured room air changes per hour (ACH)"
         }
       },
       "remove_room": {
@@ -120,7 +122,8 @@
           "buffer_tank": "Buffer tank or hydraulic separator",
           "ufh_screed_cm": "Underfloor-heating screed thickness (cm)",
           "ac_heating": "Are air conditioners used for heating?",
-          "ac_units": "Number of AC units"
+          "ac_units": "Number of AC units",
+          "thermal_mass": "Overall building thermal mass"
         }
       },
       "assessment_occupancy": {

@@ -266,6 +266,18 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "pump_cycles": sum(p.get("daily_cycle_count", 0) for p in result["pumps"].values()),
         }
 
+        ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
+        ac_power_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
+        ac_power_value = _as_float(ac_power_state.state) if ac_power_state else None
+        ac_power_unit = (ac_power_state.attributes.get("unit_of_measurement") or "").lower() if ac_power_state else ""
+        if ac_power_value is not None:
+            if ac_power_unit == "kw":
+                ac_power_value *= 1000
+            elif ac_power_unit == "mw":
+                ac_power_value /= 1000
+        # Exclude room samples while the configured AC electrical input indicates active use.
+        ac_heating_active = ac_power_value is not None and ac_power_value > 50
+
         prediction_rooms = {}
         learned_room_models = {}
         floor_analysis = {
@@ -309,7 +321,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 ) + elapsed
             temperature_value = _as_float(temperature.state) if temperature else None
             record_temperature_sample(
-                room_history, now_local, temperature_value, demand_active, window_open
+                room_history, now_local, temperature_value, demand_active, window_open,
+                external_heating=ac_heating_active,
             )
             thermal = thermal_statistics(room_history, now_local)
             learned_model = build_room_thermal_model(room_history, now_local, temperature_value, demand_active)
@@ -434,6 +447,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         )
         result["efficiency"]["weather_normalised"] = weather_model
         result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
+        result["thermal_model"]["ac_heating_filter"] = (
+            "active" if ac_heating_active else "inactive" if ac_power_value is not None
+            else "sensor_unavailable" if ac_power_entity else "not_configured"
+        )
         result["house_assessment"] = build_house_assessment(
             self.entry.options.get("house_assessment", {}),
             result["efficiency"],

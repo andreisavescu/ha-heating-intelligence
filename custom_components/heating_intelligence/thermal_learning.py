@@ -95,7 +95,7 @@ def build_room_thermal_model(
     room_history: dict[str, Any], now: datetime, current_temperature: float | None,
     demand: bool, ac_power_sensor_configured: bool = False,
     external_heating_active: bool = False, window_open: bool = False,
-    window_state_known: bool = True,
+    window_state_known: bool = True, window_contact_configured: bool = False,
 ) -> dict[str, Any]:
     """Learn heating/coasting rates from persisted room observations and forecast."""
     samples = room_history.get("temperature_samples", [])
@@ -103,7 +103,7 @@ def build_room_thermal_model(
     coasting = _learn_mode(samples, now, False, ac_power_sensor_configured)
     selected = heating if demand else coasting
     result: dict[str, Any] = {
-        "status": "external_heat_filter_active" if external_heating_active else "window_state_unknown" if not window_state_known else "window_open" if window_open else selected["status"] if current_temperature is not None else "waiting_for_temperature",
+        "status": "external_heat_filter_active" if external_heating_active else "window_contact_not_configured" if not window_contact_configured else "window_state_unknown" if not window_state_known else "window_open" if window_open else selected["status"] if current_temperature is not None else "waiting_for_temperature",
         "model": "rolling_median_thermal_response",
         "learning_window_days": LEARNING_DAYS,
         "mode": "heating" if demand else "coasting",
@@ -120,8 +120,11 @@ def build_room_thermal_model(
     if external_heating_active:
         result["note"] = "AC electrical input is above the active-use threshold, or its configured power sensor is unavailable; forecast withheld to avoid mixing heating systems."
         return result
+    if not window_contact_configured:
+        result["note"] = "Configure a window contact for this room; the model requires verified closed-window periods."
+        return result
     if not window_state_known:
-        result["note"] = "A configured window contact is unavailable; forecast withheld because the closed-window condition cannot be verified."
+        result["note"] = "The configured window contact is unavailable; forecast withheld because the closed-window condition cannot be verified."
         return result
     if window_open:
         result["note"] = "The room window is currently open; forecast withheld because the learned model assumes closed windows."

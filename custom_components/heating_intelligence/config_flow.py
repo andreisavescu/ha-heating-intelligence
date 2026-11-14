@@ -218,7 +218,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             data[CONF_BOILER_EFFICIENCY] = float(user_input.get(CONF_BOILER_EFFICIENCY) or 0.90)
             data[CONF_ENVELOPE_AREA] = float(user_input.get(CONF_ENVELOPE_AREA) or 361.26)
             data[CONF_AC_HEATING_COP] = float(user_input.get(CONF_AC_HEATING_COP) or 3.0)
-            data[CONF_CALIBRATION_HISTORY_DAYS] = int(user_input.get(CONF_CALIBRATION_HISTORY_DAYS) or current.get(CONF_CALIBRATION_HISTORY_DAYS, DEFAULT_CALIBRATION_HISTORY_DAYS))
+            data[CONF_CALIBRATION_HISTORY_DAYS] = int(user_input.get(CONF_CALIBRATION_HISTORY_DAYS) or self.config_entry.options.get(CONF_CALIBRATION_HISTORY_DAYS, DEFAULT_CALIBRATION_HISTORY_DAYS))
             return self.async_create_entry(title="", data=data)
 
         current = self.config_entry.options

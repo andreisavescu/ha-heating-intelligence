@@ -240,6 +240,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_ELECTRICITY_BOILER_POWER_ENTITY,
                 CONF_AC_POWER_ENTITY,
                 CONF_AC_ENERGY_ENTITY,
+                CONF_BOILER_MODULATION_ENTITY,
             )
         )
         burner_field = vol.Optional(CONF_BOILER_BURNER_ENTITY, default=current.get(CONF_BOILER_BURNER_ENTITY)) if current.get(CONF_BOILER_BURNER_ENTITY) else vol.Optional(CONF_BOILER_BURNER_ENTITY)

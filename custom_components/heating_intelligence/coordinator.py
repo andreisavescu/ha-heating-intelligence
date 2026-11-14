@@ -463,7 +463,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 if value is not None:
                     return {
                         "value": value,
-                        "unit": weather_state.attributes.get("wind_speed_unit") if attribute == "wind_speed" else None,
+                        "unit": {
+                            "temperature": weather_state.attributes.get("temperature_unit", "°C"),
+                            "humidity": "%",
+                            "pressure": weather_state.attributes.get("pressure_unit"),
+                            "wind_speed": weather_state.attributes.get("wind_speed_unit"),
+                            "wind_bearing": "°",
+                        }.get(attribute),
                         "entity_id": weather_entity_id,
                         "source": "weather_entity_attribute",
                     }

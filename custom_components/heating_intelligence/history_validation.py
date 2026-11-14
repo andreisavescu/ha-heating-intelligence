@@ -283,11 +283,14 @@ def build_recorder_history_summary(
     for entity_id, states in history.items():
         valid = []
         numeric = 0
+        state_values = []
         for state in states:
             stamp = _timestamp(state)
             if stamp is None or not start_utc <= stamp <= end_utc:
                 continue
             valid.append(stamp)
+            raw_value = state.get("state") if isinstance(state, dict) else getattr(state, "state", None)
+            state_values.append(raw_value)
             if _state_value(state) is not None:
                 numeric += 1
         valid.sort()
@@ -303,6 +306,8 @@ def build_recorder_history_summary(
         entities[entity_id] = {
             "samples": len(valid),
             "numeric_samples": numeric,
+            "state_change_count": sum(first != second for first, second in zip(state_values, state_values[1:])),
+            "distinct_state_count": len({str(value) for value in state_values}),
             "first_sample": valid[0].isoformat() if valid else None,
             "last_sample": valid[-1].isoformat() if valid else None,
             "span_hours": round(span_hours, 2),

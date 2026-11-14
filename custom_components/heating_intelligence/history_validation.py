@@ -1,7 +1,7 @@
 """Recorder-backed historical data coverage for model calibration."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from bisect import bisect_right
 import math
 from typing import Any

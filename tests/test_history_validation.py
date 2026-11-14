@@ -34,9 +34,12 @@ def test_summarises_numeric_and_state_history_without_retaining_samples():
     assert result["total_samples"] == 5
     assert room["samples"] == 3
     assert room["numeric_samples"] == 2
+    assert room["state_change_count"] == 2
+    assert room["distinct_state_count"] == 3
     assert room["span_hours"] == 2.0
     assert room["status"] == "available"
     assert result["entities"]["binary_sensor.room_window"]["numeric_samples"] == 0
+    assert result["entities"]["binary_sensor.room_window"]["state_change_count"] == 1
     assert result["raw_history_retained"] is False
 
 

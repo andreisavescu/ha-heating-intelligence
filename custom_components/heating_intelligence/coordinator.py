@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -211,6 +211,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             summary["thermal_input_energy_observability"] = build_thermal_input_energy_observability(
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
+            )
+            summary["solar_room_response_analysis"] = build_solar_room_response_analysis(
+                self._calibration_dataset_samples, configured_rooms,
+                interval_minutes=30, max_age_minutes=45,
+                maximum_lag_intervals=4, minimum_pairs=24,
             )
             summary["floor_thermal_output_observability"] = build_floor_thermal_output_observability(
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,

@@ -138,3 +138,56 @@ def test_air_only_capacity_inventory_marks_partial_volume_coverage():
     assert inventory["rooms_with_volume"] == 1
     assert inventory["volume_coverage_percent"] == 50
     assert inventory["air_only_capacity_wh_per_k"] == 33.5
+
+
+
+def test_ventilation_conductance_is_available_without_outdoor_temperature():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "living": {
+                "temperature": 21.0,
+                "volume_m3": 100.0,
+                "air_changes_per_hour": 0.5,
+            }
+        }
+    )
+    assert result["ventilation_paths"][0]["conductance_w_per_k"] == 16.75
+    assert result["nodes"]["boundary:outdoors"]["temperature_c"] is None
+    assert result["nodes"]["boundary:outdoors"]["status"] == "temperature_unavailable"
+
+
+def test_house_loss_decomposition_requires_complete_ventilation_coverage():
+    rooms = {
+        "living": {"temperature": 21.0, "volume_m3": 100.0, "air_changes_per_hour": 0.5},
+        "bedroom": {"temperature": 20.0},
+    }
+    result = MODEL.build_multizone_observation_model(
+        rooms, profile={"house_heat_loss_coefficient_w_k": 100.0}
+    )
+    decomposition = result["house_heat_loss_decomposition"]
+    assert decomposition["status"] == "withheld_incomplete_ventilation_coverage"
+    assert decomposition["residual_envelope_heat_loss_coefficient_w_k"] is None
+
+
+def test_house_loss_decomposition_subtracts_ventilation_only_with_full_coverage():
+    rooms = {
+        "living": {"temperature": 21.0, "volume_m3": 100.0, "air_changes_per_hour": 0.5},
+        "bedroom": {"temperature": 20.0, "volume_m3": 50.0, "air_changes_per_hour": 0.8},
+    }
+    result = MODEL.build_multizone_observation_model(
+        rooms, profile={"house_heat_loss_coefficient_w_k": 100.0}
+    )
+    decomposition = result["house_heat_loss_decomposition"]
+    assert decomposition["status"] == "conditional_residual_available"
+    assert decomposition["ventilation_heat_loss_coefficient_w_k"] == 30.15
+    assert decomposition["residual_envelope_heat_loss_coefficient_w_k"] == 69.85
+
+
+def test_house_loss_decomposition_withholds_nonphysical_negative_residual():
+    result = MODEL.build_multizone_observation_model(
+        {"living": {"volume_m3": 100.0, "air_changes_per_hour": 5.0}},
+        profile={"house_heat_loss_coefficient_w_k": 100.0},
+    )
+    decomposition = result["house_heat_loss_decomposition"]
+    assert decomposition["status"] == "withheld_ventilation_not_below_total"
+    assert decomposition["residual_envelope_heat_loss_coefficient_w_k"] is None

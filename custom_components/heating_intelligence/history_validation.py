@@ -3096,6 +3096,7 @@ def build_multizone_response_identification(
             "demand_or_window_not_confirmed_off_closed": 0,
             "solar_missing_or_high": 0,
             "ac_heating_active_or_unavailable": 0,
+            "unsupported_ac_power_unit": 0,
             "boiler_active_or_unavailable": 0,
             "stale_room_temperature": 0,
             "stale_room_state": 0,
@@ -3178,6 +3179,16 @@ def build_multizone_response_identification(
             if any(age is not None and age > max_age_minutes for age in ac_ages):
                 exclusions["stale_ac_or_boiler_telemetry"] += 1
                 continue
+            ac_unit0 = str(first_channels.get("ac_power_unit") or "").strip()
+            ac_unit1 = str(second_channels.get("ac_power_unit") or "").strip()
+            ac_scales = {"W": 1.0, "w": 1.0, "watt": 1.0, "watts": 1.0, "kW": 1000.0, "kw": 1000.0, "MW": 1000000.0, "mW": 0.001}
+            if (ac_unit0 and ac_unit0 not in ac_scales) or (ac_unit1 and ac_unit1 not in ac_scales):
+                exclusions["unsupported_ac_power_unit"] += 1
+                continue
+            if ac0 is not None and ac_unit0 in ac_scales:
+                ac0 *= ac_scales[ac_unit0]
+            if ac1 is not None and ac_unit1 in ac_scales:
+                ac1 *= ac_scales[ac_unit1]
             if ((require_ac_power and (ac0 is None or ac1 is None))
                     or (ac0 is not None and ac0 > ac_power_max_w)
                     or (ac1 is not None and ac1 > ac_power_max_w)):

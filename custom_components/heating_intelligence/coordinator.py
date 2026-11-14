@@ -197,15 +197,18 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             })
             for key, default in (("daily_runtime_seconds", 0.0), ("daily_cycle_count", 0), ("daily_energy_kwh", 0.0), ("last_energy_reading", None)):
                 history.setdefault(key, default)
-            stage_data = update_pump_stage(
-                history.setdefault("stage_history", {}),
-                power,
-                now_local,
-            )
+            stage_history = history.setdefault("stage_history", {})
+            stage_data = update_pump_stage(stage_history, power, now_local)
+            candidate_start = stage_history.get("above_pump_threshold_since")
+            if candidate_start and history.get("correlated_candidate_start") != candidate_start:
+                history["correlated_candidate_start"] = candidate_start
+                history["candidate_boiler_context"] = dict(boiler_context)
             observed_running = stage_data["stage"] == "pump_running"
             if stage_data.get("pump_started_at") and history.get("correlated_pump_started_at") != stage_data["pump_started_at"]:
                 history["correlated_pump_started_at"] = stage_data["pump_started_at"]
-                history["pump_start_boiler_context"] = dict(boiler_context)
+                history["pump_start_boiler_context"] = dict(
+                    history.get("candidate_boiler_context") or boiler_context
+                )
             was_running = bool(history.get("running", False))
 
             if observed_running is True and not was_running:

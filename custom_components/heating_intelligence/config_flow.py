@@ -114,6 +114,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         fields = {
             vol.Optional("boiler_model", default=current.get("boiler_model", "Viessmann Vitodens 100")): str,
             vol.Optional("heating_distribution", default=current.get("heating_distribution", "underfloor")): vol.In({"unknown": "Unknown", "underfloor": "Underfloor heating", "radiators": "Radiators", "mixed": "Mixed"}),
+            vol.Optional("thermal_mass", default=current.get("thermal_mass", "unknown")): vol.In({"unknown": "Unknown", "light": "Lightweight", "medium": "Medium", "heavy": "High thermal mass"}),
             vol.Optional("boiler_dhw", default=current.get("boiler_dhw", "unknown")): vol.In({"unknown": "Unknown", "yes": "Yes", "no": "No"}),
             vol.Optional("buffer_tank", default=current.get("buffer_tank", "unknown")): vol.In({"unknown": "Unknown", "yes": "Yes", "no": "No"}),
             vol.Optional("ufh_screed_cm"): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=20, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)),

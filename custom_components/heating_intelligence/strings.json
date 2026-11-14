@@ -100,7 +100,14 @@
           "window_glazing": "Window glazing",
           "window_frame": "Window frame material",
           "main_orientation": "Main solar-exposed orientation",
-          "shading": "External shading"
+          "shading": "External shading",
+          "wall_construction": "External wall construction",
+          "roof_type": "Roof type",
+          "floor_construction": "Ground-floor construction",
+          "window_area_north_m2": "North-facing window area (m²)",
+          "window_area_south_m2": "South-facing window area (m²)",
+          "window_area_east_m2": "East-facing window area (m²)",
+          "window_area_west_m2": "West-facing window area (m²)"
         }
       },
       "assessment_heating": {

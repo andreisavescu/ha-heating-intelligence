@@ -111,7 +111,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             self._history.setdefault("sync_mismatch_count", 0)
             self._history.setdefault("last_sync_result", "unknown")
 
-    async def _async_recorder_history_summary(self, now):
+    async def _async_recorder_history_summary(self, now, efficiency=None):
         """Read a bounded Recorder window at most every six hours."""
         last_value = self._history.get("recorder_history_checked_at")
         last_check = dt_util.parse_datetime(last_value) if last_value else None
@@ -183,7 +183,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             summary["held_out_validation"] = build_held_out_room_validation(
                 history, configured_rooms, outdoor_entity,
             )
-            efficiency = self.data.get("efficiency", {}) if isinstance(self.data, dict) else {}
+            efficiency = efficiency or {}
             house_u = _as_float(efficiency.get("heat_loss_u_value_7d"))
             envelope_area = _as_float(efficiency.get("thermal_model_envelope_area_m2"))
             house_heat_loss = house_u * envelope_area if house_u and envelope_area else None
@@ -647,7 +647,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         )
         result["efficiency"]["weather_normalised"] = weather_model
         result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
-        result["thermal_model"]["historical_validation"] = await self._async_recorder_history_summary(now)
+        result["thermal_model"]["historical_validation"] = await self._async_recorder_history_summary(now, result["efficiency"])
         result["thermal_model"]["multi_zone"] = build_multizone_observation_model(
             result["rooms"],
             result["weather"],

@@ -1829,3 +1829,121 @@ def test_solar_room_response_does_not_bridge_irregular_timestamp_lag():
     assert lag_two["paired_intervals"] < 47
     assert result["excluded_observations"]["living"]["invalid_cadence"] == 1
 
+def test_multizone_identification_excludes_stale_room_temperatures_and_states():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(80):
+        age = 90 if index == 35 else 0
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0 + math.sin(index / 7.0),
+                "solar_radiation": 0.0,
+            },
+            "rooms": {
+                "living": {
+                    "temperature": 21.0 - index * 0.01,
+                    "temperature_age_minutes": age,
+                    "demand": "off",
+                    "demand_age_minutes": age,
+                    "window": "off",
+                    "window_age_minutes": age,
+                },
+                "bedroom": {
+                    "temperature": 20.0 - index * 0.008,
+                    "temperature_age_minutes": 0,
+                    "demand": "off",
+                    "demand_age_minutes": 0,
+                    "window": "off",
+                    "window_age_minutes": 0,
+                },
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples, [{"id": "living"}, {"id": "bedroom"}], max_age_minutes=45,
+    )
+    excluded = result["rooms"]["living"]["excluded_intervals"]
+    assert excluded["stale_room_temperature"] >= 1
+    assert excluded["stale_room_state"] >= 1
+
+
+def test_multizone_identification_excludes_stale_solar_and_outdoor_values():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(80):
+        age = 90 if index == 35 else 0
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0 + math.sin(index / 7.0),
+                "outdoor_temperature_age_minutes": age,
+                "solar_radiation": 0.0,
+                "solar_radiation_age_minutes": age,
+                "solar_radiation_unit": "W/m²",
+            },
+            "rooms": {
+                "living": {"temperature": 21.0 - index * 0.01, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": 20.0 - index * 0.008, "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples, [{"id": "living"}, {"id": "bedroom"}], max_age_minutes=45,
+    )
+    assert result["rooms"]["living"]["excluded_intervals"]["stale_solar_or_outdoor"] >= 1
+
+
+def test_multizone_identification_rejects_unsupported_solar_units():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(80):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0 + math.sin(index / 7.0),
+                "solar_radiation": 0.0,
+                "solar_radiation_unit": "lux",
+            },
+            "rooms": {
+                "living": {"temperature": 21.0 - index * 0.01, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": 20.0 - index * 0.008, "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples, [{"id": "living"}, {"id": "bedroom"}],
+    )
+    assert result["rooms"]["living"]["excluded_intervals"]["unsupported_solar_unit"] > 0
+    assert result["rooms"]["living"]["normalized_rates_per_hour"] is None
+
+
+def test_multizone_identification_excludes_stale_required_plant_telemetry():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(80):
+        age = 90 if index == 35 else 0
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0 + math.sin(index / 7.0),
+                "solar_radiation": 0.0,
+                "ac_power": 0.0,
+                "ac_power_age_minutes": age,
+                "boiler_burner": "off",
+                "boiler_burner_age_minutes": age,
+                "boiler_modulation": 0.0,
+                "boiler_modulation_age_minutes": age,
+            },
+            "rooms": {
+                "living": {"temperature": 21.0 - index * 0.01, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": 20.0 - index * 0.008, "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}],
+        require_ac_power=True,
+        require_boiler_burner_off=True,
+        require_boiler_modulation_zero=True,
+        max_age_minutes=45,
+    )
+    assert result["rooms"]["living"]["excluded_intervals"]["stale_ac_or_boiler_telemetry"] >= 1
+

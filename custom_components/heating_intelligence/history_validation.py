@@ -1167,6 +1167,191 @@ def build_thermal_input_room_response_alignment(
             "absolute room or slab capacities remain unidentifiable from these associations."
         ),
     }
+
+def build_room_level_excitation_identifiability(
+    samples: list[dict[str, Any]],
+    rooms: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    minimum_mode_intervals: int = 4,
+    max_age_minutes: float = 45.0,
+) -> dict[str, Any]:
+    """Screen room-demand and floor-pump excitation before fitting active RC inputs.
+
+    Demand is a controller request, not measured heat delivery. Pump power is
+    an auxiliary on/off indicator, not water-side thermal output.
+    """
+    if interval_minutes <= 0 or minimum_mode_intervals < 1 or max_age_minutes < 0:
+        raise ValueError("Invalid room excitation thresholds")
+    room_ids = [str(room.get("id", "unknown")) for room in rooms]
+    if not room_ids or len(set(room_ids)) != len(room_ids):
+        return {"status": "insufficient_room_configuration", "rooms": {}, "floors": {}}
+    parsed = []
+    for sample in samples:
+        try:
+            stamp = datetime.fromisoformat(str(sample.get("timestamp", "")).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            parsed.append((stamp.astimezone(timezone.utc), sample))
+        except (TypeError, ValueError):
+            continue
+    parsed.sort(key=lambda item: item[0])
+    room_counts = {
+        room_id: {"on_intervals": 0, "off_intervals": 0, "unknown_intervals": 0,
+                  "on_transitions": 0, "off_transitions": 0,
+                  "on_temperature_rates": [], "off_temperature_rates": []}
+        for room_id in room_ids
+    }
+    pair_counts = {
+        (left, right): {"both_on": 0, "left_only": 0, "right_only": 0, "both_off": 0}
+        for index, left in enumerate(room_ids) for right in room_ids[index + 1:]
+    }
+    patterns = {}
+    floors = {}
+    for floor_id in ("ground_floor", "upstairs"):
+        floor_rooms = [room for room in rooms if room.get("floor", "ground_floor") == floor_id]
+        floors[floor_id] = {
+            "rooms": [str(room.get("id", "unknown")) for room in floor_rooms],
+            "pump_on_intervals": 0, "pump_off_intervals": 0,
+            "pump_unknown_intervals": 0, "pump_transitions": 0,
+            "room_demand_and_pump_disagreement_intervals": 0,
+        }
+    previous_modes = {}
+    previous_pumps = {}
+    for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
+        elapsed = (stamp1 - stamp0).total_seconds() / 60
+        if abs(elapsed - interval_minutes) > 1:
+            previous_modes = {}
+            previous_pumps = {}
+            continue
+        first_rooms, second_rooms = first.get("rooms") or {}, second.get("rooms") or {}
+        modes = {}
+        for room_id in room_ids:
+            state0 = _switch_state(first_rooms.get(room_id, {}).get("demand"))
+            state1 = _switch_state(second_rooms.get(room_id, {}).get("demand"))
+            age0 = _finite_number_or_none(first_rooms.get(room_id, {}).get("demand_age_minutes"))
+            age1 = _finite_number_or_none(second_rooms.get(room_id, {}).get("demand_age_minutes"))
+            if (state0 is None or state1 is None
+                    or (age0 is not None and age0 > max_age_minutes)
+                    or (age1 is not None and age1 > max_age_minutes)):
+                room_counts[room_id]["unknown_intervals"] += 1
+                continue
+            mode = state1
+            modes[room_id] = mode
+            bucket = "on_intervals" if mode else "off_intervals"
+            room_counts[room_id][bucket] += 1
+            if room_id in previous_modes and previous_modes[room_id] != mode:
+                transition = "on_transitions" if mode else "off_transitions"
+                room_counts[room_id][transition] += 1
+            temp0 = _finite_number_or_none(first_rooms.get(room_id, {}).get("temperature"))
+            temp1 = _finite_number_or_none(second_rooms.get(room_id, {}).get("temperature"))
+            if temp0 is not None and temp1 is not None:
+                rate = (temp1 - temp0) / (elapsed / 60)
+                room_counts[room_id]["on_temperature_rates" if mode else "off_temperature_rates"].append(rate)
+            previous_modes[room_id] = mode
+        if len(modes) == len(room_ids):
+            pattern = "".join("1" if modes[room_id] else "0" for room_id in room_ids)
+            patterns[pattern] = patterns.get(pattern, 0) + 1
+            for pair, counts in pair_counts.items():
+                left_on, right_on = modes[pair[0]], modes[pair[1]]
+                key = "both_on" if left_on and right_on else "left_only" if left_on else "right_only" if right_on else "both_off"
+                counts[key] += 1
+        for floor_id, floor_result in floors.items():
+            floor_rooms = [room for room in rooms if room.get("floor", "ground_floor") == floor_id]
+            if not floor_rooms:
+                continue
+            pump_key = f"pump:{floor_id}:power"
+            channels0, channels1 = first.get("channels") or {}, second.get("channels") or {}
+            power0 = _finite_number_or_none(channels0.get(pump_key))
+            power1 = _finite_number_or_none(channels1.get(pump_key))
+            age0 = _finite_number_or_none(channels0.get(pump_key + "_age_minutes"))
+            age1 = _finite_number_or_none(channels1.get(pump_key + "_age_minutes"))
+            if (power0 is None or power1 is None
+                    or (age0 is not None and age0 > max_age_minutes)
+                    or (age1 is not None and age1 > max_age_minutes)):
+                floor_result["pump_unknown_intervals"] += 1
+                previous_pumps.pop(floor_id, None)
+                continue
+            pump_on = power1 > 5.0
+            floor_result["pump_on_intervals" if pump_on else "pump_off_intervals"] += 1
+            if floor_id in previous_pumps and previous_pumps[floor_id] != pump_on:
+                floor_result["pump_transitions"] += 1
+            previous_pumps[floor_id] = pump_on
+            known_floor_modes = [modes.get(str(room.get("id"))) for room in floor_rooms]
+            known_floor_modes = [mode for mode in known_floor_modes if mode is not None]
+            if known_floor_modes and pump_on != any(known_floor_modes):
+                floor_result["room_demand_and_pump_disagreement_intervals"] += 1
+
+    def phi(counts):
+        both_on, left_only, right_only, both_off = (
+            counts["both_on"], counts["left_only"], counts["right_only"], counts["both_off"]
+        )
+        denominator = math.sqrt(
+            (both_on + left_only) * (right_only + both_off)
+            * (both_on + right_only) * (left_only + both_off)
+        )
+        return (both_on * both_off - left_only * right_only) / denominator if denominator > 1e-12 else None
+
+    room_results = {}
+    for room_id, counts in room_counts.items():
+        on_rates, off_rates = counts["on_temperature_rates"], counts["off_temperature_rates"]
+        enough = len(on_rates) >= minimum_mode_intervals and len(off_rates) >= minimum_mode_intervals
+        room_results[room_id] = {
+            "status": "both_demand_modes_observed" if enough else "insufficient_demand_mode_excitation",
+            "demand_on_intervals": counts["on_intervals"],
+            "demand_off_intervals": counts["off_intervals"],
+            "unknown_intervals": counts["unknown_intervals"],
+            "demand_on_transitions": counts["on_transitions"],
+            "demand_off_transitions": counts["off_transitions"],
+            "temperature_rate_median_demand_on_c_per_hour": round(sorted(on_rates)[len(on_rates)//2], 4) if on_rates else None,
+            "temperature_rate_median_demand_off_c_per_hour": round(sorted(off_rates)[len(off_rates)//2], 4) if off_rates else None,
+            "temperature_rate_separation_c_per_hour": (
+                round(sorted(on_rates)[len(on_rates)//2] - sorted(off_rates)[len(off_rates)//2], 4)
+                if enough else None
+            ),
+            "active_input_identifiable": False,
+            "note": "Demand is a controller request, not measured room heat delivery; temperature-rate separation is descriptive only.",
+        }
+    pair_results = {
+        f"{left}__{right}": {
+            **counts,
+            "demand_coactivation_phi": round(phi(counts), 4) if phi(counts) is not None else None,
+        }
+        for (left, right), counts in pair_counts.items()
+    }
+    independent_patterns = sum(1 for count in patterns.values() if count > 0)
+    room_mode_coverage = sum(
+        1 for item in room_results.values()
+        if item["status"] == "both_demand_modes_observed"
+    )
+    independent_room_excitation = (
+        room_mode_coverage == len(room_ids)
+        and len(patterns) >= min(2 ** len(room_ids), max(2, len(room_ids) + 1))
+    )
+    return {
+        "status": "room_demand_excitation_observed" if room_mode_coverage else "insufficient_room_demand_excitation",
+        "interval_minutes": interval_minutes,
+        "room_count": len(room_ids),
+        "rooms_with_both_demand_modes": room_mode_coverage,
+        "distinct_simultaneous_demand_patterns": independent_patterns,
+        "observed_demand_patterns": patterns,
+        "pairwise_demand_coactivation": pair_results,
+        "rooms": room_results,
+        "floors": floors,
+        "room_specific_input_separation": (
+            "potentially_excited_but_not_identified" if independent_room_excitation
+            else "insufficient_independent_room_demand_patterns"
+        ),
+        "absolute_capacity_identification": "withheld_no_independent_room_heat_delivery_measurement",
+        "note": (
+            "This screens whether room demand controllers independently switch and whether floor "
+            "pump activity broadly overlaps room demand. Binary demand and pump power are excitation "
+            "indicators only. Correlated room demands, shared manifold operation, unknown hydraulic "
+            "flow and unmeasured heat delivery prevent room-specific watts, absolute capacities or "
+            "conductances from being identified."
+        ),
+    }
+
+
 def _symmetric_matrix_eigenvalues(matrix: list[list[float]]) -> list[float]:
     """Return eigenvalues of a small real symmetric matrix via Jacobi rotations."""
     size = len(matrix)

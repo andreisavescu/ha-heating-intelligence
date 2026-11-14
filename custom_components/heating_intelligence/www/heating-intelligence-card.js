@@ -290,6 +290,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
           <div class="subtle">${(attrs.house_assessment?.observations || []).map(item => this._esc(item)).join(" ") || "Complete the optional House assessment in integration settings to add building characteristics."}</div>
           <div class="subtle">${this._esc(attrs.house_assessment?.interpretation || "")}</div>
+          <div class="subtle">Thermal estimate assumptions: boiler efficiency ${this._fmt((attrs.house_assessment?.measurement_assumptions?.boiler_efficiency ?? null) == null ? null : attrs.house_assessment.measurement_assumptions.boiler_efficiency * 100, "%", 0)} · AC heating COP ${this._fmt(attrs.house_assessment?.measurement_assumptions?.ac_heating_cop, "COP", 1)} · envelope area ${this._fmt(attrs.house_assessment?.measurement_assumptions?.envelope_area_m2, "m²", 1)}. Valid completed days: ${attrs.house_assessment?.measurement_assumptions?.valid_days_7d ?? 0}/7 and ${attrs.house_assessment?.measurement_assumptions?.valid_days_30d ?? 0}/30.</div>
         </div>
         <div class="section"><div class="section-title">Whole-house indoor air analysis</div>
           <div class="overview">

@@ -14,6 +14,7 @@ from .const import (
     CONF_COMFORT_TARGET_C,
     CONF_FLOOR,
     CONF_AREA,
+    CONF_ACH,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
     CONF_DELTA_T_ENTITY,
@@ -265,6 +266,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Required(CONF_NAME): str,
             vol.Required(CONF_FLOOR): vol.In({"ground_floor": "Downstairs", "upstairs": "Upstairs"}),
             vol.Optional(CONF_AREA): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=500, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional(CONF_ACH): selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=20, step=0.01, unit_of_measurement="1/h", mode=selector.NumberSelectorMode.BOX)),
             vol.Required(CONF_DEMAND_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig()),
             vol.Required(CONF_TEMPERATURE_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_WINDOW_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),
@@ -301,6 +303,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_NAME: user_input[CONF_NAME].strip(),
             CONF_FLOOR: user_input[CONF_FLOOR],
             CONF_AREA: float(user_input[CONF_AREA]) if user_input.get(CONF_AREA) not in (None, "") else None,
+            CONF_ACH: float(user_input[CONF_ACH]) if user_input.get(CONF_ACH) not in (None, "") else None,
             CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY],
             CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY],
             CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
@@ -399,8 +402,13 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             area = user_input.get(CONF_AREA)
             data = dict(self.config_entry.options)
+            ach = user_input.get(CONF_ACH)
             data[CONF_ROOMS] = [
-                {**item, CONF_AREA: float(area) if area not in (None, "") else None}
+                {
+                    **item,
+                    CONF_AREA: float(area) if area not in (None, "") else None,
+                    CONF_ACH: float(ach) if ach not in (None, "") else None,
+                }
                 if item["id"] == self._area_room_id else item
                 for item in rooms
             ]
@@ -423,7 +431,20 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             if current_area is not None
             else vol.Optional(CONF_AREA)
         )
-        schema = vol.Schema({area_field: area_selector})
+        current_ach = room.get(CONF_ACH)
+        ach_field = (
+            vol.Optional(CONF_ACH, default=current_ach)
+            if current_ach is not None
+            else vol.Optional(CONF_ACH)
+        )
+        ach_selector = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.01, max=20, step=0.01,
+                unit_of_measurement="1/h",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema = vol.Schema({area_field: area_selector, ach_field: ach_selector})
         return self.async_show_form(
             step_id="set_room_area",
             data_schema=schema,

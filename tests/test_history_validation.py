@@ -2088,3 +2088,38 @@ def test_physical_readiness_requires_fresh_unit_verified_room_heat_output():
     assert unsupported["independent_room_heat_output_channels"] == []
     assert fresh["independent_room_heat_output_channels"] == ["room_heat_output_w"]
 
+def test_physical_readiness_requires_fresh_unit_verified_water_flow():
+    stale = MODULE.build_multizone_physical_calibration_readiness(
+        [{
+            "channels": {
+                "water_flow_rate": 5.0,
+                "water_flow_rate_unit": "L/min",
+                "water_flow_rate_age_minutes": 90,
+            }
+        }],
+        [{"id": "living"}],
+    )
+    unsupported = MODULE.build_multizone_physical_calibration_readiness(
+        [{
+            "channels": {
+                "water_flow_rate": 5.0,
+                "water_flow_rate_unit": "W",
+                "water_flow_rate_age_minutes": 0,
+            }
+        }],
+        [{"id": "living"}],
+    )
+    fresh = MODULE.build_multizone_physical_calibration_readiness(
+        [{
+            "channels": {
+                "water_flow_rate": 5.0,
+                "water_flow_rate_unit": "L/min",
+                "water_flow_rate_age_minutes": 0,
+            }
+        }],
+        [{"id": "living"}],
+    )
+    assert stale["water_flow_measurement_channels"] == []
+    assert unsupported["water_flow_measurement_channels"] == []
+    assert fresh["water_flow_measurement_channels"] == ["water_flow_rate"]
+

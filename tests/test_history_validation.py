@@ -1001,6 +1001,7 @@ def test_partial_correlation_removes_shared_weather_driver():
     assert result["design_rank"] == 2
     assert abs(result["partial_pearson_r"]) < 0.1
     assert result["confidence_interval_95"] is not None
+    assert result["confidence_interval_degrees_of_freedom"] == 36
 
 
 def test_partial_correlation_withholds_collinear_covariates():

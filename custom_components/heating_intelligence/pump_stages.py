@@ -45,15 +45,12 @@ def update_pump_stage(history: dict, power_w: float | None, now: datetime) -> di
             history["above_pump_threshold_since"] = None
             history["below_idle_threshold_since"] = None
     elif stage == "valve_opening":
-        valve_level = history.get("valve_level_w")
-        if valve_level is None or power_w > valve_level:
-            history["valve_level_w"] = power_w
-            valve_level = power_w
+        valve_level = history.get("valve_level_w") or power_w
         # Pump operation should be a second, materially higher and sustained
-        # electrical level than the valve-actuator signature.
+        # electrical level than the initial valve-actuator signature.
         pump_threshold = max(
             (baseline or 0.0) + 10.0,
-            (baseline or 0.0) + ((valve_level or 0.0) - (baseline or 0.0)) * 1.5,
+            (baseline or 0.0) + (valve_level - (baseline or 0.0)) * 1.5,
         )
         if power_w >= pump_threshold:
             history["above_pump_threshold_since"] = (
@@ -66,6 +63,8 @@ def update_pump_stage(history: dict, power_w: float | None, now: datetime) -> di
                 history["above_pump_threshold_since"] = None
         else:
             history["above_pump_threshold_since"] = None
+            if power_w > valve_level:
+                history["valve_level_w"] = power_w
             # A short actuator pulse can finish without a pump start.
             if power_w <= (baseline or 0.0) + max(2.0, (baseline or 0.0) * 0.5):
                 history["stage"] = "idle"

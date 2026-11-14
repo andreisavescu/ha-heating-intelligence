@@ -196,6 +196,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             self._calibration_dataset_samples = aligned_dataset.pop("samples", [])
             summary["calibration_dataset"] = aligned_dataset
+            summary["thermal_input_room_response_alignment"] = build_thermal_input_room_response_alignment(
+                self._calibration_dataset_samples, configured_rooms, interval_minutes=30, max_age_minutes=45,
+            )
             summary["thermal_input_energy_observability"] = build_thermal_input_energy_observability(
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
             )

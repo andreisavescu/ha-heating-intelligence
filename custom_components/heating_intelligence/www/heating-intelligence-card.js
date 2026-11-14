@@ -304,6 +304,8 @@ class HeatingIntelligenceCard extends HTMLElement {
             <div class="metric"><span>Model status</span><strong>${this._esc(attrs.thermal_model?.status || "Learning")}</strong></div>
             <div class="metric"><span>Rooms modelled</span><strong>${attrs.thermal_model?.rooms_modelled ?? 0} / ${entries.length}</strong></div>
             <div class="metric"><span>Average confidence</span><strong>${this._fmt(attrs.thermal_model?.average_confidence, "%", 0)}</strong></div>
+            <div class="metric"><span>Whole-house heat-loss coefficient</span><strong>${this._fmt(attrs.thermal_model?.whole_house_observed_performance?.heat_loss_coefficient_w_k, "W/K", 1)}</strong><div class="subtle">Measured energy/temperature estimate</div></div>
+            <div class="metric"><span>30-day normalised heat loss</span><strong>${this._fmt(attrs.thermal_model?.whole_house_observed_performance?.heat_loss_u_value_30d, "W/m²K", 3)}</strong><div class="subtle">Weather model: ${this._esc(attrs.thermal_model?.whole_house_observed_performance?.weather_normalised_status || "collecting data")}</div></div>
           </div>
           <div class="pumps">
             ${Object.entries(attrs.thermal_model?.room_models || {}).map(([id,model]) => {

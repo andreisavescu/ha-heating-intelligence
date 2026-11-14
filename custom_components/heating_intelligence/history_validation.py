@@ -3301,9 +3301,12 @@ def build_multizone_response_identification(
                 largest_eigenvalue = max(eigenvalues) if eigenvalues else 0.0
                 smallest_eigenvalue = min(eigenvalues) if eigenvalues else 0.0
                 matrix_rank = sum(value > max(1e-10, largest_eigenvalue * 1e-10) for value in eigenvalues)
+                # The eigenvalue ratio is the squared 2-norm condition
+                # number of the standardized design matrix.
                 condition_number = (
-                    largest_eigenvalue / smallest_eigenvalue
-                    if smallest_eigenvalue > 1e-12 else float("inf")
+                    math.sqrt(largest_eigenvalue / smallest_eigenvalue)
+                    if smallest_eigenvalue > 1e-12 and largest_eigenvalue > 0
+                    else float("inf")
                 )
                 result["predictor_matrix_rank"] = matrix_rank
                 result["predictor_condition_number"] = (
@@ -3716,7 +3719,7 @@ def build_multizone_response_identification(
         "interval_minutes": interval_minutes,
         "train_fraction": train_fraction,
         "max_predictor_correlation_threshold": max_predictor_correlation,
-        "identifiability_method": "maximum_absolute_pairwise_training_predictor_correlation",
+        "identifiability_method": "pairwise_correlation_and_full_standardized_training_matrix_condition_number",
         "rooms": room_results,
         "global_interval_counts": all_interval_counts,
         "units": "1/hour normalized conductance-to-capacity ratios (G/C), not W/K",

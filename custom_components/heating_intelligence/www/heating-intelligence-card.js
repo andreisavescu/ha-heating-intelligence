@@ -126,7 +126,8 @@ class HeatingIntelligenceCard extends HTMLElement {
         const a=Date.parse(item.start), b=Date.parse(item.end);
         if(!Number.isFinite(a)||!Number.isFinite(b)||b<=start||a>=end)return "";
         const x=Math.max(0,(Math.max(a,start)-start)/(end-start)*width), right=Math.min(width,(Math.min(b,end)-start)/(end-start)*width);
-        const duration=this._duration((b-a)/1000);\n        return `<rect x="${x.toFixed(1)}" y="3" width="${Math.max(1,right-x).toFixed(1)}" height="20" rx="5" class="${item.active?"demand-active":"demand-complete"}"><title>${this._esc(new Date(a).toLocaleString())} – ${this._esc(new Date(b).toLocaleString())} · ${duration}</title></rect>`;
+        const duration=this._duration((b-a)/1000);
+        return `<rect x="${x.toFixed(1)}" y="3" width="${Math.max(1,right-x).toFixed(1)}" height="20" rx="5" class="${item.active?"demand-active":"demand-complete"}"><title>${this._esc(new Date(a).toLocaleString())} – ${this._esc(new Date(b).toLocaleString())} · ${duration}</title></rect>`;
       }).join("");
       return `<div class="demand-row"><div class="demand-room"><strong>${this._esc(room.name)}</strong><span class="demand-status ${room.demand?"active":""}">${room.demand?"Requesting":"Idle"}</span></div><svg viewBox="0 0 ${width} 26" preserveAspectRatio="none" role="img" aria-label="Demand timeline for ${this._esc(room.name)}"><line x1="0" y1="13" x2="${width}" y2="13" class="demand-track"/>${bars}</svg></div>`;
     }).join("");

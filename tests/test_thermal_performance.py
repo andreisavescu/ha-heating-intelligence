@@ -35,6 +35,7 @@ def test_heat_loss_assumption_sensitivity_reports_nine_scenarios():
         date = (now.date() - timedelta(days=6-offset)).isoformat()
         days[date] = {
             "gas_kwh": 10.0,
+            "gas_meter_conversion_basis": "energy_kwh",
             "ac_electricity_kwh": 2.0,
             "delta_t_degree_hours": 30.0,
         }

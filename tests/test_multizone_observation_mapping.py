@@ -100,5 +100,18 @@ def test_maps_ufh_floor_and_heating_plant_without_inventing_slab_output():
     plant = result["plant"]
     assert plant["supply_water_temperature_c"] == 32.0
     assert plant["return_water_temperature_c"] == 27.0
+    assert plant["modulation_percent"] == 35
+    assert plant["burner_on"] is None
     assert plant["thermal_output_w"] is None
     assert plant["pumps"]["ground_floor"]["running"] is True
+
+
+def test_empty_boiler_context_does_not_claim_live_plant_telemetry():
+    result = MODEL.build_multizone_observation_model(
+        {"room": {"floor": "ground_floor", "temperature": 20}},
+        {},
+        {},
+        {},
+        {"boiler_context": {"burner_state": None, "burner_on": None, "modulation_percent": None}},
+    )
+    assert result["plant"]["status"] == "plant_sensors_unavailable"

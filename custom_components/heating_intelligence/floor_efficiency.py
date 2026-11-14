@@ -1,6 +1,7 @@
 """Floor comparisons and weather-normalised efficiency analysis."""
 from __future__ import annotations
 
+import math
 from statistics import median
 from typing import Any
 

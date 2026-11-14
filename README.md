@@ -275,3 +275,6 @@ The passive multi-zone fit now reports per-driver temperature-gradient excitatio
 
 
 The normalized free-coasting multi-zone regression now includes deterministic moving-block bootstrap coefficient-stability diagnostics. It resamples contiguous four-interval blocks from the chronological training segment (80 deterministic replicates when at least 40 training intervals are available) and reports the 5th/50th/95th percentiles plus relative range for each normalized coefficient. These are resampling sensitivity ranges, not formal confidence intervals; they exclude sensor bias, unmeasured gains, model misspecification and uncertainty in delivered room heat. The chronological holdout remains untouched.
+
+
+The multi-zone response fit also compares normalized coefficients across three contiguous chronological sections of the training segment. Each section must have sufficient observations, nontrivial predictor excitation, a full-rank standardized predictor matrix and an acceptable condition number before its coefficients are included. Per-predictor minimum, median, maximum, median absolute deviation and relative range are reported. The final chronological holdout is excluded. This is a descriptive temporal-stability diagnostic, not a confidence interval or proof of physical parameter constancy.

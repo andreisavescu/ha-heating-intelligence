@@ -711,3 +711,27 @@ def test_thermal_input_room_response_alignment_rejects_unsupported_gas_units():
     )
     assert result["meters"]["gas_consumption"]["paired_intervals_at_zero_lag"] == 0
     assert result["meters"]["gas_consumption"]["exclusions"]["unsupported_unit"] == 9
+
+def test_thermal_input_room_response_alignment_requires_complete_room_coverage():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(10):
+        rooms = {"living": {"temperature": 20.0 + index * 0.1}}
+        if index != 5:
+            rooms["bedroom"] = {"temperature": 19.0 + index * 0.05}
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "gas_consumption": 1.0 + index * 0.1,
+                "gas_consumption_age_minutes": 0,
+                "gas_consumption_unit": "kWh",
+            },
+            "rooms": rooms,
+        })
+    result = MODULE.build_thermal_input_room_response_alignment(
+        samples, [{"id": "living"}, {"id": "bedroom"}], minimum_intervals=4
+    )
+    assert result["meters"]["gas_consumption"]["paired_intervals_at_zero_lag"] == 7
+    assert result["meters"]["gas_consumption"]["exclusions"]["incomplete_room_temperature_coverage"] == 2
+    assert result["maximum_lag_minutes"] == 120
+

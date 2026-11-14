@@ -1,0 +1,105 @@
+"""Whole-house interpretation of live room CO2 and relative-humidity readings."""
+from __future__ import annotations
+
+from statistics import mean, median
+from typing import Any
+
+
+def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Summarise configured live readings without treating them as health diagnoses."""
+    rooms = rooms or {}
+    configured_co2 = [r for r in rooms.values() if r.get("co2_entity")]
+    valid_co2 = [
+        (r.get("name", room_id), float(r["co2_ppm"]))
+        for room_id, r in rooms.items()
+        if r.get("co2_entity") and _number(r.get("co2_ppm")) is not None
+    ]
+    configured_humidity = [r for r in rooms.values() if r.get("humidity_entity")]
+    valid_humidity = [
+        (r.get("name", room_id), float(r["humidity"]))
+        for room_id, r in rooms.items()
+        if r.get("humidity_entity") and _number(r.get("humidity")) is not None
+    ]
+
+    highest_co2 = max(valid_co2, key=lambda item: item[1], default=None)
+    if not configured_co2:
+        co2_status = "not_configured"
+    elif not valid_co2:
+        co2_status = "waiting_for_readings"
+    elif highest_co2[1] < 800:
+        co2_status = "good"
+    elif highest_co2[1] < 1200:
+        co2_status = "elevated"
+    elif highest_co2[1] < 2000:
+        co2_status = "high"
+    else:
+        co2_status = "very_high"
+
+    high_humidity = [name for name, value in valid_humidity if value > 60]
+    low_humidity = [name for name, value in valid_humidity if value < 30]
+    if not configured_humidity:
+        humidity_status = "not_configured"
+    elif not valid_humidity:
+        humidity_status = "waiting_for_readings"
+    elif high_humidity:
+        humidity_status = "elevated"
+    elif low_humidity:
+        humidity_status = "low"
+    else:
+        humidity_status = "comfortable"
+
+    ventilation_rooms = [
+        {"name": name, "co2_ppm": round(value)}
+        for name, value in valid_co2 if value >= 1200
+    ]
+    observations = []
+    if highest_co2 and highest_co2[1] >= 800:
+        observations.append(
+            f"Highest configured room CO2 is {round(highest_co2[1])} ppm in {highest_co2[0]}."
+        )
+    if high_humidity:
+        observations.append("Relative humidity is above 60% in: " + ", ".join(high_humidity) + ".")
+    if low_humidity:
+        observations.append("Relative humidity is below 30% in: " + ", ".join(low_humidity) + ".")
+    if not observations:
+        observations.append("No configured room currently crosses the indicative CO2 or humidity bands.")
+
+    return {
+        "configured_rooms": len(rooms),
+        "co2": {
+            "configured_rooms": len(configured_co2),
+            "rooms_with_readings": len(valid_co2),
+            "coverage_percent": round(100 * len(valid_co2) / len(configured_co2)) if configured_co2 else None,
+            "average_ppm": round(mean(value for _, value in valid_co2)) if valid_co2 else None,
+            "median_ppm": round(median(value for _, value in valid_co2)) if valid_co2 else None,
+            "highest_room": {"name": highest_co2[0], "ppm": round(highest_co2[1])} if highest_co2 else None,
+            "status": co2_status,
+            "rooms_requiring_ventilation_attention": ventilation_rooms,
+        },
+        "humidity": {
+            "configured_rooms": len(configured_humidity),
+            "rooms_with_readings": len(valid_humidity),
+            "coverage_percent": round(100 * len(valid_humidity) / len(configured_humidity)) if configured_humidity else None,
+            "average_percent": round(mean(value for _, value in valid_humidity), 1) if valid_humidity else None,
+            "highest_percent": round(max((value for _, value in valid_humidity), default=0), 1) if valid_humidity else None,
+            "lowest_percent": round(min((value for _, value in valid_humidity), default=0), 1) if valid_humidity else None,
+            "rooms_above_60_percent": high_humidity,
+            "rooms_below_30_percent": low_humidity,
+            "status": humidity_status,
+        },
+        "observations": observations,
+        "interpretation": (
+            "CO2 is an indicative ventilation and occupancy proxy; relative humidity is a "
+            "room-condition indicator. Whole-house averages can hide individual rooms, so "
+            "the highest CO2 and room-level exceptions are shown separately. These readings "
+            "are not health, mould, or building-damage diagnoses."
+        ),
+    }
+
+
+def _number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and abs(number) != float("inf") else None

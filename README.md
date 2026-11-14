@@ -6,6 +6,11 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
+## Current scope (0.14.0 development)
+
+- Configure an optional relative-humidity sensor per room and an optional CO2 sensor using an explicit enable checkbox followed by sensor selection.
+- Expose live room humidity (%) and CO2 (ppm) sensors and interpret indicative humidity and CO2 bands in the room detail card. These are ventilation/comfort indicators, not health or mould-risk diagnoses.
+
 ## Current scope (0.13.2)
 
 - Add rooms through the Home Assistant UI, assigning each room to the downstairs or upstairs floor.

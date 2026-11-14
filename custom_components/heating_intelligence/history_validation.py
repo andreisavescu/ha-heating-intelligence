@@ -1055,9 +1055,10 @@ def build_floor_room_heat_allocation_inference(
                         or (age1 is not None and age1 > max_age_minutes)):
                     valid = False
                     break
-                # Use the interval's mean demand state to avoid assigning a
-                # whole interval to a transition that occurred at its endpoint.
-                demand.append((float(state0) + float(state1)) / 2)
+                # Pair the endpoint output reading with the contemporaneous
+                # endpoint controller state. The preceding state is still
+                # required to establish that demand history is known/fresh.
+                demand.append(float(state1))
             if not valid:
                 excluded["incomplete_or_stale_room_demand"] += 1
                 continue

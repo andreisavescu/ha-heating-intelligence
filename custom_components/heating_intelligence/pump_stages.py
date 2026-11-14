@@ -12,7 +12,7 @@ from datetime import datetime
 
 def update_pump_stage(history: dict, power_w: float | None, now: datetime) -> dict:
     """Update one manifold's inferred valve/pump stage from a power sample."""
-    history.setdefault("stage", "idle")
+    history.setdefault("stage", "awaiting_idle_baseline")
     history.setdefault("idle_baseline_w", None)
     history.setdefault("valve_level_w", None)
     history.setdefault("valve_opened_at", None)
@@ -30,20 +30,24 @@ def update_pump_stage(history: dict, power_w: float | None, now: datetime) -> di
 
     # Learn a per-device idle level only while the detector considers the
     # manifold idle. A slow EMA tolerates small standby-power variations.
-    if stage == "idle":
-        if baseline is None:
+    if stage == "awaiting_idle_baseline":
+        # Avoid learning an active pump/valve load as standby after startup.
+        if power_w <= 5.0:
             history["idle_baseline_w"] = max(0.0, power_w)
-            baseline = history["idle_baseline_w"]
+            history["stage"] = "idle"
+    elif stage == "idle":
+        if baseline is None:
+            history["stage"] = "awaiting_idle_baseline"
         else:
             history["idle_baseline_w"] = max(0.0, baseline * 0.9 + power_w * 0.1)
             baseline = history["idle_baseline_w"]
-        rise = max(4.0, baseline * 1.5)
-        if power_w >= baseline + rise:
-            history["stage"] = "valve_opening"
-            history["valve_opened_at"] = stamp
-            history["valve_level_w"] = power_w
-            history["above_pump_threshold_since"] = None
-            history["below_idle_threshold_since"] = None
+            rise = max(4.0, baseline * 1.5)
+            if power_w >= baseline + rise:
+                history["stage"] = "valve_opening"
+                history["valve_opened_at"] = stamp
+                history["valve_level_w"] = power_w
+                history["above_pump_threshold_since"] = None
+                history["below_idle_threshold_since"] = None
     elif stage == "valve_opening":
         valve_level = history.get("valve_level_w") or power_w
         # Pump operation should be a second, materially higher and sustained

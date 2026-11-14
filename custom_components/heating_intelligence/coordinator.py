@@ -685,11 +685,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         result["efficiency"]["weather_normalised"] = weather_model
         result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
         result["thermal_model"]["historical_validation"] = await self._async_recorder_history_summary(now, result["efficiency"])
+        house_profile = dict(self.entry.options.get("house_assessment", {}))
+        house_profile["house_effective_rc_calibration"] = (
+            result["thermal_model"]["historical_validation"].get("house_effective_rc_calibration", {})
+        )
         result["thermal_model"]["multi_zone"] = build_multizone_observation_model(
             result["rooms"],
             result["weather"],
             result["attic_thermal"],
-            self.entry.options.get("house_assessment", {}),
+            house_profile,
             {
                 "water_temperature": result.get("water_temperature"),
                 "water_return_temperature": result.get("water_return_temperature"),

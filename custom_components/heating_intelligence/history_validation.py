@@ -1233,8 +1233,15 @@ def _partial_correlation_diagnostics(
     correlation = sum(
         (a - mean_x) * (b - mean_y) for a, b in zip(residual_x, residual_y)
     ) / math.sqrt(var_x * var_y)
-    residual_diagnostics = _pearson_diagnostics(residual_x, residual_y)
     condition_proxy = max(orthogonal_norms) / max(min(orthogonal_norms), 1e-12)
+    partial_df = n - len(names) - 3
+    bounded_r = max(-0.999999, min(0.999999, correlation))
+    fisher_z = 0.5 * math.log((1 + bounded_r) / (1 - bounded_r))
+    fisher_margin = 1.96 / math.sqrt(partial_df) if partial_df > 0 else None
+    partial_interval = (
+        [round(math.tanh(fisher_z - fisher_margin), 4), round(math.tanh(fisher_z + fisher_margin), 4)]
+        if fisher_margin is not None else None
+    )
     if condition_proxy > 100.0:
         return {
             "status": "ill_conditioned_adjustment_design",
@@ -1244,7 +1251,7 @@ def _partial_correlation_diagnostics(
             "design_rank": len(orthogonal),
             "design_columns": len(columns),
             "condition_proxy": round(condition_proxy, 3),
-            "confidence_interval_95": residual_diagnostics["confidence_interval_95"],
+            "confidence_interval_95": partial_interval,\n            "confidence_interval_degrees_of_freedom": partial_df,
         }
     return {
         "status": "adjusted_association_available",
@@ -1254,8 +1261,9 @@ def _partial_correlation_diagnostics(
         "design_rank": len(orthogonal),
         "design_columns": len(columns),
         "condition_proxy": round(condition_proxy, 3),
-        "confidence_interval_95": residual_diagnostics["confidence_interval_95"],
-        "confidence_interval_method": "nominal_fisher_z_on_residuals_independent_pairs",
+        "confidence_interval_95": partial_interval,
+        "confidence_interval_degrees_of_freedom": partial_df,
+        "confidence_interval_method": "nominal_fisher_z_partial_correlation_independent_pairs",
     }
 
 

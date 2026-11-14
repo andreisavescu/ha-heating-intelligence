@@ -100,6 +100,19 @@ def build_house_assessment(
     if _known(profile.get("staircase_layout")):
         observations.append(f"Inter-floor staircase connection recorded as {profile['staircase_layout']}.")
 
+    window_areas = {
+        direction: _number(profile.get(f"window_area_{direction}_m2"))
+        for direction in ("north", "south", "east", "west")
+    }
+    total_window_area = round(sum(value for value in window_areas.values() if value is not None and value > 0), 2)
+    positive_window_areas = {key: value for key, value in window_areas.items() if value is not None and value > 0}
+    largest_window_orientation = max(positive_window_areas, key=positive_window_areas.get) if positive_window_areas else None
+    if largest_window_orientation:
+        observations.append(
+            f"Largest configured window area faces {largest_window_orientation} ({positive_window_areas[largest_window_orientation]:g} m²). "
+            "This indicates orientation only; actual solar gain depends on glazing properties, shading and weather."
+        )
+
     room_areas = [
         area for room in rooms.values()
         if (area := _number(room.get("area_m2", room.get("area")))) is not None and area > 0
@@ -136,6 +149,17 @@ def build_house_assessment(
             "ufh_screed_cm": _number(profile.get("ufh_screed_cm")),
             "occupants": _number(profile.get("occupants")),
             "internal_gains": profile.get("internal_gains"),
+            "boiler_model": profile.get("boiler_model"),
+            "boiler_dhw": profile.get("boiler_dhw"),
+            "buffer_tank": profile.get("buffer_tank"),
+            "ac_heating": profile.get("ac_heating"),
+            "ac_units": _number(profile.get("ac_units")),
+            "daily_window_ventilation": profile.get("daily_window_ventilation"),
+            "occupancy_pattern": profile.get("occupancy_pattern"),
+            "staircase_layout": profile.get("staircase_layout"),
+            "window_area_by_orientation_m2": window_areas,
+            "total_configured_window_area_m2": total_window_area,
+            "largest_window_orientation": largest_window_orientation,
         },
         "room_coverage": {
             "configured_rooms": room_count,

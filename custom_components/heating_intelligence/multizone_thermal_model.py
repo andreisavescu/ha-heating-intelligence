@@ -96,16 +96,30 @@ def simulate_thermal_step(
     ]
     max_substep = min(stable_seconds) * 0.25 if stable_seconds else duration
     steps = max(1, math.ceil(duration / max_substep))
+    maximum_steps = 100_000
+    if steps > maximum_steps:
+        raise ValueError(
+            f"thermal step requires {steps} substeps; maximum is {maximum_steps}. "
+            "Check unusually small capacities or large conductances."
+        )
     dt_hours = duration / steps / 3600.0
+    initial_temperatures = dict(temperatures)
+    applied_gains_wh = 0.0
+    boundary_heat_exchange_wh = 0.0
 
     for _ in range(steps):
         net_w = {node_id: gains[node_id] for node_id in nodes}
+        applied_gains_wh += sum(gains[node_id] for node_id in capacities) * dt_hours
         for source, target, conductance in links:
             flow_w = conductance * (temperatures[source] - temperatures[target])
             if source not in fixed:
                 net_w[source] -= flow_w
+            else:
+                boundary_heat_exchange_wh -= flow_w * dt_hours
             if target not in fixed:
                 net_w[target] += flow_w
+            else:
+                boundary_heat_exchange_wh += flow_w * dt_hours
         for node_id, capacity in capacities.items():
             temperatures[node_id] += net_w[node_id] * dt_hours / capacity
 
@@ -119,11 +133,30 @@ def simulate_thermal_step(
             "heat_flow_w": round(flow_w, 4),
         })
 
+    stored_energy_change_wh = sum(
+        capacity * (temperatures[node_id] - initial_temperatures[node_id])
+        for node_id, capacity in capacities.items()
+    )
+    expected_energy_change_wh = applied_gains_wh + boundary_heat_exchange_wh
+    energy_balance_error_wh = stored_energy_change_wh - expected_energy_change_wh
+
     return {
         "temperatures_c": {
             node_id: round(value, 4) for node_id, value in temperatures.items()
         },
         "connections": final_flows,
+        "energy_balance": {
+            "stored_energy_change_wh": round(stored_energy_change_wh, 6),
+            "applied_gains_wh": round(applied_gains_wh, 6),
+            "boundary_heat_exchange_wh": round(boundary_heat_exchange_wh, 6),
+            "expected_energy_change_wh": round(expected_energy_change_wh, 6),
+            "error_wh": round(energy_balance_error_wh, 6),
+            "status": (
+                "balanced_within_numerical_precision"
+                if abs(energy_balance_error_wh) <= max(0.01, abs(expected_energy_change_wh) * 1e-6)
+                else "energy_balance_error"
+            ),
+        },
         "substeps": steps,
         "duration_seconds": duration,
         "model": "lumped_rc_network",

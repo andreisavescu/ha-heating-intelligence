@@ -1184,6 +1184,8 @@ def _partial_correlation_diagnostics(
                 "design_rank": len(columns),
                 "design_columns": len(names) + 1,
                 "condition_proxy": None,
+                "confidence_interval_95": None,
+                "confidence_interval_degrees_of_freedom": n - len(names) - 3,
             }
         columns.append([(value - mean) / scale for value in values])
 
@@ -1207,6 +1209,8 @@ def _partial_correlation_diagnostics(
                 "design_rank": len(orthogonal),
                 "design_columns": len(columns),
                 "condition_proxy": None,
+                "confidence_interval_95": None,
+                "confidence_interval_degrees_of_freedom": n - len(names) - 3,
             }
         orthogonal.append([value / norm for value in vector])
         orthogonal_norms.append(norm)

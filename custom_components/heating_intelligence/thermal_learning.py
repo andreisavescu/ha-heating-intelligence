@@ -31,10 +31,10 @@ def _learn_mode(
             continue
         if cutoff <= stamp <= now.astimezone(timezone.utc):
             external_heating = bool(item.get("external_heating", False)) or (require_external_flag and "external_heating" not in item)
-            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), external_heating, bool(item.get("window_state_known", False))))
+            points.append((stamp, temperature, bool(item.get("demand")), bool(item.get("window_open")), external_heating, bool(item.get("window_state_known", False)), bool(item.get("demand_state_known", False))))
     points.sort(key=lambda point: point[0])
 
-    eligible = [point for point in points if point[2] == demand and not point[3] and not point[4] and point[5]]
+    eligible = [point for point in points if point[2] == demand and not point[3] and not point[4] and point[5] and point[6]]
     excluded_external = sum(1 for point in points if point[4])
     rates = []
     index = 0
@@ -73,7 +73,7 @@ def _learn_mode(
             "span_hours": round(span, 1),
             "rate_c_per_hour": None,
             "noise_c_per_hour": None,
-            "note": f"Needs at least {MIN_INTERVALS} valid non-overlapping intervals spanning {MIN_SPAN_HOURS:g} hours, with a configured and available window contact confirming closed windows.",
+            "note": f"Needs at least {MIN_INTERVALS} valid non-overlapping intervals spanning {MIN_SPAN_HOURS:g} hours, with a valid demand state and a configured, available window contact confirming closed windows.",
         }
     rate = median(rates)
     noise = median([abs(value - rate) for value in rates])
@@ -96,6 +96,7 @@ def build_room_thermal_model(
     demand: bool, ac_power_sensor_configured: bool = False,
     external_heating_active: bool = False, window_open: bool = False,
     window_state_known: bool = True, window_contact_configured: bool = False,
+    demand_state_known: bool = True,
 ) -> dict[str, Any]:
     """Learn heating/coasting rates from persisted room observations and forecast."""
     samples = room_history.get("temperature_samples", [])
@@ -103,7 +104,7 @@ def build_room_thermal_model(
     coasting = _learn_mode(samples, now, False, ac_power_sensor_configured)
     selected = heating if demand else coasting
     result: dict[str, Any] = {
-        "status": "external_heat_filter_active" if external_heating_active else "window_contact_not_configured" if not window_contact_configured else "window_state_unknown" if not window_state_known else "window_open" if window_open else selected["status"] if current_temperature is not None else "waiting_for_temperature",
+        "status": "external_heat_filter_active" if external_heating_active else "demand_state_unknown" if not demand_state_known else "window_contact_not_configured" if not window_contact_configured else "window_state_unknown" if not window_state_known else "window_open" if window_open else selected["status"] if current_temperature is not None else "waiting_for_temperature",
         "model": "rolling_median_thermal_response",
         "learning_window_days": LEARNING_DAYS,
         "mode": "heating" if demand else "coasting",
@@ -119,6 +120,9 @@ def build_room_thermal_model(
         result["forecasts"][f"{hours}h"] = None
     if external_heating_active:
         result["note"] = "AC electrical input is above the active-use threshold, or its configured power sensor is unavailable; forecast withheld to avoid mixing heating systems."
+        return result
+    if not demand_state_known:
+        result["note"] = "The room demand entity is unavailable; forecast withheld because heating/coasting mode cannot be verified."
         return result
     if not window_contact_configured:
         result["note"] = "Configure a window contact in Options > Configure room areas, ACH and window contacts; the model requires verified closed-window periods."

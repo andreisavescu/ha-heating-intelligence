@@ -68,3 +68,37 @@ def test_missing_sensor_values_are_reported_not_replaced_with_defaults():
     assert result["nodes"]["room:bedroom"]["temperature_c"] is None
     assert result["coverage"]["room_temperature_coverage_percent"] == 0
     assert result["simulation_status"] == "withheld_missing_physical_parameters"
+
+
+def test_maps_ufh_floor_and_heating_plant_without_inventing_slab_output():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "living": {"name": "Living", "floor": "ground_floor", "temperature": 21.0},
+            "bedroom": {"name": "Bedroom", "floor": "upstairs", "temperature": 20.0},
+        },
+        {"outdoor_temperature": {"value": 6.0}},
+        {},
+        {"ufh_screed_cm": 6.0, "boiler_model": "Configured boiler"},
+        {
+            "water_temperature": 32.0,
+            "water_return_temperature": 27.0,
+            "boiler_context": {"burner_state": "on", "modulation": 35},
+            "pumps": {
+                "ground_floor": {"running": True, "power": 18.0, "stage": "pump_running"},
+                "upstairs": {"running": False, "power": 0.0, "stage": "idle"},
+            },
+        },
+    )
+    assert result["floor_nodes"] == {
+        "ground_floor": "floor:ground_floor",
+        "upstairs": "floor:upstairs",
+    }
+    slab = result["nodes"]["floor:ground_floor"]
+    assert slab["adjacent_room_average_temperature_c"] == 21.0
+    assert slab["slab_temperature_c"] is None
+    assert slab["status"] == "awaiting_slab_sensor_or_identifiable_capacity"
+    plant = result["plant"]
+    assert plant["supply_water_temperature_c"] == 32.0
+    assert plant["return_water_temperature_c"] == 27.0
+    assert plant["thermal_output_w"] is None
+    assert plant["pumps"]["ground_floor"]["running"] is True

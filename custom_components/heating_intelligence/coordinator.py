@@ -314,6 +314,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             stats = room_statistics(room_history, now_local)
             window_open = bool(window and window.state == "on")
+            window_state_known = bool(window_id and window and window.state not in ("unknown", "unavailable"))
             if room_history.get("window_open_demand_date") != local_date:
                 room_history["window_open_demand_date"] = local_date
                 room_history["window_open_demand_seconds_today"] = 0.0
@@ -325,6 +326,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             record_temperature_sample(
                 room_history, now_local, temperature_value, demand_active, window_open,
                 external_heating=ac_heating_active,
+                window_state_known=window_state_known,
             )
             thermal = thermal_statistics(room_history, now_local)
             learned_model = build_room_thermal_model(room_history, now_local, temperature_value, demand_active, bool(ac_power_entity), ac_heating_active)
@@ -371,6 +373,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "window_entity": window_id,
                 "window_state": window.state if window else None,
                 "window_open": window_open,
+                "window_state_known": window_state_known,
                 "daily_demand_seconds": round(demand_seconds),
                 "demand_history": [{"start": item.get("start"), "end": item.get("end"), "duration_seconds": item.get("duration_seconds")} for item in room_history.get("cycles", []) if item.get("start") and item.get("end")][-500:] + ([{"start": room_history.get("cycle_start"), "end": now_local.isoformat(), "duration_seconds": max(0, (now_local - dt_util.parse_datetime(room_history["cycle_start"])).total_seconds()), "active": True}] if room_history.get("last_demand") is True and room_history.get("cycle_start") else []),
             }

@@ -271,11 +271,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
         ac_power_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
         ac_power_value = _as_float(ac_power_state.state) if ac_power_state else None
-        ac_power_unit = (ac_power_state.attributes.get("unit_of_measurement") or "").lower() if ac_power_state else ""
+        ac_power_unit = (ac_power_state.attributes.get("unit_of_measurement") or "") if ac_power_state else ""
         if ac_power_value is not None:
-            if ac_power_unit == "kw":
+            if ac_power_unit.lower() == "kw":
                 ac_power_value *= 1000
-            elif ac_power_unit == "mw":
+            elif ac_power_unit == "MW":
+                ac_power_value *= 1_000_000
+            elif ac_power_unit == "mW":
                 ac_power_value /= 1000
         # Exclude room samples while the configured AC electrical input indicates active use.
         ac_heating_active = bool(ac_power_entity) and (ac_power_value is None or ac_power_value > 50)

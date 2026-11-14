@@ -408,6 +408,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                     **item,
                     CONF_AREA: float(area) if area not in (None, "") else None,
                     CONF_ACH: float(ach) if ach not in (None, "") else None,
+                    CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
                 }
                 if item["id"] == self._area_room_id else item
                 for item in rooms
@@ -444,7 +445,18 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 mode=selector.NumberSelectorMode.BOX,
             )
         )
-        schema = vol.Schema({area_field: area_selector, ach_field: ach_selector})
+        current_window = room.get(CONF_WINDOW_ENTITY)
+        window_field = (
+            vol.Optional(CONF_WINDOW_ENTITY, default=current_window)
+            if current_window is not None
+            else vol.Optional(CONF_WINDOW_ENTITY)
+        )
+        window_selector = selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor"))
+        schema = vol.Schema({
+            area_field: area_selector,
+            ach_field: ach_selector,
+            window_field: window_selector,
+        })
         return self.async_show_form(
             step_id="set_room_area",
             data_schema=schema,

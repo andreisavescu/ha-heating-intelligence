@@ -140,6 +140,8 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "total_pump_power": round(sum(p["power"] for p in pumps.values() if p.get("power") is not None), 1),
             "total_pump_energy": round(sum(p["energy"] for p in pumps.values() if p.get("energy") is not None), 3),
             "pump_synchronization": data.get("sync", {}),
+            "boiler_context": data.get("boiler_context", {}),
+            "pump_sequence": data.get("pump_sequence", {}),
             "daily_heating": data.get("daily", {}),
             "floor_analysis": data.get("floor_analysis", {}),
             "floor_performance": data.get("floor_performance", {}),

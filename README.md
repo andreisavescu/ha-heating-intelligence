@@ -1,3 +1,14 @@
+## 0.14.3 — manifold pump-stage diagnostics and daily thermal finalisation
+
+- Distinguish the initial manifold valve-actuator electrical signature from the later sustained pump electrical signature.
+- Track valve opening and inferred pump startup independently for each configured manifold.
+- Expose stage, valve-open timestamp, inferred pump-start timestamp, idle baseline and valve signature level in the overview pump attributes.
+- Optionally configure the boiler burner binary sensor and modulation sensor; capture their values when a pump start is inferred.
+- Label pump-stage detection as an electrical-signature estimate, not a direct measurement of water flow.
+- Finalise the previous local calendar day's heat-loss estimate at 02:00 and persist it so subsequent refreshes do not recalculate it.
+- Preserve rolling 7-day and 30-day calculations. Record daily solar-radiation average as context; it is not applied as an unvalidated correction to the physical estimate.
+- Add unit tests for pump-stage transitions and delayed, idempotent daily finalisation; run them in GitHub Actions.
+
 ## 0.14.2 — room air-quality entity registration fix
 
 - Fix room humidity and CO₂ entities failing to resolve their configured room device association.
@@ -177,7 +188,7 @@ Room history is stored in Home Assistant's integration storage and survives rest
 
 Whole-house efficiency inputs are optional. Configure a cumulative gas meter and, optionally, separate cumulative energy counters for the downstairs manifold pump, upstairs manifold pump, and boiler pump. Use each pump's overall/lifetime energy counter, not its daily or monthly reset counters. The three electricity deltas are tracked independently, summed into combined pump electricity, and shown with each pump's percentage share. Meter deltas are accumulated from the first valid reading after setup; earlier consumption is not reconstructed. The previous single electricity meter option remains supported for backward compatibility, but should not be configured alongside the three pump counters. Gas meters in m³ are converted using the configurable factor (default 10.55 kWh/m³); kWh, Wh, and MWh units are supported. Outdoor temperature is used to calculate daily heating degree days with an 18 °C base. Daily averages are based on integration observations, not recorder backfill. Correlations are exploratory and require at least three days with valid paired data; they are not proof of causation. Solar radiation is expected in W/m². If an observation gap exceeds 90 seconds, the ongoing cycle remains open but its duration timer restarts so unobserved downtime is not counted. Daily totals use Home Assistant local dates; weekly totals start on Monday; monthly totals use calendar months. Demand intervals are split at local midnight, including daylight-saving transitions. Existing history is not backfilled: room analytics begin when version 0.4.0 first observes each configured room.
 
-The coordinator samples every 30 seconds. HA state timestamps are used to place detected transitions accurately, but multiple state changes that occur between two samples can still be missed. Very short demand cycles may therefore be undercounted. Validate readings and statistics on your own Home Assistant installation before relying on them.
+The coordinator samples every 10 seconds. HA state timestamps are used to place detected transitions accurately, but multiple state changes that occur between two samples can still be missed. Very short demand cycles may therefore be undercounted. Validate readings and statistics on your own Home Assistant installation before relying on them.
 
 ## 0.8.0 — predictive intelligence
 

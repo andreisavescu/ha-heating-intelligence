@@ -5,6 +5,16 @@ from statistics import mean, median
 from typing import Any
 
 
+def _co2_value(value: Any) -> float | None:
+    number = _number(value)
+    return number if number is not None and number >= 0 else None
+
+
+def _humidity_value(value: Any) -> float | None:
+    number = _number(value)
+    return number if number is not None and 0 <= number <= 100 else None
+
+
 def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Summarise configured live readings without treating them as health diagnoses."""
     rooms = rooms or {}
@@ -12,13 +22,13 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
     valid_co2 = [
         (r.get("name", room_id), float(r["co2_ppm"]))
         for room_id, r in rooms.items()
-        if r.get("co2_entity") and _number(r.get("co2_ppm")) is not None
+        if r.get("co2_entity") and _co2_value(r.get("co2_ppm")) is not None
     ]
     configured_humidity = [r for r in rooms.values() if r.get("humidity_entity")]
     valid_humidity = [
         (r.get("name", room_id), float(r["humidity"]))
         for room_id, r in rooms.items()
-        if r.get("humidity_entity") and _number(r.get("humidity")) is not None
+        if r.get("humidity_entity") and _humidity_value(r.get("humidity")) is not None
     ]
 
     highest_co2 = max(valid_co2, key=lambda item: item[1], default=None)
@@ -50,8 +60,8 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
 
     room_assessments = {}
     for room_id, room in rooms.items():
-        co2 = _number(room.get("co2_ppm")) if room.get("co2_entity") else None
-        humidity = _number(room.get("humidity")) if room.get("humidity_entity") else None
+        co2 = _co2_value(room.get("co2_ppm")) if room.get("co2_entity") else None
+        humidity = _humidity_value(room.get("humidity")) if room.get("humidity_entity") else None
         findings = []
         if co2 is not None and co2 >= 2000:
             findings.append("CO2 is very high; ventilate the room and verify the sensor.")
@@ -101,8 +111,8 @@ def build_indoor_air_analysis(rooms: dict[str, dict[str, Any]]) -> dict[str, Any
         floor_groups.setdefault(room.get("floor", "unassigned"), []).append(room)
     by_floor = {}
     for floor, floor_rooms in floor_groups.items():
-        floor_co2 = [_number(room.get("co2_ppm")) for room in floor_rooms if room.get("co2_entity")]
-        floor_humidity = [_number(room.get("humidity")) for room in floor_rooms if room.get("humidity_entity")]
+        floor_co2 = [_co2_value(room.get("co2_ppm")) for room in floor_rooms if room.get("co2_entity")]
+        floor_humidity = [_humidity_value(room.get("humidity")) for room in floor_rooms if room.get("humidity_entity")]
         floor_ach = [_number(room.get("air_changes_per_hour")) for room in floor_rooms]
         floor_co2 = [value for value in floor_co2 if value is not None]
         floor_humidity = [value for value in floor_humidity if value is not None]

@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -77,6 +77,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self._store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_pump_history")
         self._history: dict = {"pumps": {}, "sync_mismatch_count": 0, "last_sync_result": "unknown"}
+        self._calibration_dataset_samples: list[dict] = []
         super().__init__(
             hass,
             logger=_LOGGER,
@@ -168,6 +169,32 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 True, False, True, True,
             )
             summary = build_recorder_history_summary(history, start, now)
+            configured_rooms = self.entry.options.get(CONF_ROOMS, [])
+            calibration_channels = {
+                "outdoor_temperature": self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY),
+                "solar_radiation": self.entry.options.get(CONF_SOLAR_RADIATION_ENTITY),
+                "attic_temperature": self.entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY),
+                "attic_humidity": self.entry.options.get(CONF_ATTIC_HUMIDITY_ENTITY),
+                "gas_consumption": self.entry.options.get(CONF_GAS_CONSUMPTION_ENTITY),
+                "boiler_power": self.entry.options.get(CONF_ELECTRICITY_BOILER_POWER_ENTITY),
+                "boiler_energy": self.entry.options.get(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY) or self.entry.options.get(CONF_ELECTRICITY_BOILER_ENTITY),
+                "ac_power": self.entry.options.get(CONF_AC_POWER_ENTITY),
+                "ac_energy": self.entry.options.get(CONF_AC_ENERGY_ENTITY),
+                "water_supply_temperature": self.entry.options.get(CONF_WATER_TEMPERATURE_ENTITY),
+                "water_return_temperature": self.entry.options.get(CONF_RETURN_WATER_TEMPERATURE_ENTITY),
+                "boiler_burner": self.entry.options.get(CONF_BOILER_BURNER_ENTITY),
+                "boiler_modulation": self.entry.options.get(CONF_BOILER_MODULATION_ENTITY),
+            }
+            for pump in self.entry.options.get(CONF_PUMPS, []):
+                pump_id = pump.get("id", "pump")
+                calibration_channels[f"pump:{pump_id}:power"] = pump.get("power_entity")
+                calibration_channels[f"pump:{pump_id}:energy"] = pump.get("energy_entity")
+            aligned_dataset = build_recorder_calibration_dataset(
+                history, configured_rooms, calibration_channels, start, now,
+                interval_minutes=30, max_age_minutes=45, include_samples=True,
+            )
+            self._calibration_dataset_samples = aligned_dataset.pop("samples", [])
+            summary["calibration_dataset"] = aligned_dataset
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
             ac_unit = (ac_state.attributes.get("unit_of_measurement") or "") if ac_state else ""

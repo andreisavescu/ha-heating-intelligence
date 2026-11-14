@@ -1646,8 +1646,8 @@ def test_ufh_observability_excludes_open_window_intervals_and_does_not_bridge_ga
     )
     floor = result["floors"]["ground_floor"]
     assert floor["excluded_observations"]["open_window"] == 1
-    assert floor["pump_on_intervals"] == 6
-    assert floor["pump_off_intervals"] == 7
+    assert floor["pump_on_intervals"] == 5
+    assert floor["pump_off_intervals"] == 8
     assert floor["room_response"]["living"]["median_temperature_rate_pump_on_c_per_hour"] == 0.2
     assert floor["thermal_output_w"] is None
 

@@ -136,6 +136,7 @@ def build_multizone_observation_model(
     weather: dict[str, Any] | None = None,
     attic: dict[str, Any] | None = None,
     profile: dict[str, Any] | None = None,
+    plant: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Map configured HA observations into a transparent, parameter-aware zone inventory.
 
@@ -147,6 +148,7 @@ def build_multizone_observation_model(
     weather = weather or {}
     attic = attic or {}
     profile = profile or {}
+    plant = plant or {}
 
     def value(record):
         if isinstance(record, dict):
@@ -195,6 +197,45 @@ def build_multizone_observation_model(
             "status": "observed" if outdoor_c is not None else "temperature_unavailable",
         }
 
+    # Floor-level observations remain separate from room air. A screed node
+    # is pending until its temperature/capacity can be identified.
+    floor_nodes = {}
+    for floor_id in ('ground_floor', 'upstairs'):
+        floor_rooms = [room for room in rooms.values() if room.get('floor', 'unassigned') == floor_id and _finite_or_none(room.get('temperature')) is not None]
+        if not floor_rooms:
+            continue
+        pump = (plant.get('pumps') or {}).get(floor_id, {})
+        average_c = sum(float(room['temperature']) for room in floor_rooms) / len(floor_rooms)
+        screed_cm = _finite_or_none(profile.get('ufh_screed_cm'))
+        floor_node_id = 'floor:' + floor_id
+        nodes[floor_node_id] = {
+            'kind': 'ufh_slab',
+            'name': 'Downstairs UFH slab' if floor_id == 'ground_floor' else 'Upstairs UFH slab',
+            'floor': floor_id,
+            'adjacent_room_average_temperature_c': round(average_c, 3),
+            'slab_temperature_c': None,
+            'screed_thickness_cm': screed_cm,
+            'thermal_capacity_wh_per_k': None,
+            'pump_running': pump.get('running'),
+            'status': 'awaiting_slab_sensor_or_identifiable_capacity' if screed_cm is not None else 'screed_profile_incomplete',
+        }
+        floor_nodes[floor_id] = floor_node_id
+
+    # Plant telemetry is not equated with delivered heat: flow rate is absent.
+    boiler_context = plant.get('boiler_context') or {}
+    plant_node = {
+        'kind': 'heating_plant',
+        'name': profile.get('boiler_model') or 'Heating plant',
+        'supply_water_temperature_c': _finite_or_none(plant.get('water_temperature')),
+        'return_water_temperature_c': _finite_or_none(plant.get('water_return_temperature')),
+        'burner_state': boiler_context.get('burner_state'),
+        'modulation': boiler_context.get('modulation'),
+        'pumps': {pump_id: {'running': pump.get('running'), 'power_w': _finite_or_none(pump.get('power')), 'stage': pump.get('stage')} for pump_id, pump in (plant.get('pumps') or {}).items()},
+        'thermal_output_w': None,
+        'status': 'telemetry_observed' if plant.get('water_temperature') is not None or plant.get('water_return_temperature') is not None or boiler_context else 'plant_sensors_unavailable',
+        'note': 'No water-side heat output is calculated without flow rate and a validated flow/return measurement pair.',
+    }
+    nodes['plant:heating'] = plant_node
     # Conductive roof and ceiling paths are only exposed when both U-value
     # and area were explicitly entered in the house assessment.
     connections = []
@@ -242,6 +283,8 @@ def build_multizone_observation_model(
         "nodes": nodes,
         "configured_connections": connections,
         "pending_paths": pending_paths,
+        "floor_nodes": floor_nodes,
+        "plant": plant_node,
         "coverage": {
             "configured_rooms": room_count,
             "rooms_with_temperature": observed_rooms,
@@ -251,6 +294,9 @@ def build_multizone_observation_model(
             "rooms_with_ach": sum(1 for room in rooms.values() if _finite_or_none(room.get("air_changes_per_hour")) is not None),
             "attic_temperature_available": attic_c is not None,
             "outdoor_temperature_available": outdoor_c is not None,
+            "ufh_floor_nodes": len(floor_nodes),
+            "plant_supply_temperature_available": plant_node["supply_water_temperature_c"] is not None,
+            "plant_return_temperature_available": plant_node["return_water_temperature_c"] is not None,
         },
         "missing_parameters": {
             "thermal_capacities": missing_capacity,

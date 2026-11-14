@@ -690,10 +690,10 @@ def test_thermal_input_room_response_alignment_pairs_verified_energy_with_room_s
         samples, [{"id": "living"}, {"id": "bedroom"}], minimum_intervals=8
     )
     gas = result["meters"]["gas_consumption"]
-    assert gas["status"] == "input_response_pairs_available"
-    assert gas["paired_intervals"] == 11
-    assert gas["input_power_vs_room_response_pearson_r"] is not None
-    assert result["rooms"]["gas_consumption"]["living"]["paired_intervals"] == 11
+    assert gas["status"] == "lagged_input_response_pairs_available"
+    assert gas["paired_intervals_at_zero_lag"] == 11
+    assert gas["lag_scan"][0]["pearson_r"] is not None
+    assert result["rooms"]["gas_consumption"]["living"]["paired_intervals_at_zero_lag"] == 11
     assert result["capacity_identification_status"] == "withheld_no_room_heat_allocation_or_independent_thermal_output"
 
 
@@ -709,5 +709,5 @@ def test_thermal_input_room_response_alignment_rejects_unsupported_gas_units():
     result = MODULE.build_thermal_input_room_response_alignment(
         samples, [{"id": "living"}], minimum_intervals=4
     )
-    assert result["meters"]["gas_consumption"]["paired_intervals"] == 0
+    assert result["meters"]["gas_consumption"]["paired_intervals_at_zero_lag"] == 0
     assert result["meters"]["gas_consumption"]["exclusions"]["unsupported_unit"] == 9

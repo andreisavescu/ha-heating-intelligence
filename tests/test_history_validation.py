@@ -1491,3 +1491,62 @@ def test_floor_room_heat_allocation_inference_rejects_collinear_demands():
     )
     assert result["floors"]["ground_floor"]["status"] == "insufficient_or_collinear_floor_output_and_room_demand_history"
     assert result["floors"]["ground_floor"]["rooms"] == {}
+
+def test_floor_room_demand_lag_scan_recovers_delayed_association_on_holdout():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    demand = [float(((index * 37 + 11) % 101) < 50) for index in range(100)]
+    samples = []
+    for index in range(100):
+        delayed = demand[index - 1] if index else 0.0
+        output = 1200 + 800 * delayed + (index % 5) * 2
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "ground_floor_thermal_output": output,
+                "ground_floor_thermal_output_unit": "W",
+                "ground_floor_thermal_output_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {"demand": "on" if demand[index] else "off", "demand_age_minutes": 0},
+            },
+        })
+    result = MODULE.build_floor_room_demand_lag_analysis(
+        samples, [{"id": "living", "floor": "ground_floor"}],
+        maximum_lag_intervals=4, minimum_pairs=20,
+    )
+    room = result["floors"]["ground_floor"]["rooms"]["living"]
+    assert room["status"] == "descriptive_lag_association_repeatable"
+    assert room["selected_training_lag_minutes"] == 30
+    assert room["selected_training_pearson_r"] > 0.99
+    assert room["selected_holdout_pearson_r"] > 0.99
+    assert room["neighbouring_lag_peak_ambiguous"] is False
+    assert result["physical_room_allocation_identified"] is False
+
+
+def test_floor_room_demand_lag_scan_does_not_bridge_missing_cadence():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(50):
+        if index == 25:
+            continue
+        demand = index % 2 == 0
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "ground_floor_thermal_output": 1500 if demand else 1000,
+                "ground_floor_thermal_output_unit": "W",
+                "ground_floor_thermal_output_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {"demand": "on" if demand else "off", "demand_age_minutes": 0},
+            },
+        })
+    result = MODULE.build_floor_room_demand_lag_analysis(
+        samples, [{"id": "living", "floor": "ground_floor"}],
+        maximum_lag_intervals=2, minimum_pairs=8,
+    )
+    room = result["floors"]["ground_floor"]["rooms"]["living"]
+    lag_one = next(item for item in room["lag_scan"] if item["lag_intervals"] == 1)
+    assert lag_one["paired_intervals"] == 47
+    assert result["physical_room_allocation_identified"] is False
+

@@ -27,6 +27,13 @@ from .const import (
     CONF_COMFORT_TARGET_C,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
+    CONF_WEATHER_ENTITY,
+    CONF_WIND_SPEED_ENTITY,
+    CONF_WIND_DIRECTION_ENTITY,
+    CONF_WIND_GUST_ENTITY,
+    CONF_OUTDOOR_HUMIDITY_ENTITY,
+    CONF_DEW_POINT_ENTITY,
+    CONF_OUTDOOR_PRESSURE_ENTITY,
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
     CONF_ELECTRICITY_BOILER_POWER_ENTITY,
@@ -84,6 +91,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "house_assessment": {},
             "indoor_air_quality": {},
             "thermal_model": {},
+            "weather": {},
         }
 
     async def async_load_history(self) -> None:
@@ -134,6 +142,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "water_temperature": None,
             "water_temperature_entity": None,
             "efficiency": {},
+            "weather": {},
         }
         water_entity = self.entry.options.get(CONF_WATER_TEMPERATURE_ENTITY)
         if water_entity:
@@ -442,6 +451,38 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "unit": "°C",
             } if indoor_values else None,
         }
+        weather_entity_id = self.entry.options.get(CONF_WEATHER_ENTITY)
+        weather_state = self.hass.states.get(weather_entity_id) if weather_entity_id else None
+
+        def weather_value(option_key, attribute=None):
+            configured = read_sensor(option_key)
+            if configured and configured.get("value") is not None:
+                return configured
+            if weather_state and attribute:
+                value = _as_float(weather_state.attributes.get(attribute))
+                if value is not None:
+                    return {
+                        "value": value,
+                        "unit": weather_state.attributes.get("wind_speed_unit") if attribute == "wind_speed" else None,
+                        "entity_id": weather_entity_id,
+                        "source": "weather_entity_attribute",
+                    }
+            return configured
+
+        result["weather"] = {
+            "entity_id": weather_entity_id,
+            "condition": weather_state.state if weather_state else None,
+            "outdoor_temperature": weather_value(CONF_OUTDOOR_TEMPERATURE_ENTITY, "temperature"),
+            "outdoor_humidity": weather_value(CONF_OUTDOOR_HUMIDITY_ENTITY, "humidity"),
+            "pressure": weather_value(CONF_OUTDOOR_PRESSURE_ENTITY, "pressure"),
+            "wind_speed": weather_value(CONF_WIND_SPEED_ENTITY, "wind_speed"),
+            "wind_direction": weather_value(CONF_WIND_DIRECTION_ENTITY, "wind_bearing"),
+            "wind_gust": weather_value(CONF_WIND_GUST_ENTITY),
+            "dew_point": read_sensor(CONF_DEW_POINT_ENTITY),
+            "solar_radiation": read_sensor(CONF_SOLAR_RADIATION_ENTITY),
+        }
+        result["efficiency"]["weather"] = result["weather"]
+
         update_efficiency_history(
             self._history,
             readings,

@@ -649,12 +649,25 @@ def build_recorder_calibration_dataset(
             "co2": room.get("co2_entity"),
         }
 
+    def calibration_timeline(entity_id):
+        if not entity_id:
+            return []
+        points = []
+        for state in history.get(entity_id, []):
+            stamp = _timestamp(state)
+            raw = state.get("state") if isinstance(state, dict) else getattr(state, "state", None)
+            if stamp is not None:
+                # Preserve explicit unknown/unavailable transitions so an older
+                # valid value cannot be carried through an invalid sensor state.
+                points.append((stamp, raw))
+        return sorted(points, key=lambda item: item[0])
+
     timelines: dict[str, list[tuple[datetime, Any]]] = {}
     for key, entity_id in channels.items():
-        timelines[key] = _timeline(history, entity_id)
+        timelines[key] = calibration_timeline(entity_id)
     for room_id, configured in room_channels.items():
         for key, entity_id in configured.items():
-            timelines[f"room:{room_id}:{key}"] = _timeline(history, entity_id)
+            timelines[f"room:{room_id}:{key}"] = calibration_timeline(entity_id)
 
     cadence = timedelta(minutes=interval_minutes)
     max_age = timedelta(minutes=max_age_minutes)
@@ -681,7 +694,7 @@ def build_recorder_calibration_dataset(
                 point_stamp, raw = points[index]
                 age = stamp - point_stamp
                 age_minutes = max(0.0, age.total_seconds() / 60)
-                if age <= max_age:
+                if age <= max_age and raw not in (None, "unknown", "unavailable"):
                     value = _state_value({"state": raw})
                     if value is None:
                         value = raw

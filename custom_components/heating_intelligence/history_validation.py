@@ -3012,6 +3012,7 @@ def build_multizone_response_identification(
     require_boiler_modulation_zero: bool = False,
     max_predictor_correlation: float = 0.985,
     max_predictor_condition_number: float = 1_000_000.0,
+    max_age_minutes: float = 45.0,
 ) -> dict[str, Any]:
     """Identify normalized passive room-to-room and envelope response rates.
 
@@ -3027,6 +3028,8 @@ def build_multizone_response_identification(
         raise ValueError("Maximum predictor correlation must be in (0, 1]")
     if not math.isfinite(max_predictor_condition_number) or max_predictor_condition_number <= 1:
         raise ValueError("Maximum predictor condition number must be finite and greater than 1")
+    if not math.isfinite(max_age_minutes) or max_age_minutes < 0:
+        raise ValueError("Maximum sensor age must be finite and non-negative")
     room_ids = [str(room.get("id", "unknown")) for room in rooms]
     if len(room_ids) < 2:
         return {
@@ -3066,6 +3069,11 @@ def build_multizone_response_identification(
             "solar_missing_or_high": 0,
             "ac_heating_active_or_unavailable": 0,
             "boiler_active_or_unavailable": 0,
+            "stale_room_temperature": 0,
+            "stale_room_state": 0,
+            "stale_solar_or_outdoor": 0,
+            "stale_ac_or_boiler_telemetry": 0,
+            "unsupported_solar_unit": 0,
             "invalid_interval": 0,
         }
         for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
@@ -3076,46 +3084,92 @@ def build_multizone_response_identification(
             first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
             temps0 = {rid: numeric(first_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
             temps1 = {rid: numeric(second_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
+            stale_temperature = any(
+                (numeric(first_rooms.get(rid, {}).get("temperature_age_minutes")) is not None
+                 and numeric(first_rooms.get(rid, {}).get("temperature_age_minutes")) > max_age_minutes)
+                or (numeric(second_rooms.get(rid, {}).get("temperature_age_minutes")) is not None
+                    and numeric(second_rooms.get(rid, {}).get("temperature_age_minutes")) > max_age_minutes)
+                for rid in room_ids
+            )
+            if stale_temperature:
+                exclusions["stale_room_temperature"] += 1
+                continue
             if any(temps0[rid] is None or temps1[rid] is None for rid in room_ids):
                 exclusions["non_contiguous_or_missing_temperature"] += 1
                 continue
+            def fresh_room_state(room_data, field):
+                age = numeric(room_data.get(field + "_age_minutes"))
+                return (age is None or age <= max_age_minutes) and state_off(room_data.get(field))
             clean_states = all(
-                state_off(first_rooms.get(rid, {}).get("demand"))
-                and state_off(second_rooms.get(rid, {}).get("demand"))
-                and state_off(first_rooms.get(rid, {}).get("window"))
-                and state_off(second_rooms.get(rid, {}).get("window"))
+                fresh_room_state(first_rooms.get(rid, {}), "demand")
+                and fresh_room_state(second_rooms.get(rid, {}), "demand")
+                and fresh_room_state(first_rooms.get(rid, {}), "window")
+                and fresh_room_state(second_rooms.get(rid, {}), "window")
                 for rid in room_ids
             )
             if not clean_states:
                 exclusions["demand_or_window_not_confirmed_off_closed"] += 1
                 continue
-            solar0 = numeric(first.get("channels", {}).get("solar_radiation"))
-            solar1 = numeric(second.get("channels", {}).get("solar_radiation"))
+            first_channels, second_channels = first.get("channels", {}), second.get("channels", {})
+            solar0 = numeric(first_channels.get("solar_radiation"))
+            solar1 = numeric(second_channels.get("solar_radiation"))
+            sensor_ages = (
+                numeric(first_channels.get("solar_radiation_age_minutes")),
+                numeric(second_channels.get("solar_radiation_age_minutes")),
+                numeric(first_channels.get("outdoor_temperature_age_minutes")),
+                numeric(second_channels.get("outdoor_temperature_age_minutes")),
+            )
+            if any(age is not None and age > max_age_minutes for age in sensor_ages):
+                exclusions["stale_solar_or_outdoor"] += 1
+                continue
+            solar_unit0 = str(first_channels.get("solar_radiation_unit") or "").strip().lower().replace(" ", "")
+            solar_unit1 = str(second_channels.get("solar_radiation_unit") or "").strip().lower().replace(" ", "")
+            solar_scales = {"w/m2": 1.0, "w/m²": 1.0, "kw/m2": 1000.0, "kw/m²": 1000.0}
+            if (solar_unit0 and solar_unit0 not in solar_scales) or (solar_unit1 and solar_unit1 not in solar_scales):
+                exclusions["unsupported_solar_unit"] += 1
+                continue
+            if solar0 is not None and solar_unit0 in solar_scales:
+                solar0 *= solar_scales[solar_unit0]
+            if solar1 is not None and solar_unit1 in solar_scales:
+                solar1 *= solar_scales[solar_unit1]
             if solar0 is None or solar1 is None or max(solar0, solar1) > solar_max_w_m2:
                 exclusions["solar_missing_or_high"] += 1
                 continue
-            ac0 = numeric(first.get("channels", {}).get("ac_power"))
-            ac1 = numeric(second.get("channels", {}).get("ac_power"))
+            ac0 = numeric(first_channels.get("ac_power"))
+            ac1 = numeric(second_channels.get("ac_power"))
+            ac_ages = (numeric(first_channels.get("ac_power_age_minutes")), numeric(second_channels.get("ac_power_age_minutes")))
+            if any(age is not None and age > max_age_minutes for age in ac_ages):
+                exclusions["stale_ac_or_boiler_telemetry"] += 1
+                continue
             if ((require_ac_power and (ac0 is None or ac1 is None))
                     or (ac0 is not None and ac0 > ac_power_max_w)
                     or (ac1 is not None and ac1 > ac_power_max_w)):
                 exclusions["ac_heating_active_or_unavailable"] += 1
                 continue
-            burner0 = first.get("channels", {}).get("boiler_burner")
-            burner1 = second.get("channels", {}).get("boiler_burner")
+            burner0 = first_channels.get("boiler_burner")
+            burner1 = second_channels.get("boiler_burner")
+            boiler_ages = (
+                numeric(first_channels.get("boiler_burner_age_minutes")),
+                numeric(second_channels.get("boiler_burner_age_minutes")),
+                numeric(first_channels.get("boiler_modulation_age_minutes")),
+                numeric(second_channels.get("boiler_modulation_age_minutes")),
+            )
+            if any(age is not None and age > max_age_minutes for age in boiler_ages):
+                exclusions["stale_ac_or_boiler_telemetry"] += 1
+                continue
             if require_boiler_burner_off and not (state_off(burner0) and state_off(burner1)):
                 exclusions["boiler_active_or_unavailable"] += 1
                 continue
-            modulation0 = numeric(first.get("channels", {}).get("boiler_modulation"))
-            modulation1 = numeric(second.get("channels", {}).get("boiler_modulation"))
+            modulation0 = numeric(first_channels.get("boiler_modulation"))
+            modulation1 = numeric(second_channels.get("boiler_modulation"))
             if require_boiler_modulation_zero and (
                 modulation0 is None or modulation1 is None
                 or modulation0 > 0.1 or modulation1 > 0.1
             ):
                 exclusions["boiler_active_or_unavailable"] += 1
                 continue
-            outside0 = numeric(first.get("channels", {}).get("outdoor_temperature"))
-            outside1 = numeric(second.get("channels", {}).get("outdoor_temperature"))
+            outside0 = numeric(first_channels.get("outdoor_temperature"))
+            outside1 = numeric(second_channels.get("outdoor_temperature"))
             if outside0 is None or outside1 is None:
                 exclusions["non_contiguous_or_missing_temperature"] += 1
                 continue

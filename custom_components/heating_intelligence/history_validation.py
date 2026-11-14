@@ -1017,7 +1017,10 @@ def build_thermal_input_room_response_alignment(
     ordered = sorted(samples, key=lambda row: str(row.get("timestamp", "")))
     meter_channels = ("gas_consumption", "ac_energy")
     records = {key: [] for key in meter_channels}
-    room_records = {str(room.get("id", "unknown")): [] for room in rooms}
+    room_records = {
+        key: {str(room.get("id", "unknown")): [] for room in rooms}
+        for key in meter_channels
+    }
     aggregate_records = {key: [] for key in meter_channels}
     exclusions = {key: {"missing_or_stale_meter": 0, "unsupported_unit": 0,
                         "meter_reset_or_decrease": 0, "invalid_interval": 0,
@@ -1049,7 +1052,7 @@ def build_thermal_input_room_response_alignment(
             second_temp = _finite_number_or_none(second_room.get("temperature"))
             if first_temp is not None and second_temp is not None:
                 room_slopes[room_id] = (second_temp - first_temp) / elapsed_hours
-                room_records[room_id].append((None, room_slopes[room_id]))
+
         if not room_slopes:
             for key in meter_channels:
                 exclusions[key]["missing_room_temperature"] += 1
@@ -1080,9 +1083,9 @@ def build_thermal_input_room_response_alignment(
             records[key].append((input_power_w, aggregate_slope))
             aggregate_records[key].append((energy_kwh, aggregate_slope))
             for room_id, slope in room_slopes.items():
-                # Room-specific association is recorded only where the same
-                # verified plant input interval is available.
-                room_records[room_id][-1] = (input_power_w, slope)
+                # Keep gas and AC associations separate; neither is allocated
+                # to a room as delivered thermal power.
+                room_records[key][room_id].append((input_power_w, slope))
 
     def pearson(xs, ys):
         if len(xs) < 2:
@@ -1110,16 +1113,19 @@ def build_thermal_input_room_response_alignment(
             "exclusions": exclusions[key],
         }
     room_results = {}
-    for room_id, pairs in room_records.items():
-        valid = [(power, slope) for power, slope in pairs if power is not None]
-        room_results[room_id] = {
-            "paired_intervals": len(valid),
-            "input_power_vs_room_response_pearson_r": (
-                round(pearson([x for x, _ in valid], [y for _, y in valid]), 4)
-                if len(valid) >= minimum_intervals and pearson([x for x, _ in valid], [y for _, y in valid]) is not None
-                else None
-            ),
-        }
+    for meter_key, by_room in room_records.items():
+        room_results[meter_key] = {}
+        for room_id, pairs in by_room.items():
+            valid = [(power, slope) for power, slope in pairs if power is not None]
+            correlation = pearson([x for x, _ in valid], [y for _, y in valid])
+            room_results[meter_key][room_id] = {
+                "paired_intervals": len(valid),
+                "input_power_vs_room_response_pearson_r": (
+                    round(correlation, 4)
+                    if len(valid) >= minimum_intervals and correlation is not None
+                    else None
+                ),
+            }
     return {
         "status": "available" if any(item["status"] == "input_response_pairs_available" for item in results.values()) else "insufficient_verified_input_response_pairs",
         "interval_minutes": interval_minutes,

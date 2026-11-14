@@ -617,3 +617,138 @@ def build_house_effective_rc_calibration(
             "physical capacity; inter-zone exchange and internal gains remain unresolved."
         ),
     }
+
+
+
+def build_recorder_calibration_dataset(
+    history: dict[str, list[Any]],
+    rooms: list[dict[str, Any]],
+    channels: dict[str, str | None],
+    start: datetime,
+    end: datetime,
+    interval_minutes: int = 30,
+    max_age_minutes: int = 45,
+    include_samples: bool = False,
+) -> dict[str, Any]:
+    """Align Recorder channels onto a bounded common timeline with freshness metadata.
+
+    Values are carried forward only while fresh. The returned sample rows are
+    transient calibration inputs; callers should not persist raw Recorder data.
+    """
+    if interval_minutes <= 0 or max_age_minutes < 0 or end <= start:
+        raise ValueError("Invalid calibration dataset time bounds or cadence")
+
+    room_channels: dict[str, dict[str, str | None]] = {}
+    for room in rooms:
+        room_id = str(room.get("id", "unknown"))
+        room_channels[room_id] = {
+            "temperature": room.get("temperature_entity"),
+            "demand": room.get("demand_entity"),
+            "window": room.get("window_entity"),
+            "humidity": room.get("humidity_entity"),
+            "co2": room.get("co2_entity"),
+        }
+
+    timelines: dict[str, list[tuple[datetime, Any]]] = {}
+    for key, entity_id in channels.items():
+        timelines[key] = _timeline(history, entity_id)
+    for room_id, configured in room_channels.items():
+        for key, entity_id in configured.items():
+            timelines[f"room:{room_id}:{key}"] = _timeline(history, entity_id)
+
+    cadence = timedelta(minutes=interval_minutes)
+    max_age = timedelta(minutes=max_age_minutes)
+    first = start.astimezone(timezone.utc)
+    last = end.astimezone(timezone.utc)
+    # Anchor to the requested start to keep rows deterministic across runs.
+    samples = []
+    channel_counts = {
+        key: {"fresh": 0, "missing_or_stale": 0}
+        for key in timelines
+    }
+    room_temperature_count = {room_id: 0 for room_id in room_channels}
+    eligible_core_rows = 0
+    complete_room_state_rows = 0
+    stamp = first
+    while stamp <= last:
+        row: dict[str, Any] = {"timestamp": stamp.isoformat(), "channels": {}, "rooms": {}}
+        fresh_global = {}
+        for key, points in timelines.items():
+            index = bisect_right(points, stamp, key=lambda item: item[0]) - 1
+            value = None
+            age_minutes = None
+            if index >= 0:
+                point_stamp, raw = points[index]
+                age = stamp - point_stamp
+                age_minutes = max(0.0, age.total_seconds() / 60)
+                if age <= max_age:
+                    value = _state_value({"state": raw})
+                    if value is None:
+                        value = raw
+            fresh = value is not None
+            channel_counts[key]["fresh" if fresh else "missing_or_stale"] += 1
+            if key.startswith("room:"):
+                _, room_id, field = key.split(":", 2)
+                row["rooms"].setdefault(room_id, {})[field] = value
+                row["rooms"][room_id][field + "_age_minutes"] = round(age_minutes, 1) if age_minutes is not None else None
+            else:
+                row["channels"][key] = value
+                row["channels"][key + "_age_minutes"] = round(age_minutes, 1) if age_minutes is not None else None
+                fresh_global[key] = fresh
+
+        available_room_temps = sum(
+            row["rooms"].get(room_id, {}).get("temperature") is not None
+            for room_id in room_channels
+        )
+        for room_id in room_channels:
+            if row["rooms"].get(room_id, {}).get("temperature") is not None:
+                room_temperature_count[room_id] += 1
+        outdoor_ok = row["channels"].get("outdoor_temperature") is not None
+        core_ok = outdoor_ok and available_room_temps >= max(1, math.ceil(len(room_channels) * 0.7))
+        if core_ok:
+            eligible_core_rows += 1
+        all_room_states_known = bool(room_channels) and all(
+            row["rooms"].get(room_id, {}).get("temperature") is not None
+            and row["rooms"].get(room_id, {}).get("demand") is not None
+            and row["rooms"].get(room_id, {}).get("window") is not None
+            for room_id in room_channels
+        )
+        if core_ok and all_room_states_known:
+            complete_room_state_rows += 1
+        row["quality"] = {
+            "core_environment_and_room_coverage": core_ok,
+            "all_room_temperature_demand_window_known": all_room_states_known,
+        }
+        if include_samples:
+            samples.append(row)
+        stamp += cadence
+
+    total_rows = int((last - first).total_seconds() // cadence.total_seconds()) + 1
+    coverage = {
+        key: {
+            "fresh_samples": counts["fresh"],
+            "missing_or_stale_samples": counts["missing_or_stale"],
+            "coverage_percent": round(100 * counts["fresh"] / total_rows, 1) if total_rows else 0.0,
+        }
+        for key, counts in channel_counts.items()
+    }
+    return {
+        "status": "aligned_dataset_available" if eligible_core_rows else "insufficient_core_coverage",
+        "source": "home_assistant_recorder",
+        "window_start": first.isoformat(),
+        "window_end": last.isoformat(),
+        "cadence_minutes": interval_minutes,
+        "max_carry_forward_age_minutes": max_age_minutes,
+        "aligned_sample_count": total_rows,
+        "core_eligible_sample_count": eligible_core_rows,
+        "complete_room_state_sample_count": complete_room_state_rows,
+        "room_temperature_coverage_samples": room_temperature_count,
+        "channel_coverage": coverage,
+        "raw_history_retained": False,
+        "note": (
+            "Common-cadence observations use last-known values only within the freshness limit. "
+            "Rows with missing channels remain explicitly marked; no interpolation or fabricated "
+            "sensor values are introduced."
+        ),
+        **({"samples": samples} if include_samples else {}),
+    }

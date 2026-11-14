@@ -1,7 +1,20 @@
 from datetime import datetime, timedelta, timezone
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 
-from custom_components.heating_intelligence.pump_stages import update_pump_stage
-from custom_components.heating_intelligence.thermal_performance import thermal_performance_statistics
+
+ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "heating_intelligence"
+
+
+def _load_module(name):
+    spec = spec_from_file_location(name, ROOT / f"{name}.py")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+update_pump_stage = _load_module("pump_stages").update_pump_stage
+thermal_performance_statistics = _load_module("thermal_performance").thermal_performance_statistics
 
 
 def test_valve_opening_is_not_reported_as_pump_running():

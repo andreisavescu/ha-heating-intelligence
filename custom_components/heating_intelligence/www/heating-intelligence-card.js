@@ -126,11 +126,12 @@ class HeatingIntelligenceCard extends HTMLElement {
         const a=Date.parse(item.start), b=Date.parse(item.end);
         if(!Number.isFinite(a)||!Number.isFinite(b)||b<=start||a>=end)return "";
         const x=Math.max(0,(Math.max(a,start)-start)/(end-start)*width), right=Math.min(width,(Math.min(b,end)-start)/(end-start)*width);
-        return `<rect x="${x.toFixed(1)}" y="3" width="${Math.max(1,right-x).toFixed(1)}" height="20" rx="5" class="${item.active?"demand-active":"demand-complete"}"><title>${this._esc(new Date(a).toLocaleString())} – ${this._esc(new Date(b).toLocaleString())}</title></rect>`;
+        const duration=this._duration((b-a)/1000);
+        return `<rect x="${x.toFixed(1)}" y="3" width="${Math.max(1,right-x).toFixed(1)}" height="20" rx="5" class="${item.active?"demand-active":"demand-complete"}"><title>${this._esc(new Date(a).toLocaleString())} – ${this._esc(new Date(b).toLocaleString())} · ${duration}</title></rect>`;
       }).join("");
       return `<div class="demand-row"><div class="demand-room"><strong>${this._esc(room.name)}</strong><span class="demand-status ${room.demand?"active":""}">${room.demand?"Requesting":"Idle"}</span></div><svg viewBox="0 0 ${width} 26" preserveAspectRatio="none" role="img" aria-label="Demand timeline for ${this._esc(room.name)}"><line x1="0" y1="13" x2="${width}" y2="13" class="demand-track"/>${bars}</svg></div>`;
     }).join("");
-    const ticks=hours===24?["−24h","−18h","−12h","−6h","Now"]:["−7d","−5d","−3d","−1d","Now"];
+    const ticks=hours===2?["−2h","−1h 30m","−1h","−30m","Now"]:hours===4?["−4h","−3h","−2h","−1h","Now"]:["−24h","−18h","−12h","−6h","Now"];
     return `<div class="demand-axis">${ticks.map(t=>`<span>${t}</span>`).join("")}</div>${rows||'<div class="chart-empty">No rooms configured.</div>'}`;
   }
   _energyChart(days) {
@@ -516,7 +517,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
         </div>
         <div class="section"><div class="section-title">Weekly room-demand heatmap ${this._info("Weekly room-demand heatmap","Each cell represents one hour of the day. Darker green means more minutes with a recorded heating-demand cycle during that hour. It uses stored demand-cycle start/end times; missing history is not interpreted as zero demand.")}</div><div class="section-content"><div class="subtle">Demand minutes by room, day and hour. Select a cell to inspect its time and duration.</div>${this._demandHeatmap(entries)}</div></div>
-        <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recorded room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="24" aria-pressed="true">24 hours</button><button data-hours="168" aria-pressed="false">7 days</button></div><div class="demand-timeline">${this._demandTimeline(entries,24)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value.</div></div>
+        <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recent room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="2" aria-pressed="false">2 hours</button><button data-hours="4" aria-pressed="true">4 hours</button><button data-hours="24" aria-pressed="false">24 hours</button></div><div class="demand-timeline">${this._demandTimeline(entries,4)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value. Select a cycle to inspect its timing and duration.</div></div>
         <div class="section"><div class="section-title">Forecasts</div>
           <div class="subtle">Explainable short-term projections · confidence reflects sample coverage and trend consistency.</div>
           <div class="overview">

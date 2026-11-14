@@ -384,6 +384,34 @@ def test_calibration_dataset_does_not_carry_forward_stale_or_unknown_values():
     assert result["channel_coverage"]["outdoor_temperature"]["missing_or_stale_samples"] == 3
 
 
+def test_calibration_dataset_handles_configured_channels_without_recorder_history():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    start = end - timedelta(minutes=30)
+    history = {
+        "sensor.outdoor": [{"state": "5", "last_changed": start.isoformat()}],
+        "sensor.room": [{"state": "20", "last_changed": start.isoformat()}],
+        "binary_sensor.demand": [{"state": "off", "last_changed": start.isoformat()}],
+        "binary_sensor.window": [{"state": "off", "last_changed": start.isoformat()}],
+    }
+    result = MODULE.build_recorder_calibration_dataset(
+        history,
+        [{"id": "room", "temperature_entity": "sensor.room",
+          "demand_entity": "binary_sensor.demand", "window_entity": "binary_sensor.window"}],
+        {
+            "outdoor_temperature": "sensor.outdoor",
+            "water_flow_rate": "sensor.flow_without_history",
+            "solar_radiation": "sensor.solar_without_history",
+        },
+        start, end, interval_minutes=30, max_age_minutes=45, include_samples=True,
+    )
+    assert result["aligned_sample_count"] == 2
+    assert result["samples"][0]["channels"]["water_flow_rate"] is None
+    assert result["samples"][0]["channels"]["water_flow_rate_unit"] is None
+    assert result["samples"][0]["channels"]["solar_radiation"] is None
+    assert result["samples"][0]["channels"]["solar_radiation_unit"] is None
+    assert result["channel_coverage"]["water_flow_rate"]["fresh_samples"] == 0
+
+
 def test_calibration_dataset_rejects_invalid_cadence():
     end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
     try:

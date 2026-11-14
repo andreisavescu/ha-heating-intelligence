@@ -1269,6 +1269,10 @@ def build_thermal_input_room_response_alignment(
                 "paired_intervals": len(pairs),
                 "pearson_r": round(correlation, 4) if correlation is not None else None,
                 "confidence_interval_95": diagnostics["confidence_interval_95"],
+                "confidence_interval_method": "nominal_fisher_z_independent_pairs",
+                "confidence_interval_note": (
+                    "Nominal interval assumes independent pairs; serial correlation can make it optimistic."
+                ),
                 "split_half": diagnostics["split_half"],
                 "input_power_range_w": round(max(xs) - min(xs), 3) if xs else None,
                 "input_power_std_w": round(input_std, 3) if xs else None,
@@ -1305,6 +1309,12 @@ def build_thermal_input_room_response_alignment(
         else:
             response_stability = "insufficient_split_half_history"
         zero_lag = lag_results[0]
+        best_interval = best_lag["confidence_interval_95"] if best_lag else None
+        correlation_uncertainty_status = (
+            "interval_excludes_zero"
+            if best_interval is not None and (best_interval[0] > 0 or best_interval[1] < 0)
+            else "interval_includes_zero_or_unavailable"
+        )
         enough_input_excitation = (
             zero_lag["paired_intervals"] >= minimum_intervals
             and (zero_lag["input_power_range_w"] or 0.0) > 1.0
@@ -1316,6 +1326,8 @@ def build_thermal_input_room_response_alignment(
             evidence_status = "withheld_weak_plant_input_excitation"
         elif response_stability != "same_direction_across_history_halves":
             evidence_status = "withheld_non_repeatable_response"
+        elif correlation_uncertainty_status != "interval_excludes_zero":
+            evidence_status = "withheld_uncertain_correlation"
         elif lag_peak_status != "distinct_descriptive_peak":
             evidence_status = "descriptive_lag_ambiguous"
         else:
@@ -1325,6 +1337,7 @@ def build_thermal_input_room_response_alignment(
             "evidence_status": evidence_status,
             "plant_input_excitation_status": "sufficient_variation_for_association_screen" if enough_input_excitation else "weak_or_flat_input_variation",
             "response_stability_status": response_stability,
+            "correlation_uncertainty_status": correlation_uncertainty_status,
             "lag_peak_status": lag_peak_status,
             "paired_intervals_at_zero_lag": lag_results[0]["paired_intervals"],
             "lag_scan": lag_results,

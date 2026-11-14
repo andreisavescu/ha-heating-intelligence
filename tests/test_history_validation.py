@@ -551,6 +551,14 @@ def test_multizone_identification_reports_correlation_diagnostics_when_fit_is_us
         assert room["max_abs_predictor_correlation"] is not None
         assert room["predictor_correlations"]
         assert room["identifiability_threshold"] == 0.985
+        assert room["temporal_stability_method"] == "three_contiguous_training_periods_with_full_rank_gate"
+        assert len(room["temporal_training_windows"]) == 3
+        assert room["temporal_coefficient_stability"]["envelope"]["total_windows"] == 3
+        assert all(
+            window["training_interval_end"] is None or window["status"] != "fit_available"
+            or window["normalized_rates_per_hour"] is not None
+            for window in room["temporal_training_windows"]
+        )
         assert room["coefficient_uncertainty_method"] == "deterministic_moving_block_bootstrap_90_percentile_range"
         uncertainty = room["coefficient_uncertainty"]["envelope"]
         assert uncertainty["successful_replicates"] >= 40

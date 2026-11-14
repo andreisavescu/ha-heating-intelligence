@@ -3338,6 +3338,7 @@ def build_multizone_physical_calibration_readiness(
     aggregate_capacity_calibration: dict[str, Any] | None = None,
     floor_thermal_output: dict[str, Any] | None = None,
     floor_room_allocation_inference: dict[str, Any] | None = None,
+    floor_room_demand_lag_analysis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarise which absolute multi-zone parameters are evidenced vs blocked.
 
@@ -3352,6 +3353,7 @@ def build_multizone_physical_calibration_readiness(
     aggregate_capacity_calibration = aggregate_capacity_calibration or {}
     floor_thermal_output = floor_thermal_output or {}
     floor_room_allocation_inference = floor_room_allocation_inference or {}
+    floor_room_demand_lag_analysis = floor_room_demand_lag_analysis or {}
     aggregate_capacity = _finite_number_or_none(
         aggregate_capacity_calibration.get("effective_building_thermal_capacity_wh_per_k")
     )
@@ -3545,6 +3547,15 @@ def build_multizone_physical_calibration_readiness(
                 if item.get("status") == "repeatable_demand_association_not_physical_room_allocation"
             ],
             "interpretation": "Demand-associated floor-output regression is observational evidence only; it does not measure room heat delivery.",
+        },
+        "floor_room_demand_lag_analysis": {
+            "status": floor_room_demand_lag_analysis.get("status", "not_available"),
+            "floors_with_repeatable_lag_evidence": [
+                floor_id for floor_id, item in (floor_room_demand_lag_analysis.get("floors") or {}).items()
+                if item.get("status") == "descriptive_room_demand_lag_evidence_available"
+            ],
+            "physical_room_allocation_identified": False,
+            "interpretation": "Demand-to-floor-output lag scans are descriptive timing evidence, not measured room heat delivery or slab capacity.",
         },
         "measured_floor_thermal_output": {
             "status": floor_thermal_output.get("status", "not_available"),

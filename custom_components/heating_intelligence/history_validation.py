@@ -1573,6 +1573,41 @@ def build_multizone_response_identification(
                 math.sqrt(sum((row[1][j] - means[j]) ** 2 for row in train) / len(train))
                 for j in range(p)
             ]
+            # Report the actual temperature-gradient excitation for each
+            # physical driver, not just the aggregate matrix condition number.
+            gradient_deadband_c = 0.1
+            predictor_excitation = {}
+            for j, predictor in enumerate(predictors):
+                values = [row[1][j] for row in train]
+                positive = sum(value > gradient_deadband_c for value in values)
+                negative = sum(value < -gradient_deadband_c for value in values)
+                near_zero = len(values) - positive - negative
+                predictor_excitation[predictor] = {
+                    "standard_deviation_c": round(scales[j], 4),
+                    "minimum_gradient_c": round(min(values), 4),
+                    "maximum_gradient_c": round(max(values), 4),
+                    "positive_gradient_intervals": positive,
+                    "negative_gradient_intervals": negative,
+                    "near_zero_gradient_intervals": near_zero,
+                    "gradient_deadband_c": gradient_deadband_c,
+                    "bidirectional_excitation": positive >= 3 and negative >= 3 and scales[j] >= gradient_deadband_c,
+                }
+            room_link_excitation = {
+                key: value["bidirectional_excitation"]
+                for key, value in predictor_excitation.items() if key != "envelope"
+            }
+            result["predictor_excitation"] = predictor_excitation
+            result["bidirectionally_excited_room_links"] = [
+                key for key, excited in room_link_excitation.items() if excited
+            ]
+            result["weakly_excited_room_links"] = [
+                key for key, excited in room_link_excitation.items() if not excited
+            ]
+            result["room_link_excitation_status"] = (
+                "all_room_links_bidirectionally_excited"
+                if room_link_excitation and all(room_link_excitation.values())
+                else "one_or_more_room_links_weakly_or_one_sided_excited"
+            )
             if all(scale > 1e-5 for scale in scales):
                 # Pairwise correlation is a transparent first identifiability
                 # screen: if two physical drivers move together, this dataset

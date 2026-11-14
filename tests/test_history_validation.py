@@ -249,3 +249,74 @@ def test_house_effective_rc_capacity_is_withheld_without_independent_heat_loss()
     result = MODULE.build_house_effective_rc_calibration({}, [], "sensor.outdoor", None)
     assert result["status"] == "withheld_heat_loss_coefficient_unavailable"
     assert result["effective_building_thermal_capacity_wh_per_k"] is None
+
+
+def test_calibration_dataset_aligns_channels_on_common_timeline_and_tracks_freshness():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    start = end - timedelta(hours=1)
+    history = {
+        "sensor.outdoor": [
+            {"state": "5", "last_changed": start.isoformat()},
+            {"state": "6", "last_changed": (start + timedelta(minutes=30)).isoformat()},
+        ],
+        "sensor.room_a": [
+            {"state": "20", "last_changed": start.isoformat()},
+            {"state": "20.5", "last_changed": (start + timedelta(minutes=30)).isoformat()},
+        ],
+        "binary_sensor.demand_a": [{"state": "off", "last_changed": start.isoformat()}],
+        "binary_sensor.window_a": [{"state": "off", "last_changed": start.isoformat()}],
+        "sensor.solar": [{"state": "0", "last_changed": start.isoformat()}],
+        "sensor.boiler": [{"state": "45", "last_changed": start.isoformat()}],
+    }
+    result = MODULE.build_recorder_calibration_dataset(
+        history,
+        [{
+            "id": "living", "temperature_entity": "sensor.room_a",
+            "demand_entity": "binary_sensor.demand_a",
+            "window_entity": "binary_sensor.window_a",
+        }],
+        {"outdoor_temperature": "sensor.outdoor", "solar_radiation": "sensor.solar",
+         "water_supply_temperature": "sensor.boiler"},
+        start, end, interval_minutes=30, max_age_minutes=45, include_samples=True,
+    )
+    assert result["status"] == "aligned_dataset_available"
+    assert result["aligned_sample_count"] == 3
+    assert result["core_eligible_sample_count"] == 3
+    assert result["complete_room_state_sample_count"] == 3
+    assert result["samples"][1]["rooms"]["living"]["temperature"] == 20.5
+    assert result["samples"][2]["channels"]["outdoor_temperature"] == 6.0
+    assert result["channel_coverage"]["water_supply_temperature"]["coverage_percent"] == 100.0
+    assert result["raw_history_retained"] is False
+
+
+def test_calibration_dataset_does_not_carry_forward_stale_or_unknown_values():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    start = end - timedelta(hours=2)
+    history = {
+        "sensor.outdoor": [{"state": "5", "last_changed": start.isoformat()}],
+        "sensor.room": [{"state": "20", "last_changed": start.isoformat()}],
+        "binary_sensor.demand": [{"state": "unknown", "last_changed": start.isoformat()}],
+        "binary_sensor.window": [{"state": "off", "last_changed": start.isoformat()}],
+    }
+    result = MODULE.build_recorder_calibration_dataset(
+        history,
+        [{"id": "room", "temperature_entity": "sensor.room",
+          "demand_entity": "binary_sensor.demand", "window_entity": "binary_sensor.window"}],
+        {"outdoor_temperature": "sensor.outdoor"},
+        start, end, interval_minutes=30, max_age_minutes=45, include_samples=True,
+    )
+    assert result["core_eligible_sample_count"] == 2
+    assert result["samples"][2]["channels"]["outdoor_temperature"] is None
+    assert result["samples"][0]["rooms"]["room"]["demand"] is None
+    assert result["complete_room_state_sample_count"] == 0
+    assert result["channel_coverage"]["outdoor_temperature"]["missing_or_stale_samples"] == 3
+
+
+def test_calibration_dataset_rejects_invalid_cadence():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    try:
+        MODULE.build_recorder_calibration_dataset({}, [], {}, end - timedelta(hours=1), end, interval_minutes=0)
+    except ValueError as err:
+        assert "Invalid calibration dataset" in str(err)
+    else:
+        raise AssertionError("Invalid cadence should be rejected")

@@ -222,6 +222,26 @@ class HeatingIntelligenceCard extends HTMLElement {
         .hero p{margin:0;color:var(--secondary-text-color);font-size:.82rem}
         .hero-line{display:flex;align-items:center;justify-content:space-between;gap:12px}
         .live-pill{white-space:nowrap;border-radius:999px;padding:5px 10px;background:rgba(36,156,112,.15);color:var(--hi-green);font-size:.72rem;font-weight:700}
+        .simple-home{display:grid;gap:10px;margin:8px 0 4px}
+        .simple-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+        .simple-stat{padding:9px 10px;border:1px solid var(--divider-color);border-radius:10px;background:var(--secondary-background-color)}
+        .simple-stat span{display:block;color:var(--secondary-text-color);font-size:.7rem;margin-bottom:4px}
+        .simple-stat strong{font-size:1.12rem;font-weight:750}
+        .simple-section{border:1px solid var(--divider-color);border-radius:10px;padding:8px 10px}
+        .simple-heading{font-size:.8rem;font-weight:750;margin-bottom:5px}
+        .simple-room{padding:7px 0;border-top:1px solid var(--divider-color)}
+        .simple-room-main,.simple-pump{display:flex;align-items:center;justify-content:space-between;gap:8px}
+        .simple-room-main strong,.simple-pump strong{font-size:.83rem;min-width:0;overflow-wrap:anywhere}
+        .simple-temp{font-size:.85rem;font-weight:700;white-space:nowrap}
+        .simple-room-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:3px;font-size:.7rem;color:var(--secondary-text-color)}
+        .simple-state{color:var(--secondary-text-color)}
+        .simple-state.is-heating{color:var(--hi-green);font-weight:700}
+        .simple-alert{color:var(--hi-amber);font-weight:700}
+        .simple-muted{color:var(--secondary-text-color);font-size:.72rem}
+        .simple-pump{padding:7px 0;border-top:1px solid var(--divider-color)}
+        .simple-alert-row{display:grid;gap:2px;padding:6px 0;border-top:1px solid var(--divider-color);font-size:.75rem}
+        .simple-alert-row strong{color:var(--hi-amber)}
+        ha-card.home-view .overview,ha-card.home-view details.section{display:none}
         .overview,.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
         .metric,.pump{min-width:0;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:8px;padding:6px 7px}
         .metric{position:relative;overflow:hidden}
@@ -270,10 +290,42 @@ class HeatingIntelligenceCard extends HTMLElement {
       <ha-card>
         <div class="hero"><div class="hero-line"><div><h2>${this._esc(this._config.title)}</h2><p>Whole-home heating performance at a glance</p></div><span class="live-pill">● LIVE MONITORING</span></div></div>
         <nav class="tabs" role="tablist" aria-label="Heating Intelligence views">
-          <button type="button" class="tab" role="tab" data-view="overview" aria-selected="true">Overview</button>
-          <button type="button" class="tab" role="tab" data-view="demand" aria-selected="false">Heat demand</button>
+          <button type="button" class="tab" role="tab" data-view="home" aria-selected="true">Home</button>
+          <button type="button" class="tab" role="tab" data-view="overview" aria-selected="false">Analysis</button>
+          <button type="button" class="tab" role="tab" data-view="demand" aria-selected="false">Demand</button>
           <button type="button" class="tab" role="tab" data-view="predict" aria-selected="false">Predictions</button>
         </nav>
+        <div class="simple-home">
+          <div class="simple-summary">
+            <div class="simple-stat"><span>Rooms heating</span><strong>${attrs.heating_rooms ?? entries.filter(r=>r.demand).length} / ${entries.length}</strong></div>
+            <div class="simple-stat"><span>Indoor average</span><strong>${this._fmt(attrs.average_room_temperature)}</strong></div>
+            <div class="simple-stat"><span>Pumps running</span><strong>${attrs.running_pumps ?? pumps.filter(p=>p.running).length} / ${pumps.length}</strong></div>
+            <div class="simple-stat"><span>Water inlet</span><strong>${this._fmt(attrs.water_temperature)}</strong></div>
+          </div>
+          <div class="simple-section">
+            <div class="simple-heading">Rooms</div>
+            ${entries.length ? entries.map((room) => `<div class="simple-room">
+              <div class="simple-room-main"><strong>${this._esc(room.name)}</strong><span class="simple-temp">${this._fmt(room.temperature)}</span></div>
+              <div class="simple-room-meta">
+                <span class="simple-state ${room.demand ? "is-heating" : ""}">${room.demand ? "Heating requested" : "No heat demand"}</span>
+                ${room.window_entity && room.window_state_known && room.window_open ? '<span class="simple-alert">Window open</span>' : ""}
+                ${room.window_entity && !room.window_state_known ? '<span class="simple-muted">Window unavailable</span>' : ""}
+              </div>
+            </div>`).join("") : '<p class="simple-muted">No rooms configured.</p>'}
+          </div>
+          <div class="simple-section">
+            <div class="simple-heading">Heating pumps</div>
+            ${pumps.length ? pumps.map((pump) => `<div class="simple-pump">
+              <strong>${this._esc(pump.name)}</strong>
+              <span class="simple-state ${pump.running ? "is-heating" : ""}">${pump.running ? "Running" : "Stopped"}</span>
+              <span class="simple-temp">${this._fmt(pump.power, "W", 0)}</span>
+            </div>`).join("") : '<p class="simple-muted">No pumps configured.</p>'}
+          </div>
+          ${insights.some(item => item.severity === "warning") ? `<div class="simple-section">
+            <div class="simple-heading">Needs attention</div>
+            ${insights.filter(item => item.severity === "warning").slice(0,2).map(item => `<div class="simple-alert-row"><strong>${this._esc(item.title)}</strong><span>${this._esc(item.detail)}</span></div>`).join("")}
+          </div>` : ""}
+        </div>
         <div class="overview">
           <div class="metric"><span>Rooms requesting heat</span><strong>${attrs.heating_rooms ?? entries.filter(r=>r.demand).length} / ${entries.length}</strong></div>
           <div class="metric"><span>Average room temperature</span><strong>${this._fmt(attrs.average_room_temperature)}</strong></div>
@@ -526,8 +578,8 @@ class HeatingIntelligenceCard extends HTMLElement {
     });
     this.shadowRoot.querySelectorAll(".info-button").forEach(button=>button.addEventListener("click",()=>{const existing=button.nextElementSibling;if(existing?.classList.contains("info-popover")){existing.remove();button.setAttribute("aria-expanded","false");this._openInfoKey=null;return;}this.shadowRoot.querySelectorAll(".info-popover").forEach(p=>p.remove());this.shadowRoot.querySelectorAll(".info-button").forEach(b=>b.setAttribute("aria-expanded","false"));const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");this._openInfoKey=button.dataset.infoKey;}));
     if(this._openInfoKey){const button=[...this.shadowRoot.querySelectorAll(".info-button")].find(b=>b.dataset.infoKey===this._openInfoKey);if(button){const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");}}
-    const applyView=(view)=>{this._activeView=view;this.shadowRoot.querySelectorAll(".tab").forEach(b=>{const active=b.dataset.view===view;b.setAttribute("aria-selected",String(active));b.setAttribute("tabindex",active?"0":"-1");});this.shadowRoot.querySelectorAll("details.section").forEach(s=>{const h=s.querySelector("summary")?.textContent||"";const tab=h==="Demand timeline"?"demand":["Self-learning thermal model","Forecasts","Room details","Room heat-retention comparison","Advanced diagnostics"].includes(h)?"predict":"overview";s.hidden=tab!==view;});};
-    this.shadowRoot.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>applyView(b.dataset.view)));applyView(this._activeView||"overview");
+    const applyView=(view)=>{this._activeView=view;const card=this.shadowRoot.querySelector("ha-card");card?.classList.toggle("home-view",view==="home");this.shadowRoot.querySelectorAll(".tab").forEach(b=>{const active=b.dataset.view===view;b.setAttribute("aria-selected",String(active));b.setAttribute("tabindex",active?"0":"-1");});this.shadowRoot.querySelectorAll("details.section").forEach(s=>{const h=s.querySelector("summary")?.textContent||"";const tab=h==="Demand timeline"?"demand":["Self-learning thermal model","Forecasts","Room details","Room heat-retention comparison","Advanced diagnostics"].includes(h)?"predict":"overview";s.hidden=tab!==view;});};
+    this.shadowRoot.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>applyView(b.dataset.view)));applyView(this._activeView||"home");
     this.shadowRoot.querySelectorAll("[data-hours]").forEach(b=>b.addEventListener("click",()=>{this._demandHours=Number(b.dataset.hours);this.shadowRoot.querySelectorAll("[data-hours]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));const target=this.shadowRoot.querySelector(".demand-timeline");if(target)target.innerHTML=this._demandTimeline(entries,this._demandHours);}));
     const select = this.shadowRoot.querySelector("select");
     if (select) select.addEventListener("change", (event) => { this._selectedRoom = event.target.value; this._render(); });

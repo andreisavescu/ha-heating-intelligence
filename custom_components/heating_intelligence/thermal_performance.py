@@ -14,6 +14,8 @@ def _daily_result(day: dict, boiler_efficiency: float, area: float, ac_cop: floa
     return {
         "delivered_heat_kwh": round(delivered, 3),
         "degree_hours": round(exposure, 2),
+        "gas_meter_volume_m3": round(float(day.get("gas_meter_volume_m3", 0.0) or 0.0), 6),
+        "gas_meter_conversion_basis": day.get("gas_meter_conversion_basis"),
         "heat_loss_coefficient_w_k": round(heat_loss, 2) if heat_loss is not None else None,
         "heat_loss_u_value": round(heat_loss / area, 4) if heat_loss is not None else None,
         "solar_radiation_average": (

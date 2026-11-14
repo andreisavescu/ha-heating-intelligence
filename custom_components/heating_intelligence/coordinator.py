@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -172,11 +172,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
             ac_unit = (ac_state.attributes.get("unit_of_measurement") or "") if ac_state else ""
             ac_scale = {"kW": 1000.0, "MW": 1_000_000.0, "mW": 0.001}.get(ac_unit.strip(), 1.0)
+            configured_rooms = self.entry.options.get(CONF_ROOMS, [])
             summary["room_response"] = build_recorder_room_response(
-                history,
-                self.entry.options.get(CONF_ROOMS, []),
-                ac_power_entity,
-                ac_scale,
+                history, configured_rooms, ac_power_entity, ac_scale,
+            )
+            summary["preliminary_calibration"] = build_preliminary_room_calibration(
+                history, configured_rooms,
+                self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY),
             )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")

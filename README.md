@@ -1,3 +1,14 @@
+## 0.14.3 — manifold pump-stage diagnostics and daily thermal finalisation
+
+- Distinguish the initial manifold valve-actuator electrical signature from the later sustained pump electrical signature.
+- Track valve opening and inferred pump startup independently for each configured manifold.
+- Expose stage, valve-open timestamp, inferred pump-start timestamp, idle baseline and valve signature level in the overview pump attributes.
+- Optionally configure the boiler burner binary sensor and modulation sensor; capture their values when a pump start is inferred.
+- Label pump-stage detection as an electrical-signature estimate, not a direct measurement of water flow.
+- Finalise the previous local calendar day's heat-loss estimate at 02:00 and persist it so subsequent refreshes do not recalculate it.
+- Preserve rolling 7-day and 30-day calculations. Record daily solar-radiation average as context; it is not applied as an unvalidated correction to the physical estimate.
+- Add unit tests for pump-stage transitions and delayed, idempotent daily finalisation; run them in GitHub Actions.
+
 ## 0.14.2 — room air-quality entity registration fix
 
 - Fix room humidity and CO₂ entities failing to resolve their configured room device association.

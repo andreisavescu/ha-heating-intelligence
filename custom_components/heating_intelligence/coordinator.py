@@ -449,8 +449,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         result["efficiency"]["weather_normalised"] = weather_model
         result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
         result["thermal_model"]["ac_heating_filter"] = (
-            "active" if ac_heating_active else "inactive" if ac_power_value is not None
-            else "sensor_unavailable" if ac_power_entity else "not_configured"
+            "sensor_unavailable" if ac_power_entity and ac_power_value is None
+            else "active" if ac_heating_active
+            else "inactive" if ac_power_entity else "not_configured"
         )
         result["house_assessment"] = build_house_assessment(
             self.entry.options.get("house_assessment", {}),

@@ -4147,8 +4147,7 @@ def build_control_event_inventory(
         inactive_since: datetime | None = None
         continuity_broken = True
         for stamp, raw in points:
-            normal = str(raw).strip().lower() if raw is not None else "unknown"
-            current = _switch_state(raw)
+                current = _switch_state(raw)
             if current is None:
                 counts["unknown"] += 1
                 if previous_state is True or active_since is not None:
@@ -4169,6 +4168,8 @@ def build_control_event_inventory(
                 active_since = stamp if current else None
                 inactive_since = stamp if not current else None
             elif current and not previous_state:
+                if inactive_since is not None:
+                    complete_cycles += 1
                 active_since = stamp
                 inactive_since = None
             elif not current and previous_state:
@@ -4180,7 +4181,6 @@ def build_control_event_inventory(
 
         complete_on = len(on_durations)
         complete_off = len(off_durations)
-        complete_cycles = min(complete_on, complete_off)
         status = "available" if complete_on else (
             "partial_unknown_gaps" if counts["unknown"] else "insufficient_explicit_transitions"
         )

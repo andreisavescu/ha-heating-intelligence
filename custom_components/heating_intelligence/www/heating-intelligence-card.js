@@ -308,6 +308,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="overview">
             <div class="metric"><span>Model status</span><strong>${this._esc(attrs.thermal_model?.status || "Learning")}</strong></div>
             <div class="metric"><span>Rooms modelled</span><strong>${attrs.thermal_model?.rooms_modelled ?? 0} / ${entries.length}</strong></div>
+            <div class="metric"><span>Rooms forecastable now</span><strong>${attrs.thermal_model?.rooms_forecastable ?? 0} / ${entries.length}</strong></div>
             <div class="metric"><span>Average confidence</span><strong>${this._fmt(attrs.thermal_model?.average_confidence, "%", 0)}</strong></div>
             <div class="metric"><span>AC heating filter</span><strong>${this._esc(attrs.thermal_model?.ac_heating_filter || "Not configured")}</strong><div class="subtle">Intervals above 50 W, or unavailable configured power, are excluded.</div></div>
             <div class="metric"><span>Whole-house heat-loss coefficient</span><strong>${this._fmt(attrs.thermal_model?.whole_house_observed_performance?.heat_loss_coefficient_w_k, "W/K", 1)}</strong><div class="subtle">Measured energy/temperature estimate</div></div>

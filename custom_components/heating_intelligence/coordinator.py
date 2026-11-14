@@ -27,6 +27,8 @@ from .history_validation import build_recorder_history_summary, build_recorder_r
 
 from .const import (
     CONF_DEMAND_ENTITY,
+    CONF_CALIBRATION_HISTORY_DAYS,
+    DEFAULT_CALIBRATION_HISTORY_DAYS,
     CONF_COMFORT_TARGET_C,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
@@ -162,7 +164,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "raw_history_retained": False,
             }
 
-        start = now - timedelta(days=7)
+        history_days = int(self.entry.options.get(CONF_CALIBRATION_HISTORY_DAYS, DEFAULT_CALIBRATION_HISTORY_DAYS))
+        history_days = max(7, min(365, history_days))
+        start = now - timedelta(days=history_days)
         try:
             from homeassistant.components.recorder import get_instance
             from homeassistant.components.recorder.history import get_significant_states
@@ -174,6 +178,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 True, False, True, True,
             )
             summary = build_recorder_history_summary(history, start, now)
+            summary["requested_history_days"] = history_days
+            summary["control_event_resolution"] = "native_recorder_timestamps"
+            summary["control_event_note"] = ("State changes retain their original Recorder timestamps; "
+                "they are not downsampled to the 30-minute thermal-model cadence. "
+                "Use the raw event timestamps to reconstruct PWM pulse timing.")
             configured_rooms = self.entry.options.get(CONF_ROOMS, [])
             calibration_channels = {
                 "outdoor_temperature": self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY),

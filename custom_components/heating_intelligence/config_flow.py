@@ -42,6 +42,7 @@ from .const import (
     CONF_HUMIDITY_ENTITY,
     CONF_CO2_ENTITY,
     CONF_ENABLE_CO2,
+    CONF_HOUSE_ASSESSMENT,
     DOMAIN,
 )
 
@@ -70,8 +71,64 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_room", "edit_room", "room_air_quality", "room_area", "remove_room", "global_settings", "pump_settings"],
+            menu_options=["house_assessment", "add_room", "edit_room", "room_air_quality", "room_area", "remove_room", "global_settings", "pump_settings"],
         )
+
+    async def async_step_house_assessment(self, user_input=None):
+        """Start the optional, editable whole-house assessment."""
+        self._assessment = dict(self.config_entry.options.get(CONF_HOUSE_ASSESSMENT, {}))
+        if user_input is not None:
+            self._assessment.update(user_input)
+            return await self.async_step_assessment_heating()
+        current = self._assessment
+        fields = {
+            vol.Optional("construction_year"): selector.NumberSelector(selector.NumberSelectorConfig(min=1850, max=2035, step=1, mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("wall_insulation_cm", default=current.get("wall_insulation_cm", 15.0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=60, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("roof_insulation_cm"): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX),
+            vol.Optional("floor_insulation_cm"): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=60, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX),
+            vol.Optional("window_glazing"): selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "double", "triple"], mode=selector.SelectSelectorMode.DROPDOWN)),
+            vol.Optional("window_frame"): selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "uPVC", "wood", "aluminium", "composite"], mode=selector.SelectSelectorMode.DROPDOWN)),
+            vol.Optional("main_orientation", default=current.get("main_orientation", "south")): selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "north", "south", "east", "west"], mode=selector.SelectSelectorMode.DROPDOWN)),
+            vol.Optional("shading"): selector.SelectSelector(selector.SelectSelectorConfig(options=["unknown", "none", "partial", "significant"], mode=selector.SelectSelectorMode.DROPDOWN)),
+        }
+        for key, value in current.items():
+            if key in ("construction_year", "roof_insulation_cm", "floor_insulation_cm", "window_glazing", "window_frame", "shading") and value is not None:
+                fields[vol.Optional(key, default=value)] = fields.pop(next(k for k in fields if getattr(k, "schema", None) == key), None) if False else fields.get(vol.Optional(key))
+        return self.async_show_form(step_id="house_assessment", data_schema=vol.Schema(fields))
+
+    async def async_step_assessment_heating(self, user_input=None):
+        if user_input is not None:
+            self._assessment.update(user_input)
+            return await self.async_step_assessment_occupancy()
+        current = self._assessment
+        fields = {
+            vol.Optional("boiler_model", default=current.get("boiler_model", "Viessmann Vitodens 100")): str,
+            vol.Optional("heating_distribution", default=current.get("heating_distribution", "underfloor")): vol.In({"unknown": "Unknown", "underfloor": "Underfloor heating", "radiators": "Radiators", "mixed": "Mixed"}),
+            vol.Optional("boiler_dhw", default=current.get("boiler_dhw", "unknown")): vol.In({"unknown": "Unknown", "yes": "Yes", "no": "No"}),
+            vol.Optional("buffer_tank", default=current.get("buffer_tank", "unknown")): vol.In({"unknown": "Unknown", "yes": "Yes", "no": "No"}),
+            vol.Optional("ufh_screed_cm"): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=20, step=0.5, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("ac_heating", default=current.get("ac_heating", "yes")): vol.In({"unknown": "Unknown", "yes": "Yes", "no": "No"}),
+            vol.Optional("ac_units"): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=20, step=1, mode=selector.NumberSelectorMode.BOX)),
+        }
+        return self.async_show_form(step_id="assessment_heating", data_schema=vol.Schema(fields))
+
+    async def async_step_assessment_occupancy(self, user_input=None):
+        if user_input is not None:
+            self._assessment.update(user_input)
+            data = dict(self.config_entry.options)
+            # Keep unknown/blank answers absent; known defaults remain editable.
+            data[CONF_HOUSE_ASSESSMENT] = {key: value for key, value in self._assessment.items() if value not in (None, "")}
+            return self.async_create_entry(title="", data=data)
+        current = self._assessment
+        fields = {
+            vol.Optional("ventilation_type", default=current.get("ventilation_type", "unknown")): vol.In({"unknown": "Unknown", "natural": "Natural ventilation", "extractor": "Extractor fans", "mvhr": "Mechanical ventilation with heat recovery", "balanced": "Balanced mechanical ventilation"}),
+            vol.Optional("daily_window_ventilation", default=current.get("daily_window_ventilation", "unknown")): vol.In({"unknown": "Unknown", "rare": "Rarely", "once": "Once daily", "several": "Several times daily"}),
+            vol.Optional("occupants"): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=20, step=1, mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("occupancy_pattern", default=current.get("occupancy_pattern", "unknown")): vol.In({"unknown": "Unknown", "home_day": "Usually occupied during daytime", "away_day": "Usually away during daytime", "variable": "Variable"}),
+            vol.Optional("internal_gains", default=current.get("internal_gains", "unknown")): vol.In({"unknown": "Unknown", "low": "Low", "typical": "Typical", "high": "High (servers/PCs/appliances)"}),
+            vol.Optional("staircase_layout", default=current.get("staircase_layout", "unknown")): vol.In({"unknown": "Unknown", "open": "Open between floors", "closed": "Separated"}),
+        }
+        return self.async_show_form(step_id="assessment_occupancy", data_schema=vol.Schema(fields))
 
     async def async_step_global_settings(self, user_input=None):
         """Configure optional whole-house weather and energy inputs."""

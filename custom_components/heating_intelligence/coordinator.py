@@ -359,7 +359,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "demand_history": [{"start": item.get("start"), "end": item.get("end"), "duration_seconds": item.get("duration_seconds")} for item in room_history.get("cycles", []) if item.get("start") and item.get("end")][-500:] + ([{"start": room_history.get("cycle_start"), "end": now_local.isoformat(), "duration_seconds": max(0, (now_local - dt_util.parse_datetime(room_history["cycle_start"])).total_seconds()), "active": True}] if room_history.get("last_demand") is True and room_history.get("cycle_start") else []),
             }
         result["indoor_air_quality"] = build_indoor_air_analysis(result["rooms"])
-        result["thermal_model"] = build_house_thermal_model(learned_room_models)
         for room_id, air_assessment in result["indoor_air_quality"].get("rooms", {}).items():
             if room_id in result["rooms"]:
                 result["rooms"][room_id]["air_quality_assessment"] = air_assessment
@@ -434,6 +433,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             local_date,
         )
         result["efficiency"]["weather_normalised"] = weather_model
+        result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
         result["house_assessment"] = build_house_assessment(
             self.entry.options.get("house_assessment", {}),
             result["efficiency"],

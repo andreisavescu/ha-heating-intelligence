@@ -631,6 +631,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["weather"],
             result["attic_thermal"],
             self.entry.options.get("house_assessment", {}),
+            {
+                "water_temperature": result.get("water_temperature"),
+                "water_return_temperature": result.get("water_return_temperature"),
+                "boiler_context": result.get("boiler_context", {}),
+                "pumps": result.get("pumps", {}),
+            },
         )
         result["thermal_model"]["ac_heating_filter"] = (
             "sensor_unavailable" if ac_power_entity and ac_power_value is None

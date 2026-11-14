@@ -70,6 +70,7 @@ def build_recorder_room_response(
     history: dict[str, list[Any]],
     rooms: list[dict[str, Any]],
     ac_power_entity: str | None = None,
+    ac_power_scale_to_w: float = 1.0,
 ) -> dict[str, Any]:
     """Estimate independent room temperature slopes from Recorder history."""
     from statistics import median
@@ -105,7 +106,7 @@ def build_recorder_room_response(
             if ac_power_entity:
                 ac_raw = _latest_at(ac_points, stamp)
                 try:
-                    ac_power = float(ac_raw)
+                    ac_power = float(ac_raw) * ac_power_scale_to_w
                 except (TypeError, ValueError):
                     ac_power = None
                 if ac_power is None or not math.isfinite(ac_power) or ac_power > 50:

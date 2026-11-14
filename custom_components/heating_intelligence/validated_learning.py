@@ -16,6 +16,7 @@ def _finite_non_negative(value: Any) -> float | None:
 def build_validated_learning_state(previous: dict[str, Any] | None, identification: dict[str, Any] | None, checked_at: str) -> dict[str, Any]:
     """Promote only normalized fits that pass holdout and stability gates."""
     state = dict(previous) if isinstance(previous, dict) else {}
+    state.setdefault("version", 0)
     accepted = dict(state.get("accepted") or {})
     rooms = identification.get("rooms", {}) if isinstance(identification, dict) else {}
     if not isinstance(rooms, dict):

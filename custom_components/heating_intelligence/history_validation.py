@@ -1084,10 +1084,44 @@ def build_floor_room_heat_allocation_inference(
             return {"coefficients": coefficients, "r_squared": 1 - residual / total if total > 1e-9 else None,
                     "residual_rmse_w": math.sqrt(residual / len(targets))}
 
+        # Keep the final chronological 30% completely out of coefficient fitting.
+        # The full-history fit is retained only as a descriptive diagnostic.
+        split = int(len(rows) * 0.7)
+        training_rows, holdout_rows = rows[:split], rows[split:]
+        training_fit = fit(training_rows)
         overall = fit(rows)
         midpoint = len(rows) // 2
         first_fit, second_fit = fit(rows[:midpoint]), fit(rows[midpoint:])
-        if len(rows) < minimum_intervals or overall is None:
+        holdout_metrics = None
+        if training_fit is not None and holdout_rows:
+            train_mean = sum(row[1] for row in training_rows) / len(training_rows)
+            predictions = [
+                sum(a * b for a, b in zip([1.0] + row[0], training_fit["coefficients"]))
+                for row in holdout_rows
+            ]
+            actuals = [row[1] for row in holdout_rows]
+            residuals = [actual - predicted for actual, predicted in zip(actuals, predictions)]
+            baseline_residuals = [actual - train_mean for actual in actuals]
+            model_rmse = math.sqrt(sum(value * value for value in residuals) / len(residuals))
+            baseline_rmse = math.sqrt(
+                sum(value * value for value in baseline_residuals) / len(baseline_residuals)
+            )
+            holdout_total = sum((actual - sum(actuals) / len(actuals)) ** 2 for actual in actuals)
+            holdout_residual = sum(value * value for value in residuals)
+            holdout_metrics = {
+                "training_intervals": len(training_rows),
+                "holdout_intervals": len(holdout_rows),
+                "holdout_rmse_w": round(model_rmse, 1),
+                "training_mean_baseline_rmse_w": round(baseline_rmse, 1),
+                "holdout_r_squared": (
+                    round(1 - holdout_residual / holdout_total, 4)
+                    if holdout_total > 1e-9 else None
+                ),
+                "improved_over_training_mean_baseline": model_rmse < baseline_rmse,
+                "holdout_start": holdout_rows[0][2].isoformat(),
+                "holdout_end": holdout_rows[-1][2].isoformat(),
+            }
+        if len(rows) < minimum_intervals or overall is None or training_fit is None or holdout_metrics is None:
             floors[floor_id] = {
                 "status": "insufficient_or_collinear_floor_output_and_room_demand_history",
                 "valid_intervals": len(rows), "minimum_intervals": minimum_intervals,
@@ -1095,7 +1129,8 @@ def build_floor_room_heat_allocation_inference(
                 "interpretation": "No room contribution is estimated without sufficient independent demand excitation.",
             }
             continue
-        coefficients = overall["coefficients"]
+        # Report coefficients fitted on training history only; do not refit on holdout.
+        coefficients = training_fit["coefficients"]
         room_betas = coefficients[1:]
         split_stable = bool(first_fit and second_fit) and all(
             first_fit["coefficients"][index + 1] * second_fit["coefficients"][index + 1] > 0
@@ -1112,13 +1147,18 @@ def build_floor_room_heat_allocation_inference(
                 ),
                 "not_a_measured_room_heat_share": True,
             }
-        status = "repeatable_demand_association_not_physical_room_allocation" if split_stable else "unstable_or_unverified_demand_association"
+        validated = split_stable and holdout_metrics["improved_over_training_mean_baseline"]
+        status = (
+            "repeatable_demand_association_not_physical_room_allocation"
+            if validated else "unstable_or_unverified_demand_association"
+        )
         floors[floor_id] = {
             "status": status,
             "valid_intervals": len(rows),
             "excluded_intervals": excluded,
             "model_r_squared": round(overall["r_squared"], 4) if overall["r_squared"] is not None else None,
             "model_residual_rmse_w": round(overall["residual_rmse_w"], 1),
+            "chronological_holdout_validation": holdout_metrics,
             "baseline_intercept_w": round(coefficients[0], 1),
             "history_half_coefficients_same_sign": split_stable,
             "first_half_r_squared": round(first_fit["r_squared"], 4) if first_fit and first_fit["r_squared"] is not None else None,
@@ -1129,7 +1169,8 @@ def build_floor_room_heat_allocation_inference(
             "interpretation": (
                 "Regression coefficients describe associations between room demand states and measured "
                 "floor output. They are not direct room heat measurements; UFH slab storage, hydraulic "
-                "balancing, bypass flow, room gains and controller logic can confound the relationship."
+                "balancing, bypass flow, room gains and controller logic can confound the relationship. "
+                "The repeatable label additionally requires improvement over a chronological holdout baseline."
             ),
         }
     inferred = [

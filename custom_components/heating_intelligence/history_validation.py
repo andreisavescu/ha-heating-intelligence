@@ -1142,6 +1142,110 @@ def _pearson_diagnostics(xs: list[float], ys: list[float]) -> dict[str, Any]:
 
 
 
+
+def _partial_correlation_diagnostics(
+    xs: list[float],
+    ys: list[float],
+    covariates: dict[str, list[float]],
+) -> dict[str, Any]:
+    """Residualize input and response against linear covariates.
+
+    Modified Gram-Schmidt is used so rank-deficient or badly conditioned
+    adjustment designs are reported rather than silently inverted.
+    """
+    names = list(covariates)
+    n = len(xs)
+    if n < max(8, len(names) + 5) or len(ys) != n:
+        return {
+            "status": "insufficient_complete_cases",
+            "paired_intervals": n,
+            "covariates": names,
+            "partial_pearson_r": None,
+            "design_rank": 0,
+            "design_columns": len(names) + 1,
+            "condition_proxy": None,
+        }
+    columns = [[1.0] * n]
+    for name in names:
+        values = covariates[name]
+        if len(values) != n:
+            raise ValueError("Covariate row length mismatch")
+        mean = sum(values) / n
+        variance = sum((value - mean) ** 2 for value in values) / n
+        scale = math.sqrt(variance)
+        if scale <= 1e-10:
+            return {
+                "status": "rank_deficient_adjustment_design",
+                "paired_intervals": n,
+                "covariates": names,
+                "partial_pearson_r": None,
+                "design_rank": len(columns),
+                "design_columns": len(names) + 1,
+                "condition_proxy": None,
+            }
+        columns.append([(value - mean) / scale for value in values])
+
+    orthogonal = []
+    original_norms = []
+    orthogonal_norms = []
+    for column in columns:
+        vector = list(column)
+        original_norm = math.sqrt(sum(value * value for value in vector))
+        original_norms.append(original_norm)
+        for basis in orthogonal:
+            projection = sum(a * b for a, b in zip(vector, basis))
+            vector = [value - projection * direction for value, direction in zip(vector, basis)]
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm <= max(1e-9, original_norm * 1e-8):
+            return {
+                "status": "rank_deficient_adjustment_design",
+                "paired_intervals": n,
+                "covariates": names,
+                "partial_pearson_r": None,
+                "design_rank": len(orthogonal),
+                "design_columns": len(columns),
+                "condition_proxy": None,
+            }
+        orthogonal.append([value / norm for value in vector])
+        orthogonal_norms.append(norm)
+
+    def residualize(values):
+        residual = list(values)
+        for basis in orthogonal:
+            projection = sum(a * b for a, b in zip(residual, basis))
+            residual = [value - projection * direction for value, direction in zip(residual, basis)]
+        return residual
+
+    residual_x, residual_y = residualize(xs), residualize(ys)
+    mean_x, mean_y = sum(residual_x) / n, sum(residual_y) / n
+    var_x = sum((value - mean_x) ** 2 for value in residual_x)
+    var_y = sum((value - mean_y) ** 2 for value in residual_y)
+    if var_x <= 1e-12 or var_y <= 1e-12:
+        return {
+            "status": "no_residual_variation_after_adjustment",
+            "paired_intervals": n,
+            "covariates": names,
+            "partial_pearson_r": None,
+            "design_rank": len(orthogonal),
+            "design_columns": len(columns),
+            "condition_proxy": round(max(orthogonal_norms) / max(min(orthogonal_norms), 1e-12), 3),
+        }
+    correlation = sum(
+        (a - mean_x) * (b - mean_y) for a, b in zip(residual_x, residual_y)
+    ) / math.sqrt(var_x * var_y)
+    condition_proxy = max(orthogonal_norms) / max(min(orthogonal_norms), 1e-12)
+    return {
+        "status": "adjusted_association_available",
+        "paired_intervals": n,
+        "covariates": names,
+        "partial_pearson_r": round(max(-1.0, min(1.0, correlation)), 4),
+        "design_rank": len(orthogonal),
+        "design_columns": len(columns),
+        "condition_proxy": round(condition_proxy, 3),
+    }
+
+
+
 def build_thermal_input_room_response_alignment(
     samples: list[dict[str, Any]],
     rooms: list[dict[str, Any]],

@@ -21,7 +21,8 @@
           "pump_settings": "Pump settings",
           "edit_room": "Change a room's floor",
           "room_area": "Set room floor areas",
-          "room_air_quality": "Configure room air quality"
+          "room_air_quality": "Configure room air quality",
+          "house_assessment": "House assessment"
         }
       },
       "global_settings": {
@@ -87,6 +88,45 @@
       "edit_room_floor": {
         "title": "Change room floor",
         "description": "Set the floor for {room_name}. The currently saved floor is selected by default."
+      },
+      "house_assessment": {
+        "title": "Building and envelope",
+        "description": "Enter known building details. Your known defaults are prefilled; leave unknown values blank. You can revisit and change every answer.",
+        "data": {
+          "construction_year": "Construction year",
+          "wall_insulation_cm": "External wall insulation thickness (cm)",
+          "roof_insulation_cm": "Roof/attic insulation thickness (cm)",
+          "floor_insulation_cm": "Ground-floor insulation thickness (cm)",
+          "window_glazing": "Window glazing",
+          "window_frame": "Window frame material",
+          "main_orientation": "Main solar-exposed orientation",
+          "shading": "External shading"
+        }
+      },
+      "assessment_heating": {
+        "title": "Heating system and thermal mass",
+        "description": "Describe the heat source, distribution and thermal storage. Defaults reflect known system details but can be changed.",
+        "data": {
+          "boiler_model": "Boiler make/model",
+          "heating_distribution": "Heat distribution",
+          "boiler_dhw": "Does the boiler also produce domestic hot water?",
+          "buffer_tank": "Buffer tank or hydraulic separator",
+          "ufh_screed_cm": "Underfloor-heating screed thickness (cm)",
+          "ac_heating": "Are air conditioners used for heating?",
+          "ac_units": "Number of AC units"
+        }
+      },
+      "assessment_occupancy": {
+        "title": "Ventilation and internal gains",
+        "description": "These inputs help distinguish building heat loss from ventilation, occupancy and internal heat gains. Unknown answers are fine.",
+        "data": {
+          "ventilation_type": "Ventilation system",
+          "daily_window_ventilation": "Window-opening frequency",
+          "occupants": "Number of occupants",
+          "occupancy_pattern": "Typical occupancy pattern",
+          "internal_gains": "Internal heat gains from equipment/appliances",
+          "staircase_layout": "Staircase between floors"
+        }
       }
     },
     "abort": {

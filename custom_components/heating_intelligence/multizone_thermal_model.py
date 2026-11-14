@@ -244,33 +244,41 @@ def build_multizone_observation_model(
         'note': 'No water-side heat output is calculated without flow rate and a validated flow/return measurement pair.',
     }
     nodes['plant:heating'] = plant_node
-    # Ventilation conductance can be estimated when both room volume and
-    # ACH are configured. rho*cp/3600 converts m3/h into W/K.
+    # Ventilation conductance is a property of configured volume and ACH;
+    # it does not depend on whether an outdoor-temperature reading is live.
+    # rho*cp/3600 converts m3/h into W/K.
     ventilation_paths = []
     ventilation_factor_w_per_k_per_m3_ach = 1.2 * 1005.0 / 3600.0
-    if "boundary:outdoors" in nodes:
-        for room_id, room in rooms.items():
-            volume = _finite_or_none(room.get("volume_m3"))
-            ach = _finite_or_none(room.get("air_changes_per_hour"))
-            if volume is None or ach is None or volume <= 0 or ach <= 0:
-                continue
-            nominal_conductance = ventilation_factor_w_per_k_per_m3_ach * volume * ach
-            ventilation_paths.append({
-                "from": "room:" + room_id,
-                "to": "boundary:outdoors",
-                "path": "ventilation",
-                "conductance_w_per_k": round(nominal_conductance, 4),
-                "sensitivity_ach_minus_10_percent_w_per_k": round(nominal_conductance * 0.9, 4),
-                "sensitivity_ach_plus_10_percent_w_per_k": round(nominal_conductance * 1.1, 4),
-                "sensitivity_note": (
-                    "Illustrative +/-10% ACH input scenario only; not a measured uncertainty "
-                    "interval or confidence bound."
-                ),
-                "source": "configured_room_volume_and_ach",
-                "volume_m3": volume,
-                "air_changes_per_hour": ach,
-                "status": "estimated_from_configured_inputs",
-            })
+    for room_id, room in rooms.items():
+        volume = _finite_or_none(room.get("volume_m3"))
+        ach = _finite_or_none(room.get("air_changes_per_hour"))
+        if volume is None or ach is None or volume <= 0 or ach <= 0:
+            continue
+        nominal_conductance = ventilation_factor_w_per_k_per_m3_ach * volume * ach
+        ventilation_paths.append({
+            "from": "room:" + room_id,
+            "to": "boundary:outdoors",
+            "path": "ventilation",
+            "conductance_w_per_k": round(nominal_conductance, 4),
+            "sensitivity_ach_minus_10_percent_w_per_k": round(nominal_conductance * 0.9, 4),
+            "sensitivity_ach_plus_10_percent_w_per_k": round(nominal_conductance * 1.1, 4),
+            "sensitivity_note": (
+                "Illustrative +/-10% ACH input scenario only; not a measured uncertainty "
+                "interval or confidence bound."
+            ),
+            "source": "configured_room_volume_and_ach",
+            "volume_m3": volume,
+            "air_changes_per_hour": ach,
+            "status": "estimated_from_configured_inputs",
+        })
+    if ventilation_paths and "boundary:outdoors" not in nodes:
+        nodes["boundary:outdoors"] = {
+            "kind": "fixed_boundary",
+            "name": "Outdoors",
+            "temperature_c": None,
+            "temperature_entity": None,
+            "status": "temperature_unavailable",
+        }
 
     # Conductive roof and ceiling paths are only exposed when both U-value
     # and area were explicitly entered in the house assessment.
@@ -336,6 +344,47 @@ def build_multizone_observation_model(
     total_ventilation_conductance = sum(
         item["conductance_w_per_k"] for item in ventilation_paths
     )
+    rooms_with_volume_and_ach = sum(
+        1 for room in rooms.values()
+        if (_finite_or_none(room.get("volume_m3")) or 0) > 0
+        and (_finite_or_none(room.get("air_changes_per_hour")) or 0) > 0
+    )
+    ventilation_coverage_complete = bool(room_count) and rooms_with_volume_and_ach == room_count
+    house_heat_loss = _finite_or_none(
+        (profile.get("house_effective_rc_calibration") or {}).get("heat_loss_coefficient_w_k")
+    )
+    if house_heat_loss is None:
+        house_heat_loss = _finite_or_none(profile.get("house_heat_loss_coefficient_w_k"))
+    envelope_decomposition = {
+        "status": "withheld_incomplete_ventilation_coverage",
+        "total_house_heat_loss_coefficient_w_k": round(house_heat_loss, 3) if house_heat_loss is not None else None,
+        "ventilation_heat_loss_coefficient_w_k": round(total_ventilation_conductance, 3),
+        "residual_envelope_heat_loss_coefficient_w_k": None,
+        "rooms_with_volume_and_ach": rooms_with_volume_and_ach,
+        "configured_rooms": room_count,
+        "ventilation_coverage_complete": ventilation_coverage_complete,
+        "note": (
+            "Residual envelope loss is withheld unless every configured room has positive "
+            "volume and ACH and a positive independently estimated whole-house heat-loss "
+            "coefficient is supplied. The subtraction assumes the whole-house coefficient "
+            "already includes ventilation loss and uses the same indoor/outdoor boundary."
+        ),
+    }
+    if not ventilation_coverage_complete:
+        envelope_decomposition["status"] = "withheld_incomplete_ventilation_coverage"
+    elif house_heat_loss is None or house_heat_loss <= 0:
+        envelope_decomposition["status"] = "withheld_house_heat_loss_unavailable"
+    elif total_ventilation_conductance >= house_heat_loss:
+        envelope_decomposition["status"] = "withheld_ventilation_not_below_total"
+        envelope_decomposition["note"] += (
+            " Configured ventilation conductance is not below the aggregate coefficient; "
+            "check ACH, room volumes, heat-loss assumptions and boundary consistency."
+        )
+    else:
+        envelope_decomposition["status"] = "conditional_residual_available"
+        envelope_decomposition["residual_envelope_heat_loss_coefficient_w_k"] = round(
+            house_heat_loss - total_ventilation_conductance, 3
+        )
     missing_capacity = [node_id for node_id, node in nodes.items() if node["kind"] != "fixed_boundary" and node.get("thermal_capacity_wh_per_k") is None]
     missing_links = [
         node_id for node_id, node in nodes.items()
@@ -348,6 +397,7 @@ def build_multizone_observation_model(
         "nodes": nodes,
         "configured_connections": connections,
         "ventilation_paths": ventilation_paths,
+        "house_heat_loss_decomposition": envelope_decomposition,
         "air_only_thermal_inventory": {
             "status": "partial_configured_volume" if rooms_with_volume < room_count else (
                 "available" if room_count else "no_configured_rooms"

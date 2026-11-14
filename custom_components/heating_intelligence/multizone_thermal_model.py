@@ -172,6 +172,11 @@ def build_multizone_observation_model(
             "area_m2": _finite_or_none(room.get("area_m2")),
             "volume_m3": _finite_or_none(room.get("volume_m3")),
             "configured_ach": _finite_or_none(room.get("air_changes_per_hour")),
+            "air_thermal_capacity_wh_per_k": (
+                round(1.2 * 1005.0 / 3600.0 * float(room.get("volume_m3")), 4)
+                if _finite_or_none(room.get("volume_m3")) is not None
+                and _finite_or_none(room.get("volume_m3")) > 0 else None
+            ),
             "co2_ppm": _finite_or_none(room.get("co2_ppm")),
             "humidity_percent": _finite_or_none(room.get("humidity")),
             "thermal_capacity_wh_per_k": None,
@@ -249,12 +254,17 @@ def build_multizone_observation_model(
             ach = _finite_or_none(room.get("air_changes_per_hour"))
             if volume is None or ach is None or volume <= 0 or ach <= 0:
                 continue
+            nominal_conductance = ventilation_factor_w_per_k_per_m3_ach * volume * ach
             ventilation_paths.append({
                 "from": "room:" + room_id,
                 "to": "boundary:outdoors",
                 "path": "ventilation",
-                "conductance_w_per_k": round(
-                    ventilation_factor_w_per_k_per_m3_ach * volume * ach, 4
+                "conductance_w_per_k": round(nominal_conductance, 4),
+                "sensitivity_ach_minus_10_percent_w_per_k": round(nominal_conductance * 0.9, 4),
+                "sensitivity_ach_plus_10_percent_w_per_k": round(nominal_conductance * 1.1, 4),
+                "sensitivity_note": (
+                    "Illustrative +/-10% ACH input scenario only; not a measured uncertainty "
+                    "interval or confidence bound."
                 ),
                 "source": "configured_room_volume_and_ach",
                 "volume_m3": volume,
@@ -314,6 +324,18 @@ def build_multizone_observation_model(
 
     observed_rooms = sum(1 for node in nodes.values() if node["kind"] == "room_air" and node["temperature_c"] is not None)
     room_count = len(rooms)
+    rooms_with_volume = sum(
+        1 for room in rooms.values()
+        if (_finite_or_none(room.get("volume_m3")) or 0) > 0
+    )
+    total_configured_volume = sum(
+        float(room["volume_m3"]) for room in rooms.values()
+        if (_finite_or_none(room.get("volume_m3")) or 0) > 0
+    )
+    air_capacity_wh_per_k = 1.2 * 1005.0 / 3600.0 * total_configured_volume
+    total_ventilation_conductance = sum(
+        item["conductance_w_per_k"] for item in ventilation_paths
+    )
     missing_capacity = [node_id for node_id, node in nodes.items() if node["kind"] != "fixed_boundary" and node.get("thermal_capacity_wh_per_k") is None]
     missing_links = [
         node_id for node_id, node in nodes.items()
@@ -326,6 +348,22 @@ def build_multizone_observation_model(
         "nodes": nodes,
         "configured_connections": connections,
         "ventilation_paths": ventilation_paths,
+        "air_only_thermal_inventory": {
+            "status": "partial_configured_volume" if rooms_with_volume < room_count else (
+                "available" if room_count else "no_configured_rooms"
+            ),
+            "rooms_with_volume": rooms_with_volume,
+            "configured_rooms": room_count,
+            "volume_coverage_percent": round(100 * rooms_with_volume / room_count) if room_count else None,
+            "total_configured_room_volume_m3": round(total_configured_volume, 3),
+            "air_only_capacity_wh_per_k": round(air_capacity_wh_per_k, 3),
+            "known_ventilation_conductance_w_per_k": round(total_ventilation_conductance, 4),
+            "interpretation": (
+                "Air-only sensible heat capacity from configured room volumes using rho=1.2 kg/m3 "
+                "and cp=1005 J/kg/K. It excludes walls, furnishings, floors and slab storage; "
+                "it is not the effective room or building thermal capacity."
+            ),
+        },
         "pending_paths": pending_paths,
         "floor_nodes": floor_nodes,
         "plant": plant_node,
@@ -337,7 +375,8 @@ def build_multizone_observation_model(
             "rooms_with_co2": sum(1 for room in rooms.values() if _finite_or_none(room.get("co2_ppm")) is not None),
             "rooms_with_humidity": sum(1 for room in rooms.values() if _finite_or_none(room.get("humidity")) is not None),
             "rooms_with_ach": sum(1 for room in rooms.values() if _finite_or_none(room.get("air_changes_per_hour")) is not None),
-            "rooms_with_volume_and_ach": sum(1 for room in rooms.values() if _finite_or_none(room.get("volume_m3")) is not None and _finite_or_none(room.get("air_changes_per_hour")) is not None),
+            "rooms_with_volume_and_ach": sum(1 for room in rooms.values() if (_finite_or_none(room.get("volume_m3")) or 0) > 0 and (_finite_or_none(room.get("air_changes_per_hour")) or 0) > 0),
+            "rooms_with_air_capacity_estimate": rooms_with_volume,
             "attic_temperature_available": attic_c is not None,
             "outdoor_temperature_available": outdoor_c is not None,
             "ufh_floor_nodes": len(floor_nodes),

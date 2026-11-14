@@ -350,6 +350,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="subtle">Thermal capacities awaiting identification: ${(attrs.thermal_model?.multi_zone?.missing_parameters?.thermal_capacities || []).map(id => this._esc(id)).join(", ") || "None"}.</div>
           <div class="subtle">Room envelope/inter-zone links awaiting calibration: ${(attrs.thermal_model?.multi_zone?.missing_parameters?.room_envelope_and_interzone_conductances || []).map(id => this._esc(id)).join(", ") || "None"}.</div>
           <div class="subtle">${this._esc(attrs.thermal_model?.multi_zone?.plant?.note || "Plant telemetry is observational; heat output is not inferred from pump electricity.")}</div>
+          <div class="subtle">Solar / internal gains: ${this._esc(attrs.thermal_model?.multi_zone?.gain_context?.status || "Not assessed")} · radiation ${this._fmt(attrs.thermal_model?.multi_zone?.gain_context?.solar_radiation_w_m2, "W/m²", 0)} · ${this._esc(attrs.thermal_model?.multi_zone?.gain_context?.note || "")}</div>
 
         </div>
         <div class="section"><div class="section-title">Today's heating activity</div>

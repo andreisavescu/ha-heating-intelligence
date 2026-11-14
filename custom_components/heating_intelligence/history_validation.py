@@ -765,3 +765,218 @@ def build_recorder_calibration_dataset(
         ),
         **({"samples": samples} if include_samples else {}),
     }
+
+
+
+def build_multizone_response_identification(
+    samples: list[dict[str, Any]],
+    rooms: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    train_fraction: float = 0.7,
+    minimum_train_intervals: int = 24,
+    minimum_holdout_intervals: int = 8,
+    solar_max_w_m2: float = 30.0,
+    ac_power_max_w: float = 50.0,
+) -> dict[str, Any]:
+    """Identify normalized passive room-to-room and envelope response rates.
+
+    Fits dT_i/dt = b_envelope*(T_out-T_i) +
+    sum_j b_ij*(T_j-T_i) + intercept. Coefficients have units 1/hour:
+    without independently identified room capacities they are G/C ratios,
+    never physical W/K conductances. Only clean free-coasting intervals are
+    eligible, and the final chronological segment is held out.
+    """
+    if interval_minutes <= 0 or not 0 < train_fraction < 1:
+        raise ValueError("Invalid multi-zone identification cadence or split")
+    room_ids = [str(room.get("id", "unknown")) for room in rooms]
+    if len(room_ids) < 2:
+        return {
+            "status": "insufficient_zones",
+            "rooms": {},
+            "note": "At least two configured rooms are required to identify inter-zone response.",
+        }
+
+    def numeric(value):
+        return _finite_number_or_none(value)
+
+    def state_off(value):
+        return _switch_state(value) is False
+
+    # Keep only contiguous rows. A missing cadence point must break an
+    # interval rather than silently stretching the derivative horizon.
+    parsed = []
+    for row in samples:
+        try:
+            stamp = datetime.fromisoformat(row.get("timestamp", ""))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            stamp = stamp.astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        parsed.append((stamp, row))
+    parsed.sort(key=lambda item: item[0])
+
+    room_results = {}
+    all_interval_counts = {"candidate": 0, "eligible": 0, "excluded": {}}
+    for room_id in room_ids:
+        predictors = ["envelope"] + [other for other in room_ids if other != room_id]
+        rows = []
+        exclusions = {
+            "non_contiguous_or_missing_temperature": 0,
+            "demand_or_window_not_confirmed_off_closed": 0,
+            "solar_missing_or_high": 0,
+            "ac_heating_active": 0,
+            "invalid_interval": 0,
+        }
+        for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
+            all_interval_counts["candidate"] += 1
+            elapsed_minutes = (stamp1 - stamp0).total_seconds() / 60
+            if abs(elapsed_minutes - interval_minutes) > 1:
+                exclusions["invalid_interval"] += 1
+                continue
+            first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
+            temps0 = {rid: numeric(first_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
+            temps1 = {rid: numeric(second_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
+            if any(temps0[rid] is None or temps1[rid] is None for rid in room_ids):
+                exclusions["non_contiguous_or_missing_temperature"] += 1
+                continue
+            clean_states = all(
+                state_off(first_rooms.get(rid, {}).get("demand"))
+                and state_off(second_rooms.get(rid, {}).get("demand"))
+                and state_off(first_rooms.get(rid, {}).get("window"))
+                and state_off(second_rooms.get(rid, {}).get("window"))
+                for rid in room_ids
+            )
+            if not clean_states:
+                exclusions["demand_or_window_not_confirmed_off_closed"] += 1
+                continue
+            solar0 = numeric(first.get("channels", {}).get("solar_radiation"))
+            solar1 = numeric(second.get("channels", {}).get("solar_radiation"))
+            if solar0 is None or solar1 is None or max(solar0, solar1) > solar_max_w_m2:
+                exclusions["solar_missing_or_high"] += 1
+                continue
+            ac0 = numeric(first.get("channels", {}).get("ac_power"))
+            ac1 = numeric(second.get("channels", {}).get("ac_power"))
+            if (ac0 is not None and ac0 > ac_power_max_w) or (ac1 is not None and ac1 > ac_power_max_w):
+                exclusions["ac_heating_active"] += 1
+                continue
+            outside0 = numeric(first.get("channels", {}).get("outdoor_temperature"))
+            outside1 = numeric(second.get("channels", {}).get("outdoor_temperature"))
+            if outside0 is None or outside1 is None:
+                exclusions["non_contiguous_or_missing_temperature"] += 1
+                continue
+            dt_hours = elapsed_minutes / 60
+            x = [(outside0 + outside1) / 2 - (temps0[room_id] + temps1[room_id]) / 2]
+            x.extend(
+                (temps0[other] + temps1[other] - temps0[room_id] - temps1[room_id]) / 2
+                for other in room_ids if other != room_id
+            )
+            y = (temps1[room_id] - temps0[room_id]) / dt_hours
+            rows.append((stamp1, x, y))
+        all_interval_counts["eligible"] += len(rows)
+
+        split = int(len(rows) * train_fraction)
+        train, holdout = rows[:split], rows[split:]
+        result = {
+            "status": "insufficient_clean_intervals",
+            "candidate_intervals": len(parsed) - 1,
+            "eligible_intervals": len(rows),
+            "training_intervals": len(train),
+            "holdout_intervals": len(holdout),
+            "predictors": predictors,
+            "normalized_rates_per_hour": None,
+            "training_r_squared": None,
+            "holdout_mae_c": None,
+            "holdout_rmse_c": None,
+            "persistence_baseline_mae_c": None,
+            "excluded_intervals": exclusions,
+        }
+        if len(train) >= minimum_train_intervals and len(holdout) >= minimum_holdout_intervals:
+            # Non-negative coordinate descent with an unpenalized intercept.
+            # Scale predictors by their RMS magnitude for numerical stability.
+            p = len(predictors)
+            means = [sum(row[1][j] for row in train) / len(train) for j in range(p)]
+            scales = [
+                math.sqrt(sum((row[1][j] - means[j]) ** 2 for row in train) / len(train))
+                for j in range(p)
+            ]
+            if all(scale > 1e-5 for scale in scales):
+                ys = [row[2] for row in train]
+                y_mean = sum(ys) / len(ys)
+                design = [[(row[1][j] - means[j]) / scales[j] for j in range(p)] for row in train]
+                coefficients = [0.0] * p
+                residual = [y - y_mean for y in ys]
+                for _ in range(1200):
+                    largest_change = 0.0
+                    for j in range(p):
+                        old = coefficients[j]
+                        column = [row[j] for row in design]
+                        denominator = sum(value * value for value in column)
+                        if denominator <= 1e-10:
+                            continue
+                        numerator = sum(value * (err + value * old) for value, err in zip(column, residual))
+                        new = max(0.0, numerator / denominator)
+                        change = new - old
+                        if change:
+                            residual = [err - value * change for err, value in zip(residual, column)]
+                            coefficients[j] = new
+                            largest_change = max(largest_change, abs(change))
+                    if largest_change < 1e-9:
+                        break
+                physical = [coefficients[j] / scales[j] for j in range(p)]
+                intercept = y_mean - sum(physical[j] * means[j] for j in range(p))
+                fitted = [intercept + sum(physical[j] * row[1][j] for j in range(p)) for row in train]
+                residual_sum = sum((pred - row[2]) ** 2 for pred, row in zip(fitted, train))
+                total_sum = sum((row[2] - y_mean) ** 2 for row in train)
+                r2 = max(0.0, min(1.0, 1 - residual_sum / total_sum)) if total_sum > 1e-10 else None
+                errors, baseline = [], []
+                for _, x, observed_rate in holdout:
+                    pred_rate = intercept + sum(physical[j] * x[j] for j in range(p))
+                    errors.append(pred_rate * interval_minutes / 60)
+                    baseline.append(0.0)
+                # Temperature change prediction: predicted rate * interval;
+                # persistence baseline predicts no temperature change.
+                holdout_changes = [row[2] * interval_minutes / 60 for row in holdout]
+                mae = sum(abs(pred - obs) for pred, obs in zip(errors, holdout_changes)) / len(errors)
+                rmse = math.sqrt(sum((pred - obs) ** 2 for pred, obs in zip(errors, holdout_changes)) / len(errors))
+                baseline_mae = sum(abs(value) for value in holdout_changes) / len(holdout_changes)
+                result.update({
+                    "status": "holdout_better_than_persistence" if mae < baseline_mae else "holdout_not_better_than_persistence",
+                    "normalized_rates_per_hour": {
+                        key: round(value, 6) for key, value in zip(predictors, physical)
+                    },
+                    "intercept_c_per_hour": round(intercept, 6),
+                    "training_r_squared": round(r2, 3) if r2 is not None else None,
+                    "holdout_mae_c": round(mae, 4),
+                    "holdout_rmse_c": round(rmse, 4),
+                    "persistence_baseline_mae_c": round(baseline_mae, 4),
+                    "nonzero_predictors": sum(value > 1e-5 for value in physical),
+                    "interpretation": (
+                        "Coefficients are non-negative normalized response rates G/C in 1/hour, "
+                        "not physical conductances in W/K. Room capacities are not yet independently "
+                        "identified, so absolute room-to-room and envelope conductances remain withheld. "
+                        "The final chronological segment was not used for fitting."
+                    ),
+                })
+            else:
+                result["status"] = "non_identifiable_predictor_variation"
+        result["excluded_intervals"] = exclusions
+        room_results[room_id] = result
+
+    return {
+        "status": "room_response_identification_available" if any(
+            item.get("normalized_rates_per_hour") is not None for item in room_results.values()
+        ) else "insufficient_or_non_identifiable_history",
+        "method": "nonnegative_multizone_free_coasting_regression",
+        "interval_minutes": interval_minutes,
+        "train_fraction": train_fraction,
+        "rooms": room_results,
+        "global_interval_counts": all_interval_counts,
+        "units": "1/hour normalized conductance-to-capacity ratios (G/C), not W/K",
+        "note": (
+            "This is an initial directional multi-zone identification. It requires all configured rooms "
+            "to be coasting with confirmed closed windows and low measured solar radiation. It does not "
+            "identify absolute capacities or conductances, and unmeasured internal gains or plant heat "
+            "can still bias the fit."
+        ),
+    }

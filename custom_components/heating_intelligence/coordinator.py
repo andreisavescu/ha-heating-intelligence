@@ -695,6 +695,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "water_return_temperature": result.get("water_return_temperature"),
                 "boiler_context": result.get("boiler_context", {}),
                 "pumps": result.get("pumps", {}),
+                # This 7-day measured-performance coefficient is the aggregate
+                # indoor/outdoor loss boundary, including ventilation.
+                "house_heat_loss_coefficient_w_k": (
+                    _as_float(result["efficiency"].get("heat_loss_u_value_7d"))
+                    * _as_float(result["efficiency"].get("thermal_model_envelope_area_m2"))
+                    if _as_float(result["efficiency"].get("heat_loss_u_value_7d")) is not None
+                    and _as_float(result["efficiency"].get("thermal_model_envelope_area_m2")) is not None
+                    else None
+                ),
             },
         )
         result["thermal_model"]["ac_heating_filter"] = (

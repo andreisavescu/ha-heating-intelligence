@@ -198,6 +198,7 @@ def build_multizone_observation_model(
     # Conductive roof and ceiling paths are only exposed when both U-value
     # and area were explicitly entered in the house assessment.
     connections = []
+    pending_paths = []
     for node_id, u_key, area_key, label in (
         ("attic:air", "roof_u_value", "roof_area_m2", "roof"),
         ("attic:air", "attic_floor_u_value", "attic_floor_area_m2", "attic_floor"),
@@ -210,18 +211,22 @@ def build_multizone_observation_model(
         except (TypeError, ValueError):
             continue
         if math.isfinite(u_value) and math.isfinite(area) and u_value > 0 and area > 0:
-            connections.append({
-                "from": node_id,
-                "to": "boundary:outdoors" if label == "roof" else None,
-                "path": label,
-                "conductance_w_per_k": round(u_value * area, 4),
-                "source": "configured_u_value_times_area",
-            })
-            if label == "attic_floor":
-                connections[-1]["to"] = None
-                connections[-1]["status"] = "awaiting_upstairs_zone_coupling"
+            if label == "roof":
+                connections.append({
+                    "from": node_id,
+                    "to": "boundary:outdoors",
+                    "path": label,
+                    "conductance_w_per_k": round(u_value * area, 4),
+                    "source": "configured_u_value_times_area",
+                    "status": "configured",
+                })
             else:
-                connections[-1]["status"] = "configured"
+                pending_paths.append({
+                    "path": label,
+                    "conductance_w_per_k": round(u_value * area, 4),
+                    "source": "configured_u_value_times_area",
+                    "status": "awaiting_upstairs_zone_coupling",
+                })
 
     observed_rooms = sum(1 for node in nodes.values() if node["kind"] == "room_air" and node["temperature_c"] is not None)
     room_count = len(rooms)
@@ -236,6 +241,7 @@ def build_multizone_observation_model(
         "simulation_status": "withheld_missing_physical_parameters",
         "nodes": nodes,
         "configured_connections": connections,
+        "pending_paths": pending_paths,
         "coverage": {
             "configured_rooms": room_count,
             "rooms_with_temperature": observed_rooms,

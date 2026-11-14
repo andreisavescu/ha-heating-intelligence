@@ -70,7 +70,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_room", "edit_room", "room_area", "remove_room", "global_settings", "pump_settings"],
+            menu_options=["add_room", "edit_room", "room_air_quality", "room_area", "remove_room", "global_settings", "pump_settings"],
         )
 
     async def async_step_global_settings(self, user_input=None):
@@ -241,6 +241,55 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         })
         data = dict(self.config_entry.options)
         data[CONF_ROOMS] = rooms
+        return self.async_create_entry(title="", data=data)
+
+    async def async_step_room_air_quality(self, user_input=None):
+        """Configure humidity and optional CO2 for an existing room."""
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        if not rooms:
+            return self.async_abort(reason="no_rooms")
+        if user_input is not None:
+            self._air_room_id = user_input["room"]
+            room = next(item for item in rooms if item["id"] == self._air_room_id)
+            self._air_room_input = dict(user_input)
+            if user_input.get(CONF_ENABLE_CO2):
+                return await self.async_step_room_air_quality_co2()
+            return self._save_room_air_quality(None)
+        return self.async_show_form(
+            step_id="room_air_quality",
+            data_schema=vol.Schema({
+                vol.Required("room"): vol.In({room["id"]: room[CONF_NAME] for room in rooms}),
+            }),
+        )
+
+    async def async_step_room_air_quality_co2(self, user_input=None):
+        if user_input is not None:
+            return self._save_room_air_quality(user_input.get(CONF_CO2_ENTITY))
+        return self.async_show_form(
+            step_id="room_air_quality_co2",
+            data_schema=vol.Schema({
+                vol.Required(CONF_CO2_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            }),
+        )
+
+    def _save_room_air_quality(self, co2_entity):
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        updated = []
+        for room in rooms:
+            if room["id"] == self._air_room_id:
+                room = dict(room)
+                humidity = self._air_room_input.get(CONF_HUMIDITY_ENTITY)
+                if humidity:
+                    room[CONF_HUMIDITY_ENTITY] = humidity
+                else:
+                    room.pop(CONF_HUMIDITY_ENTITY, None)
+                if co2_entity:
+                    room[CONF_CO2_ENTITY] = co2_entity
+                else:
+                    room.pop(CONF_CO2_ENTITY, None)
+            updated.append(room)
+        data = dict(self.config_entry.options)
+        data[CONF_ROOMS] = updated
         return self.async_create_entry(title="", data=data)
 
     async def async_step_room_area(self, user_input=None):

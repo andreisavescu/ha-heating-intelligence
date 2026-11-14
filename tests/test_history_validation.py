@@ -1,6 +1,7 @@
 """Tests for recorder-backed calibration history coverage."""
 from datetime import datetime, timedelta, timezone
 import math
+import pytest
 import importlib.util
 from pathlib import Path
 
@@ -1199,3 +1200,62 @@ def test_multizone_readiness_does_not_mistake_pump_power_or_water_delta_t_for_he
     assert "no_water_flow_measurement_for_water_side_output" in result["blockers"]
     assert "no_independent_room_or_zone_heat_output_measurement" in result["blockers"]
     assert result["absolute_room_parameters_identified"] is False
+
+
+def test_water_side_thermal_output_uses_flow_and_delta_t_with_unit_conversion():
+    samples = [
+        {
+            "timestamp": "2026-11-14T12:00:00+00:00",
+            "channels": {
+                "water_flow_rate": 12.0,
+                "water_flow_rate_unit": "L/min",
+                "water_flow_rate_age_minutes": 0,
+                "water_supply_temperature": 35.0,
+                "water_supply_temperature_age_minutes": 0,
+                "water_return_temperature": 30.0,
+                "water_return_temperature_age_minutes": 0,
+            },
+        },
+        {
+            "timestamp": "2026-11-14T12:30:00+00:00",
+            "channels": {
+                "water_flow_rate": 0.72,
+                "water_flow_rate_unit": "m³/h",
+                "water_flow_rate_age_minutes": 0,
+                "water_supply_temperature": 35.0,
+                "water_supply_temperature_age_minutes": 0,
+                "water_return_temperature": 30.0,
+                "water_return_temperature_age_minutes": 0,
+            },
+        },
+    ]
+    result = MODULE.build_water_side_thermal_output(samples)
+    assert result["status"] == "system_water_side_output_available"
+    assert result["valid_samples"] == 2
+    assert result["median_thermal_output_w"] == pytest.approx(4186.0, abs=1.0)
+    assert result["room_heat_allocation_w"] is None
+    assert result["status_scope"] == "system_water_side_only_not_room_delivery"
+
+
+def test_water_side_thermal_output_rejects_stale_invalid_and_unsupported_inputs():
+    samples = [
+        {"channels": {
+            "water_flow_rate": 10, "water_flow_rate_unit": "L/min",
+            "water_flow_rate_age_minutes": 60,
+            "water_supply_temperature": 35, "water_return_temperature": 30,
+        }},
+        {"channels": {
+            "water_flow_rate": 10, "water_flow_rate_unit": "gallons/min",
+            "water_supply_temperature": 35, "water_return_temperature": 30,
+        }},
+        {"channels": {
+            "water_flow_rate": 10, "water_flow_rate_unit": "L/min",
+            "water_supply_temperature": 30, "water_return_temperature": 35,
+        }},
+    ]
+    result = MODULE.build_water_side_thermal_output(samples)
+    assert result["status"] == "withheld_missing_valid_flow_and_delta_t"
+    assert result["valid_samples"] == 0
+    assert result["excluded_samples"]["missing_or_stale_flow"] == 1
+    assert result["excluded_samples"]["unsupported_flow_unit"] == 1
+    assert result["excluded_samples"]["nonpositive_supply_return_delta"] == 1

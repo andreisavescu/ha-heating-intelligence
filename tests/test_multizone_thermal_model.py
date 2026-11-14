@@ -191,3 +191,48 @@ def test_house_loss_decomposition_withholds_nonphysical_negative_residual():
     decomposition = result["house_heat_loss_decomposition"]
     assert decomposition["status"] == "withheld_ventilation_not_below_total"
     assert decomposition["residual_envelope_heat_loss_coefficient_w_k"] is None
+
+
+
+def test_aggregate_capacity_budget_reports_non_air_remainder_without_room_allocation():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "living": {"temperature": 21.0, "volume_m3": 100.0},
+            "bedroom": {"temperature": 20.0, "volume_m3": 50.0},
+        },
+        profile={
+            "house_effective_rc_calibration": {
+                "effective_building_thermal_capacity_wh_per_k": 10000.0
+            }
+        },
+    )
+    budget = result["aggregate_capacity_budget"]
+    assert budget["status"] == "aggregate_non_air_capacity_available"
+    assert budget["configured_air_only_capacity_wh_per_k"] == 6030.0
+    assert budget["implied_non_air_capacity_wh_per_k"] == 3970.0
+    assert budget["room_capacity_allocation"] is None
+
+
+def test_aggregate_capacity_budget_withholds_partial_volume_coverage():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "living": {"volume_m3": 100.0},
+            "bedroom": {"temperature": 20.0},
+        },
+        profile={
+            "effective_building_thermal_capacity_wh_per_k": 10000.0
+        },
+    )
+    budget = result["aggregate_capacity_budget"]
+    assert budget["status"] == "withheld_incomplete_room_volume_coverage"
+    assert budget["implied_non_air_capacity_wh_per_k"] is None
+
+
+def test_aggregate_capacity_budget_flags_capacity_below_air_only_minimum():
+    result = MODEL.build_multizone_observation_model(
+        {"living": {"volume_m3": 100.0}},
+        profile={"effective_building_thermal_capacity_wh_per_k": 100.0},
+    )
+    budget = result["aggregate_capacity_budget"]
+    assert budget["status"] == "inconsistent_effective_capacity_below_air_only"
+    assert budget["implied_non_air_capacity_wh_per_k"] is None

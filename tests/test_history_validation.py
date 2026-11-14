@@ -2123,3 +2123,48 @@ def test_physical_readiness_requires_fresh_unit_verified_water_flow():
     assert unsupported["water_flow_measurement_channels"] == []
     assert fresh["water_flow_measurement_channels"] == ["water_flow_rate"]
 
+def test_physical_readiness_room_coverage_counts_only_fresh_sensor_states():
+    samples = [
+        {
+            "rooms": {
+                "living": {
+                    "temperature": 20.0,
+                    "temperature_age_minutes": 0,
+                    "demand": "off",
+                    "demand_age_minutes": 0,
+                    "window": "off",
+                    "window_age_minutes": 0,
+                }
+            }
+        },
+        {
+            "rooms": {
+                "living": {
+                    "temperature": 20.1,
+                    "temperature_age_minutes": 90,
+                    "demand": "off",
+                    "demand_age_minutes": 0,
+                    "window": "off",
+                    "window_age_minutes": 0,
+                }
+            }
+        },
+        {
+            "rooms": {
+                "living": {
+                    "temperature": 20.2,
+                    "temperature_age_minutes": 0,
+                    "demand": "off",
+                    "demand_age_minutes": 90,
+                    "window": "off",
+                    "window_age_minutes": 0,
+                }
+            }
+        },
+    ]
+    result = MODULE.build_multizone_physical_calibration_readiness(
+        samples, [{"id": "living"}],
+    )
+    assert result["rooms"]["living"]["temperature_samples"] == 2
+    assert result["rooms"]["living"]["temperature_and_state_samples"] == 1
+

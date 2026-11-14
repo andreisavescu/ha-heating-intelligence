@@ -45,6 +45,7 @@ def update_pump_stage(history: dict, power_w: float | None, now: datetime) -> di
             if power_w >= baseline + rise:
                 history["stage"] = "valve_opening"
                 history["valve_opened_at"] = stamp
+                history["pump_started_at"] = None
                 history["valve_level_w"] = power_w
                 history["above_pump_threshold_since"] = None
                 history["below_idle_threshold_since"] = None

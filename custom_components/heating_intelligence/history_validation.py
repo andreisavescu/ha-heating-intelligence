@@ -1760,6 +1760,143 @@ def build_multizone_response_identification(
                             break
                     return [local_coefficients[j] / local_scales[j] for j in range(p)]
 
+                # Compare three contiguous chronological sections of the
+                # training segment. Each section is independently checked for
+                # excitation and full-matrix rank before its fit is considered.
+                temporal_window_count = 3
+                minimum_temporal_window_rows = max(12, p * 4)
+                temporal_windows = []
+                temporal_window_size = len(train) // temporal_window_count
+                for window_index in range(temporal_window_count):
+                    start_index = window_index * temporal_window_size
+                    end_index = (
+                        len(train) if window_index == temporal_window_count - 1
+                        else (window_index + 1) * temporal_window_size
+                    )
+                    window_rows = train[start_index:end_index]
+                    window_status = "insufficient_intervals"
+                    window_estimate = None
+                    window_condition = None
+                    if len(window_rows) >= minimum_temporal_window_rows:
+                        window_means = [
+                            sum(row[1][j] for row in window_rows) / len(window_rows)
+                            for j in range(p)
+                        ]
+                        window_scales = [
+                            math.sqrt(sum(
+                                (row[1][j] - window_means[j]) ** 2
+                                for row in window_rows
+                            ) / len(window_rows))
+                            for j in range(p)
+                        ]
+                        if all(scale > 1e-5 for scale in window_scales):
+                            window_design = [
+                                [(row[1][j] - window_means[j]) / window_scales[j] for j in range(p)]
+                                for row in window_rows
+                            ]
+                            gram = [
+                                [
+                                    sum(values[i] * values[j] for values in window_design) / len(window_design)
+                                    for j in range(p)
+                                ]
+                                for i in range(p)
+                            ]
+                            eigenvalues = sorted(
+                                max(0.0, value)
+                                for value in _symmetric_matrix_eigenvalues(gram)
+                            )
+                            largest_eigenvalue = eigenvalues[-1] if eigenvalues else 0.0
+                            positive_eigenvalues = [
+                                value for value in eigenvalues
+                                if value > max(1e-10, largest_eigenvalue * 1e-10)
+                            ]
+                            if len(positive_eigenvalues) == p and largest_eigenvalue > 0:
+                                window_condition = math.sqrt(
+                                    largest_eigenvalue / positive_eigenvalues[0]
+                                )
+                                if window_condition <= max_predictor_condition_number:
+                                    window_estimate = fit_bootstrap_rows(window_rows)
+                                    window_status = (
+                                        "fit_available" if window_estimate is not None
+                                        else "insufficient_predictor_excitation"
+                                    )
+                                else:
+                                    window_status = "non_identifiable_predictor_condition"
+                            else:
+                                window_status = "non_identifiable_predictor_matrix"
+                        else:
+                            window_status = "insufficient_predictor_excitation"
+                    temporal_windows.append({
+                        "window": window_index + 1,
+                        "training_interval_start": window_rows[0][0].isoformat() if window_rows else None,
+                        "training_interval_end": window_rows[-1][0].isoformat() if window_rows else None,
+                        "intervals": len(window_rows),
+                        "status": window_status,
+                        "predictor_condition_number": (
+                            round(window_condition, 2) if window_condition is not None else None
+                        ),
+                        "normalized_rates_per_hour": (
+                            {
+                                key: round(value, 6)
+                                for key, value in zip(predictors, window_estimate)
+                            } if window_estimate is not None else None
+                        ),
+                    })
+
+                valid_temporal_estimates = [
+                    window["normalized_rates_per_hour"]
+                    for window in temporal_windows
+                    if window["normalized_rates_per_hour"] is not None
+                ]
+                temporal_coefficient_stability = {}
+                for predictor in predictors:
+                    values = sorted(
+                        estimate[predictor] for estimate in valid_temporal_estimates
+                    )
+                    if values:
+                        median_value = values[len(values) // 2]
+                        deviations = sorted(abs(value - median_value) for value in values)
+                        mad = deviations[len(deviations) // 2]
+                        relative_range = (
+                            (values[-1] - values[0]) / max(abs(median_value), 1e-6)
+                        )
+                        temporal_coefficient_stability[predictor] = {
+                            "valid_windows": len(values),
+                            "total_windows": temporal_window_count,
+                            "minimum_1_per_hour": round(values[0], 6),
+                            "median_1_per_hour": round(median_value, 6),
+                            "maximum_1_per_hour": round(values[-1], 6),
+                            "median_absolute_deviation_1_per_hour": round(mad, 6),
+                            "relative_range": round(relative_range, 3),
+                            "stability": (
+                                "consistent_across_training_periods"
+                                if len(values) == temporal_window_count and relative_range <= 1.0
+                                else "time_varying_or_insufficient_windows"
+                            ),
+                        }
+                    else:
+                        temporal_coefficient_stability[predictor] = {
+                            "valid_windows": 0,
+                            "total_windows": temporal_window_count,
+                            "minimum_1_per_hour": None,
+                            "median_1_per_hour": None,
+                            "maximum_1_per_hour": None,
+                            "median_absolute_deviation_1_per_hour": None,
+                            "relative_range": None,
+                            "stability": "insufficient_identifiable_windows",
+                        }
+                result["temporal_coefficient_stability"] = temporal_coefficient_stability
+                result["temporal_training_windows"] = temporal_windows
+                result["temporal_stability_method"] = (
+                    "three_contiguous_training_periods_with_full_rank_gate"
+                )
+                result["temporal_stability_note"] = (
+                    "Only the chronological training segment is divided into three contiguous periods; "
+                    "the final holdout is never used. Periods failing minimum sample, excitation, rank "
+                    "or condition checks are withheld. Relative range is a descriptive stability "
+                    "heuristic, not a confidence interval or proof of physical parameter constancy."
+                )
+
                 if bootstrap_replicates:
                     n_train = len(train)
                     for replicate in range(bootstrap_replicates):

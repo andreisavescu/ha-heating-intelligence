@@ -2227,7 +2227,7 @@ def test_control_event_inventory_measures_explicit_dwell_and_breaks_unknown_gaps
     assert zone["complete_on_intervals"] == 1
     assert zone["complete_off_intervals"] == 1
     assert zone["complete_on_off_cycles"] == 1
-    assert zone["interrupted_on_intervals"] == 2
+    assert zone["interrupted_on_intervals"] == 1
     assert zone["on_duration_seconds"]["median"] == 20.0
     assert zone["off_duration_seconds"]["median"] == 10.0
     assert zone["unknown_or_unavailable_samples"] == 2

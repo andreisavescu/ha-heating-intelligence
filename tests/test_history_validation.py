@@ -582,3 +582,45 @@ def test_multizone_identification_reports_full_matrix_condition_diagnostics():
     room = result["rooms"]["living"]
     assert room["predictor_matrix_rank"] == len(room["predictors"])
     assert room["predictor_condition_number"] is not None
+
+
+def test_ufh_observability_reports_excitation_without_claiming_capacity():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(12):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "pump:ground_floor:power": 40.0 if index < 6 else 0.0,
+                "pump:ground_floor:power_age_minutes": 0,
+                "water_supply_temperature": 35.0,
+                "water_supply_temperature_age_minutes": 0,
+                "water_return_temperature": 30.0,
+                "water_return_temperature_age_minutes": 0,
+            },
+            "rooms": {"living": {"temperature": 20.0 + index * 0.1}},
+        })
+    result = MODULE.build_ufh_slab_observability(
+        samples, [{"id": "living", "floor": "ground_floor"}]
+    )
+    floor = result["floors"]["ground_floor"]
+    assert floor["status"] == "pump_on_off_excitation_observed_but_capacity_unidentifiable"
+    assert floor["pump_on_intervals"] == 5
+    assert floor["pump_off_intervals"] == 5
+    assert floor["median_supply_return_delta_t_pump_on_c"] == 5.0
+    assert floor["thermal_output_w"] is None
+    assert floor["slab_capacity_wh_per_k"] is None
+
+
+def test_ufh_observability_withholds_when_pump_history_is_missing():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = [{
+        "timestamp": start.isoformat(),
+        "channels": {},
+        "rooms": {"living": {"temperature": 20.0}},
+    }]
+    result = MODULE.build_ufh_slab_observability(
+        samples, [{"id": "living", "floor": "ground_floor"}]
+    )
+    assert result["floors"]["ground_floor"]["status"] == "insufficient_pump_excitation_or_history"
+    assert result["floors"]["ground_floor"]["slab_capacity_wh_per_k"] is None

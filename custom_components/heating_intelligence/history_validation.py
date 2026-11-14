@@ -999,6 +999,143 @@ def build_thermal_input_energy_observability(
     }
 
 
+
+def build_thermal_input_room_response_alignment(
+    samples: list[dict[str, Any]],
+    rooms: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    max_age_minutes: float = 45.0,
+    minimum_intervals: int = 8,
+) -> dict[str, Any]:
+    """Align verified plant input energy with concurrent room-temperature response.
+
+    This is an observational association screen, not a causal heat-transfer
+    model. No input energy is allocated to rooms and no thermal capacity is fit.
+    """
+    if interval_minutes <= 0 or max_age_minutes < 0 or minimum_intervals < 2:
+        raise ValueError("Invalid input-response alignment thresholds")
+    ordered = sorted(samples, key=lambda row: str(row.get("timestamp", "")))
+    meter_channels = ("gas_consumption", "ac_energy")
+    records = {key: [] for key in meter_channels}
+    room_records = {str(room.get("id", "unknown")): [] for room in rooms}
+    aggregate_records = {key: [] for key in meter_channels}
+    exclusions = {key: {"missing_or_stale_meter": 0, "unsupported_unit": 0,
+                        "meter_reset_or_decrease": 0, "invalid_interval": 0,
+                        "missing_room_temperature": 0} for key in meter_channels}
+    unit_scales = {"kwh": 1.0, "wh": 0.001, "mwh": 1000.0}
+
+    for previous, current in zip(ordered, ordered[1:]):
+        try:
+            first_stamp = datetime.fromisoformat(str(previous.get("timestamp")).replace("Z", "+00:00"))
+            second_stamp = datetime.fromisoformat(str(current.get("timestamp")).replace("Z", "+00:00"))
+            if first_stamp.tzinfo is None:
+                first_stamp = first_stamp.replace(tzinfo=timezone.utc)
+            if second_stamp.tzinfo is None:
+                second_stamp = second_stamp.replace(tzinfo=timezone.utc)
+            elapsed_minutes = (second_stamp - first_stamp).total_seconds() / 60
+        except (TypeError, ValueError):
+            continue
+        if not interval_minutes * 0.5 <= elapsed_minutes <= interval_minutes * 1.5:
+            for key in meter_channels:
+                exclusions[key]["invalid_interval"] += 1
+            continue
+        elapsed_hours = elapsed_minutes / 60
+        room_slopes = {}
+        for room in rooms:
+            room_id = str(room.get("id", "unknown"))
+            first_room = (previous.get("rooms") or {}).get(room_id, {})
+            second_room = (current.get("rooms") or {}).get(room_id, {})
+            first_temp = _finite_number_or_none(first_room.get("temperature"))
+            second_temp = _finite_number_or_none(second_room.get("temperature"))
+            if first_temp is not None and second_temp is not None:
+                room_slopes[room_id] = (second_temp - first_temp) / elapsed_hours
+                room_records[room_id].append((None, room_slopes[room_id]))
+        if not room_slopes:
+            for key in meter_channels:
+                exclusions[key]["missing_room_temperature"] += 1
+            continue
+        aggregate_slope = sum(room_slopes.values()) / len(room_slopes)
+        for key in meter_channels:
+            first_channels = previous.get("channels") or {}
+            second_channels = current.get("channels") or {}
+            first_value = _finite_number_or_none(first_channels.get(key))
+            second_value = _finite_number_or_none(second_channels.get(key))
+            first_age = _finite_number_or_none(first_channels.get(key + "_age_minutes"))
+            second_age = _finite_number_or_none(second_channels.get(key + "_age_minutes"))
+            first_unit = str(first_channels.get(key + "_unit") or "").strip().lower().replace(" ", "")
+            second_unit = str(second_channels.get(key + "_unit") or "").strip().lower().replace(" ", "")
+            if (first_value is None or second_value is None
+                    or (first_age is not None and first_age > max_age_minutes)
+                    or (second_age is not None and second_age > max_age_minutes)):
+                exclusions[key]["missing_or_stale_meter"] += 1
+                continue
+            if first_unit not in unit_scales or second_unit not in unit_scales or first_unit != second_unit:
+                exclusions[key]["unsupported_unit"] += 1
+                continue
+            if second_value < first_value:
+                exclusions[key]["meter_reset_or_decrease"] += 1
+                continue
+            energy_kwh = (second_value - first_value) * unit_scales[second_unit]
+            input_power_w = energy_kwh * 1000.0 / elapsed_hours
+            records[key].append((input_power_w, aggregate_slope))
+            aggregate_records[key].append((energy_kwh, aggregate_slope))
+            for room_id, slope in room_slopes.items():
+                # Room-specific association is recorded only where the same
+                # verified plant input interval is available.
+                room_records[room_id][-1] = (input_power_w, slope)
+
+    def pearson(xs, ys):
+        if len(xs) < 2:
+            return None
+        mean_x, mean_y = sum(xs) / len(xs), sum(ys) / len(ys)
+        variance_x = sum((x - mean_x) ** 2 for x in xs)
+        variance_y = sum((y - mean_y) ** 2 for y in ys)
+        if variance_x <= 1e-12 or variance_y <= 1e-12:
+            return None
+        return sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys)) / math.sqrt(variance_x * variance_y)
+
+    results = {}
+    for key in meter_channels:
+        pairs = records[key]
+        xs = [item[0] for item in pairs]
+        ys = [item[1] for item in pairs]
+        enough = len(pairs) >= minimum_intervals
+        results[key] = {
+            "status": "input_response_pairs_available" if enough else "insufficient_verified_input_response_pairs",
+            "paired_intervals": len(pairs),
+            "mean_input_power_w": round(sum(xs) / len(xs), 2) if enough else None,
+            "median_input_power_w": round(sorted(xs)[len(xs) // 2], 2) if enough else None,
+            "mean_aggregate_room_temperature_rate_c_per_hour": round(sum(ys) / len(ys), 4) if enough else None,
+            "input_power_vs_room_response_pearson_r": round(pearson(xs, ys), 4) if enough and pearson(xs, ys) is not None else None,
+            "exclusions": exclusions[key],
+        }
+    room_results = {}
+    for room_id, pairs in room_records.items():
+        valid = [(power, slope) for power, slope in pairs if power is not None]
+        room_results[room_id] = {
+            "paired_intervals": len(valid),
+            "input_power_vs_room_response_pearson_r": (
+                round(pearson([x for x, _ in valid], [y for _, y in valid]), 4)
+                if len(valid) >= minimum_intervals and pearson([x for x, _ in valid], [y for _, y in valid]) is not None
+                else None
+            ),
+        }
+    return {
+        "status": "available" if any(item["status"] == "input_response_pairs_available" for item in results.values()) else "insufficient_verified_input_response_pairs",
+        "interval_minutes": interval_minutes,
+        "minimum_intervals": minimum_intervals,
+        "meters": results,
+        "rooms": room_results,
+        "capacity_identification_status": "withheld_no_room_heat_allocation_or_independent_thermal_output",
+        "note": (
+            "Pearson associations describe concurrent whole-system meter input and observed room "
+            "temperature rates only. Gas/AC input is not allocated to rooms; boiler efficiency, "
+            "AC COP, distribution losses, thermal lag, envelope losses and internal gains remain "
+            "confounders. These statistics cannot identify absolute room or slab heat capacity."
+        ),
+    }
+
+
 def _symmetric_matrix_eigenvalues(matrix: list[list[float]]) -> list[float]:
     """Return eigenvalues of a small real symmetric matrix via Jacobi rotations."""
     size = len(matrix)

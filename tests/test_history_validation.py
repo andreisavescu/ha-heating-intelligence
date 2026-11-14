@@ -606,7 +606,7 @@ def test_ufh_observability_reports_excitation_without_claiming_capacity():
     floor = result["floors"]["ground_floor"]
     assert floor["status"] == "pump_on_off_excitation_observed_but_capacity_unidentifiable"
     assert floor["pump_on_intervals"] == 5
-    assert floor["pump_off_intervals"] == 5
+    assert floor["pump_off_intervals"] == 6
     assert floor["median_supply_return_delta_t_pump_on_c"] == 5.0
     assert floor["thermal_output_w"] is None
     assert floor["slab_capacity_wh_per_k"] is None

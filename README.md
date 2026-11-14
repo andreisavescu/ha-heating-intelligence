@@ -248,3 +248,6 @@ The coordinator samples every 10 seconds. HA state timestamps are used to place 
 
 ### v0.15 chronological validation
 Recorder calibration now includes a chronological train/holdout check for each room's free-cooling response. The first 70% of eligible intervals fit a first-order response; the later 30% are scored against a persistence baseline using MAE and RMSE. Outdoor observations older than 90 minutes are excluded. A passing holdout indicates improved short-horizon prediction only; it does not establish uniquely physical room capacity or envelope conductance. The current Recorder window is seven days, so longer seasonal validation remains outstanding.
+
+
+The Recorder summary also reports an aggregate effective whole-building heat capacity when a 7-day energy-derived house heat-loss coefficient and clean low-solar free-cooling history are both available. It calculates the aggregate estimate as H_house × tau_house. This value is not assigned to individual rooms or floor slabs and remains conditional on the configured boiler-efficiency / AC-COP assumptions and unmeasured-gain limitations.

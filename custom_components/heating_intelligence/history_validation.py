@@ -871,6 +871,115 @@ def build_recorder_calibration_dataset(
 
 
 
+
+def build_water_side_thermal_output(
+    samples: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    max_age_minutes: int = 45,
+    water_density_kg_m3: float = 997.0,
+    specific_heat_j_kg_k: float = 4186.0,
+) -> dict[str, Any]:
+    """Calculate hydronic heat-transfer rate only from fresh flow and ΔT.
+
+    Flow units are read from the Recorder entity's unit_of_measurement.
+    The result is system-side water heat transfer, not room-level delivery.
+    """
+    if interval_minutes <= 0 or max_age_minutes < 0:
+        raise ValueError("Invalid thermal-output sampling thresholds")
+    if not math.isfinite(water_density_kg_m3) or water_density_kg_m3 <= 0:
+        raise ValueError("Water density must be positive")
+    if not math.isfinite(specific_heat_j_kg_k) or specific_heat_j_kg_k <= 0:
+        raise ValueError("Specific heat must be positive")
+
+    watts = []
+    excluded = {
+        "missing_or_stale_flow": 0,
+        "missing_or_stale_supply_or_return": 0,
+        "unsupported_flow_unit": 0,
+        "nonpositive_flow": 0,
+        "nonpositive_supply_return_delta": 0,
+    }
+    units_seen = set()
+    for sample in samples:
+        channels = sample.get("channels") or {}
+        flow = _finite_number_or_none(channels.get("water_flow_rate"))
+        supply = _finite_number_or_none(channels.get("water_supply_temperature"))
+        return_temp = _finite_number_or_none(channels.get("water_return_temperature"))
+        flow_age = _finite_number_or_none(channels.get("water_flow_rate_age_minutes"))
+        supply_age = _finite_number_or_none(channels.get("water_supply_temperature_age_minutes"))
+        return_age = _finite_number_or_none(channels.get("water_return_temperature_age_minutes"))
+        if flow is None or (flow_age is not None and flow_age > max_age_minutes):
+            excluded["missing_or_stale_flow"] += 1
+            continue
+        if (
+            supply is None or return_temp is None
+            or (supply_age is not None and supply_age > max_age_minutes)
+            or (return_age is not None and return_age > max_age_minutes)
+        ):
+            excluded["missing_or_stale_supply_or_return"] += 1
+            continue
+        unit = str(channels.get("water_flow_rate_unit") or "").strip().lower()
+        units_seen.add(unit or "missing")
+        normalized = unit.replace("³", "3").replace("^", "").replace(" ", "")
+        if normalized in ("l/min", "lpm", "l/minute"):
+            mass_flow_kg_s = flow / 60.0 * water_density_kg_m3 / 1000.0
+        elif normalized in ("m3/h", "m3/hr", "m3/hour", "m3h-1"):
+            mass_flow_kg_s = flow / 3600.0 * water_density_kg_m3
+        elif normalized in ("l/s", "lps", "l/sec"):
+            mass_flow_kg_s = flow * water_density_kg_m3 / 1000.0
+        elif normalized in ("kg/h", "kg/hr", "kg/hour"):
+            mass_flow_kg_s = flow / 3600.0
+        elif normalized in ("kg/s", "kg/sec"):
+            mass_flow_kg_s = flow
+        else:
+            excluded["unsupported_flow_unit"] += 1
+            continue
+        if mass_flow_kg_s <= 0:
+            excluded["nonpositive_flow"] += 1
+            continue
+        delta_t = supply - return_temp
+        if delta_t <= 0:
+            excluded["nonpositive_supply_return_delta"] += 1
+            continue
+        watts.append(mass_flow_kg_s * specific_heat_j_kg_k * delta_t)
+
+    ordered = sorted(watts)
+    def percentile(values, fraction):
+        if not values:
+            return None
+        position = (len(values) - 1) * fraction
+        lower = int(position)
+        upper = min(lower + 1, len(values) - 1)
+        return values[lower] + (values[upper] - values[lower]) * (position - lower)
+
+    return {
+        "status": "system_water_side_output_available" if ordered else "withheld_missing_valid_flow_and_delta_t",
+        "valid_samples": len(ordered),
+        "sample_count": len(samples),
+        "coverage_percent": round(100 * len(ordered) / len(samples), 1) if samples else 0.0,
+        "median_thermal_output_w": round(percentile(ordered, 0.5), 1) if ordered else None,
+        "p10_thermal_output_w": round(percentile(ordered, 0.1), 1) if ordered else None,
+        "p90_thermal_output_w": round(percentile(ordered, 0.9), 1) if ordered else None,
+        "minimum_thermal_output_w": round(ordered[0], 1) if ordered else None,
+        "maximum_thermal_output_w": round(ordered[-1], 1) if ordered else None,
+        "flow_units_observed": sorted(units_seen),
+        "excluded_samples": excluded,
+        "assumptions": {
+            "water_density_kg_m3": water_density_kg_m3,
+            "specific_heat_j_kg_k": specific_heat_j_kg_k,
+            "formula": "mass_flow_kg_s * specific_heat_j_kg_k * (supply_c - return_c)",
+        },
+        "room_heat_allocation_w": None,
+        "status_scope": "system_water_side_only_not_room_delivery",
+        "note": (
+            "Calculated water-side heat transfer requires fresh positive flow and a positive "
+            "supply-return temperature difference. It is not automatically equal to heat "
+            "delivered to conditioned rooms: distribution losses, bypasses, buffer tanks and "
+            "other hydraulic paths may intervene. No room allocation or RC capacity is inferred."
+        ),
+    }
+
+
 def build_ufh_slab_observability(
     samples: list[dict[str, Any]],
     rooms: list[dict[str, Any]],

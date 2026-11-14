@@ -283,6 +283,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 summary["floor_thermal_output_observability"],
                 summary["floor_room_heat_allocation_inference"],
                 summary["floor_room_demand_lag_analysis"],
+                summary["solar_room_response_analysis"],
             )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")

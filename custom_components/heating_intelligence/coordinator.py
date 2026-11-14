@@ -201,6 +201,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 configured_rooms,
                 interval_minutes=30,
                 train_fraction=0.7,
+                require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
+                require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
+                require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
             )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None

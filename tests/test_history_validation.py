@@ -661,6 +661,7 @@ def test_multizone_identification_reports_correlation_diagnostics_when_fit_is_us
         assert room["coefficient_uncertainty_method"] == "deterministic_moving_block_bootstrap_90_percentile_range"
         uncertainty = room["coefficient_uncertainty"]["envelope"]
         assert uncertainty["successful_replicates"] >= 40
+        assert room["bootstrap_rejected_non_identifiable_replicates"] >= 0
         assert uncertainty["lower_90_percentile_1_per_hour"] is not None
         assert uncertainty["upper_90_percentile_1_per_hour"] >= uncertainty["lower_90_percentile_1_per_hour"]
 

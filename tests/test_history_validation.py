@@ -1194,6 +1194,54 @@ def test_multizone_physical_readiness_separates_normalized_fit_from_absolute_par
     assert result["rooms"]["living"]["effective_room_capacity_wh_per_k"] is None
 
 
+def test_multizone_readiness_reports_measured_system_water_output_without_room_allocation():
+    samples = [
+        {
+            "timestamp": "2026-11-14T12:00:00+00:00",
+            "channels": {
+                "water_flow_rate": 12.0,
+                "water_flow_rate_unit": "L/min",
+                "water_flow_rate_age_minutes": 0,
+                "water_supply_temperature": 35.0,
+                "water_supply_temperature_age_minutes": 0,
+                "water_return_temperature": 30.0,
+                "water_return_temperature_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {"temperature": 20.0, "demand": "off", "window": "off"},
+            },
+        },
+        {
+            "timestamp": "2026-11-14T12:30:00+00:00",
+            "channels": {
+                "water_flow_rate": 12.0,
+                "water_flow_rate_unit": "L/min",
+                "water_flow_rate_age_minutes": 0,
+                "water_supply_temperature": 35.0,
+                "water_supply_temperature_age_minutes": 0,
+                "water_return_temperature": 30.0,
+                "water_return_temperature_age_minutes": 0,
+            },
+            "rooms": {
+                "living": {"temperature": 20.1, "demand": "off", "window": "off"},
+            },
+        },
+    ]
+    water_output = MODULE.build_water_side_thermal_output(samples)
+    result = MODULE.build_multizone_physical_calibration_readiness(
+        samples,
+        [{"id": "living"}],
+        water_side_output=water_output,
+    )
+    assert result["system_water_side_output"]["available"] is True
+    assert result["system_water_side_output"]["valid_samples"] == 2
+    assert result["system_water_side_output"]["integrated_water_side_energy_kwh"] > 0
+    assert "no_water_flow_measurement_for_water_side_output" not in result["blockers"]
+    assert "no_validated_room_level_heat_allocation" in result["blockers"]
+    assert result["physical_simulation_ready"] is False
+    assert not any("Calibrated water flow rate" in item for item in result["next_required_evidence"])
+
+
 def test_multizone_physical_readiness_withholds_without_any_response_fit_or_energy():
     result = MODULE.build_multizone_physical_calibration_readiness(
         [],

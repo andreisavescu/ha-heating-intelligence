@@ -236,3 +236,35 @@ def test_aggregate_capacity_budget_flags_capacity_below_air_only_minimum():
     budget = result["aggregate_capacity_budget"]
     assert budget["status"] == "inconsistent_effective_capacity_below_air_only"
     assert budget["implied_non_air_capacity_wh_per_k"] is None
+
+
+def test_energy_accounting_balances_internal_gains_and_fixed_boundary_exchange():
+    result = MODEL.simulate_thermal_step(
+        {
+            "room": {"temperature_c": 20.0, "capacity_wh_per_k": 1000.0, "gains_w": 100.0},
+            "outdoors": {"fixed_temperature_c": 5.0},
+        },
+        [{"from": "room", "to": "outdoors", "conductance_w_per_k": 5.0}],
+        1800,
+    )
+    balance = result["energy_balance"]
+    assert balance["status"] == "balanced_within_numerical_precision"
+    assert abs(balance["error_wh"]) < 0.01
+    assert balance["applied_gains_wh"] == 50.0
+    assert balance["boundary_heat_exchange_wh"] < 0
+
+
+def test_solver_rejects_pathological_substep_count():
+    try:
+        MODEL.simulate_thermal_step(
+            {
+                "room": {"temperature_c": 20.0, "capacity_wh_per_k": 0.000001},
+                "outside": {"fixed_temperature_c": 0.0},
+            },
+            [{"from": "room", "to": "outside", "conductance_w_per_k": 1000.0}],
+            3600,
+        )
+    except ValueError as error:
+        assert "maximum is 100000" in str(error)
+    else:
+        raise AssertionError("pathological integration step count must be rejected")

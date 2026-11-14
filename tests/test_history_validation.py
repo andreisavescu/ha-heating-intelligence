@@ -1651,3 +1651,18 @@ def test_ufh_observability_excludes_open_window_intervals_and_does_not_bridge_ga
     assert floor["room_response"]["living"]["median_temperature_rate_pump_on_c_per_hour"] == 0.2
     assert floor["thermal_output_w"] is None
 
+def test_ufh_observability_handles_floor_with_pump_but_no_configured_rooms():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    for index in range(4):
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"pump:upstairs:power": 35.0},
+            "rooms": {},
+        })
+    result = MODULE.build_ufh_slab_observability(samples, [])
+    upstairs = result["floors"]["upstairs"]
+    assert upstairs["status"] == "no_rooms_configured"
+    assert upstairs["room_response"] == {}
+    assert upstairs["slab_capacity_wh_per_k"] is None
+

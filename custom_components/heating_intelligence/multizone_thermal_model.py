@@ -229,10 +229,11 @@ def build_multizone_observation_model(
         'supply_water_temperature_c': _finite_or_none(plant.get('water_temperature')),
         'return_water_temperature_c': _finite_or_none(plant.get('water_return_temperature')),
         'burner_state': boiler_context.get('burner_state'),
-        'modulation': boiler_context.get('modulation'),
+        'burner_on': boiler_context.get('burner_on'),
+        'modulation_percent': _finite_or_none(boiler_context.get('modulation_percent')),
         'pumps': {pump_id: {'running': pump.get('running'), 'power_w': _finite_or_none(pump.get('power')), 'stage': pump.get('stage')} for pump_id, pump in (plant.get('pumps') or {}).items()},
         'thermal_output_w': None,
-        'status': 'telemetry_observed' if plant.get('water_temperature') is not None or plant.get('water_return_temperature') is not None or boiler_context else 'plant_sensors_unavailable',
+        'status': 'telemetry_observed' if (plant.get('water_temperature') is not None or plant.get('water_return_temperature') is not None or boiler_context.get('burner_state') not in (None, 'unknown', 'unavailable') or _finite_or_none(boiler_context.get('modulation_percent')) is not None) else 'plant_sensors_unavailable',
         'note': 'No water-side heat output is calculated without flow rate and a validated flow/return measurement pair.',
     }
     nodes['plant:heating'] = plant_node

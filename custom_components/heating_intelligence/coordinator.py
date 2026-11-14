@@ -309,6 +309,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             co2_status = ("good" if co2_value < 800 else "elevated" if co2_value < 1200 else "high" if co2_value < 2000 else "very_high") if co2_value is not None else None
             demand_state = demand.state if demand else None
             demand_active = demand_is_active(demand_state)
+            demand_state_known = bool(demand and demand_state not in ("unknown", "unavailable"))
             room_history = update_room_history(
                 self._history,
                 room_id,
@@ -333,9 +334,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 room_history, now_local, temperature_value, demand_active, window_open,
                 external_heating=ac_heating_active,
                 window_state_known=window_state_known,
+                demand_state_known=demand_state_known,
             )
             thermal = thermal_statistics(room_history, now_local)
-            learned_model = build_room_thermal_model(room_history, now_local, temperature_value, demand_active, bool(ac_power_entity), ac_heating_active, window_open, window_state_known, bool(window_id))
+            learned_model = build_room_thermal_model(room_history, now_local, temperature_value, demand_active, bool(ac_power_entity), ac_heating_active, window_open, window_state_known, bool(window_id), demand_state_known)
             learned_room_models[room_id] = learned_model
             floor = room.get(CONF_FLOOR, "unassigned")
             floor_data = floor_analysis.setdefault(floor, {"active_rooms": 0})
@@ -380,6 +382,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "window_state": window.state if window else None,
                 "window_open": window_open,
                 "window_state_known": window_state_known,
+                "demand_state_known": demand_state_known,
                 "daily_demand_seconds": round(demand_seconds),
                 "demand_history": [{"start": item.get("start"), "end": item.get("end"), "duration_seconds": item.get("duration_seconds")} for item in room_history.get("cycles", []) if item.get("start") and item.get("end")][-500:] + ([{"start": room_history.get("cycle_start"), "end": now_local.isoformat(), "duration_seconds": max(0, (now_local - dt_util.parse_datetime(room_history["cycle_start"])).total_seconds()), "active": True}] if room_history.get("last_demand") is True and room_history.get("cycle_start") else []),
             }

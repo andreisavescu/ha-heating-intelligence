@@ -23,6 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
+from .validated_learning import build_validated_learning_state, validated_learning_diagnostics
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
@@ -766,6 +767,16 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         result["efficiency"]["weather_normalised"] = weather_model
         result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
         result["thermal_model"]["historical_validation"] = await self._async_recorder_history_summary(now, result["efficiency"])
+        validation = result["thermal_model"]["historical_validation"]
+        identification = validation.get("multizone_response_identification", {})
+        learning_state = build_validated_learning_state(
+            self._history.get("validated_calibration_learning"),
+            identification,
+            self._history.get("recorder_history_checked_at") or now.isoformat(),
+        )
+        self._history["validated_calibration_learning"] = learning_state
+        result["thermal_model"]["validated_learning"] = validated_learning_diagnostics(learning_state)
+        result["thermal_model"]["historical_validation"]["validated_learning"] = result["thermal_model"]["validated_learning"]
         house_profile = dict(self.entry.options.get("house_assessment", {}))
         house_profile["house_effective_rc_calibration"] = (
             result["thermal_model"]["historical_validation"].get("house_effective_rc_calibration", {})

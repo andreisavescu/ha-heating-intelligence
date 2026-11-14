@@ -248,6 +248,39 @@ def test_house_effective_rc_capacity_requires_independent_heat_loss_and_fits_tau
     assert result["capacity_resampling_sensitivity"]["successful_replicates"] == 0
 
 
+def test_house_effective_rc_capacity_reports_block_resampling_sensitivity():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {
+        "sensor.outdoor": [],
+        "sensor.indoor": [],
+        "binary_sensor.demand": [{"state": "off", "last_changed": (end - timedelta(hours=60)).isoformat()}],
+        "binary_sensor.window": [{"state": "off", "last_changed": (end - timedelta(hours=60)).isoformat()}],
+        "sensor.solar": [],
+    }
+    temp = 35.0
+    for index in range(61):
+        stamp = end - timedelta(hours=60 - index)
+        history["sensor.outdoor"].append({"state": "5", "last_changed": stamp.isoformat()})
+        history["sensor.indoor"].append({"state": str(temp), "last_changed": stamp.isoformat()})
+        history["sensor.solar"].append({"state": "0", "last_changed": stamp.isoformat()})
+        temp = 5 + (temp - 5) * math.exp(-1 / 30)
+    result = MODULE.build_house_effective_rc_calibration(
+        history,
+        [{
+            "id": "whole_house", "area_m2": 200,
+            "temperature_entity": "sensor.indoor",
+            "demand_entity": "binary_sensor.demand",
+            "window_entity": "binary_sensor.window",
+        }],
+        "sensor.outdoor", 300, "sensor.solar",
+    )
+    sensitivity = result["capacity_resampling_sensitivity"]
+    assert result["valid_intervals"] >= 40
+    assert sensitivity["status"] == "resampling_sensitivity_available"
+    assert sensitivity["successful_replicates"] >= 40
+    assert sensitivity["lower_90_percentile_wh_per_k"] <= sensitivity["upper_90_percentile_wh_per_k"]
+
+
 def test_house_effective_rc_capacity_is_withheld_without_independent_heat_loss():
     result = MODULE.build_house_effective_rc_calibration({}, [], "sensor.outdoor", None)
     assert result["status"] == "withheld_heat_loss_coefficient_unavailable"

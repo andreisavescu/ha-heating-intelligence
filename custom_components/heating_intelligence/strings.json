@@ -66,7 +66,7 @@
       },
       "room_area": {
         "title": "Select room",
-        "description": "Choose the room whose floor area you want to configure."
+        "description": "Choose the room whose floor area or measured air changes per hour you want to configure."
       },
       "set_room_area": {
         "title": "Room area and measured ventilation",

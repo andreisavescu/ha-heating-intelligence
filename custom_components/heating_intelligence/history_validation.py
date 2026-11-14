@@ -485,6 +485,7 @@ def build_house_effective_rc_calibration(
     solar_radiation_entity: str | None = None,
     solar_exclusion_threshold_w_m2: float = 50.0,
     outdoor_max_age_minutes: float = 90.0,
+    heat_loss_sensitivity_range_w_k: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Combine independently estimated house heat loss and night cooling tau.
 
@@ -655,9 +656,50 @@ def build_house_effective_rc_calibration(
             ),
             "status": "resampling_sensitivity_available",
         })
+    capacity_assumption_sensitivity = {
+        "status": "withheld_heat_loss_assumption_range_unavailable",
+        "lower_wh_per_k": None,
+        "median_wh_per_k": None,
+        "upper_wh_per_k": None,
+        "heat_loss_range_w_k": None,
+        "time_constant_range_hours": None,
+        "note": "Combines the independently supplied heat-loss assumption range with cooling time-constant resampling. This is a sensitivity envelope, not a confidence interval.",
+    }
+    if capacity is not None and heat_loss_sensitivity_range_w_k:
+        h_min = _finite_number_or_none(heat_loss_sensitivity_range_w_k.get("minimum"))
+        h_max = _finite_number_or_none(heat_loss_sensitivity_range_w_k.get("maximum"))
+        if h_min is not None and h_max is not None and 0 < h_min <= h_max:
+            tau_values = (
+                [value / heat_loss for value in capacity_resamples]
+                if len(capacity_resamples) >= 40 else [tau]
+            )
+            tau_values = sorted(value for value in tau_values if value is not None and math.isfinite(value) and value > 0)
+            if tau_values:
+                tau_low = tau_values[int(0.05 * (len(tau_values) - 1))]
+                tau_mid = tau_values[int(0.50 * (len(tau_values) - 1))]
+                tau_high = tau_values[int(0.95 * (len(tau_values) - 1))]
+                capacity_assumption_sensitivity.update({
+                    "status": "combined_heat_loss_and_time_constant_sensitivity_available",
+                    "lower_wh_per_k": round(h_min * tau_low, 1),
+                    "median_wh_per_k": round(((h_min + h_max) / 2) * tau_mid, 1),
+                    "upper_wh_per_k": round(h_max * tau_high, 1),
+                    "heat_loss_range_w_k": {"minimum": round(h_min, 2), "maximum": round(h_max, 2)},
+                    "time_constant_range_hours": {
+                        "minimum": round(tau_low, 2),
+                        "median": round(tau_mid, 2),
+                        "maximum": round(tau_high, 2),
+                    },
+                    "note": (
+                        "Combines heat-loss assumption endpoints with the 5th/50th/95th percentile "
+                        "cooling time constants where block resampling is available; otherwise uses "
+                        "the point-estimated time constant. It is a sensitivity envelope, not a "
+                        "formal confidence interval, and does not allocate capacity to rooms."
+                    ),
+                })
     return {
         "status": status,
         "method": "area_weighted_night_cooling_tau_times_independent_house_heat_loss",
+        "capacity_assumption_sensitivity": capacity_assumption_sensitivity,
         "effective_building_thermal_capacity_wh_per_k": round(capacity, 1) if capacity is not None else None,
         "heat_loss_coefficient_w_k": round(heat_loss, 2),
         "apparent_time_constant_hours": round(tau, 2) if tau is not None else None,

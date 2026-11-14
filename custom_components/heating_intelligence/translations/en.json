@@ -40,12 +40,22 @@
         "title": "Add a room",
         "description": "Select the room's floor, thermostat demand relay and temperature sensor. Floor area is optional. The window contact is optional.",
         "data": {
-          "area_m2": "Room floor area (m²)"
+          "area_m2": "Room floor area (m²)",
+          "humidity_entity": "Room humidity sensor (%)",
+          "enable_co2": "Add a CO2 sensor for this room"
         }
+      },
+      "add_room_co2": {
+        "title": "Add room CO2 sensor",
+        "description": "Select the CO2 sensor for {room_name}. CO2 is optional and only requested when enabled for this room."
       },
       "room_area": {
         "title": "Select room",
         "description": "Choose the room whose floor area you want to configure."
+      },
+      "add_room_co2": {
+        "title": "Add room CO2 sensor",
+        "description": "Select the CO2 sensor for {room_name}."
       },
       "set_room_area": {
         "title": "Room floor area",

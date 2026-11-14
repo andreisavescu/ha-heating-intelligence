@@ -3100,6 +3100,15 @@ def build_multizone_response_identification(
             def fresh_room_state(room_data, field):
                 age = numeric(room_data.get(field + "_age_minutes"))
                 return (age is None or age <= max_age_minutes) and state_off(room_data.get(field))
+            stale_room_states = any(
+                (numeric(data.get(field + "_age_minutes")) is not None
+                 and numeric(data.get(field + "_age_minutes")) > max_age_minutes)
+                for rid in room_ids
+                for data in (first_rooms.get(rid, {}), second_rooms.get(rid, {}))
+                for field in ("demand", "window")
+            )
+            if stale_room_states:
+                exclusions["stale_room_state"] += 1
             clean_states = all(
                 fresh_room_state(first_rooms.get(rid, {}), "demand")
                 and fresh_room_state(second_rooms.get(rid, {}), "demand")

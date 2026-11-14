@@ -486,6 +486,40 @@ def test_multizone_identification_withholds_collinear_thermal_drivers():
     assert living["normalized_rates_per_hour"] is None
     assert living["max_abs_predictor_correlation"] >= 0.985
     assert living["predictor_correlations"]
+    assert living["predictor_excitation"]["bedroom"]["positive_gradient_intervals"] > 0
+    assert living["predictor_excitation"]["bedroom"]["negative_gradient_intervals"] > 0
+    assert living["room_link_excitation_status"] in (
+        "all_room_links_bidirectionally_excited",
+        "one_or_more_room_links_weakly_or_one_sided_excited",
+    )
+
+
+def test_multizone_identification_reports_one_sided_room_link_excitation():
+    samples = []
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    for index in range(100):
+        outside = 5.0 + 2.0 * math.sin(index / 8.0)
+        # Keep the neighbour consistently warmer: its gradient never reverses.
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"outdoor_temperature": outside, "solar_radiation": 0.0},
+            "rooms": {
+                "living": {"temperature": 19.0, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": 20.0 + 0.05 * math.sin(index / 6.0), "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}],
+        minimum_train_intervals=20,
+        minimum_holdout_intervals=5,
+    )
+    living = result["rooms"]["living"]
+    if living["predictor_excitation"]:
+        link = living["predictor_excitation"]["bedroom"]
+        assert link["negative_gradient_intervals"] == 0
+        assert link["bidirectional_excitation"] is False
+        assert "bedroom" in living["weakly_excited_room_links"]
 
 
 def test_multizone_identification_reports_correlation_diagnostics_when_fit_is_usable():

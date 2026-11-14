@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -184,6 +184,19 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "they are not downsampled to the 30-minute thermal-model cadence. "
                 "Use the raw event timestamps to reconstruct PWM pulse timing.")
             configured_rooms = self.entry.options.get(CONF_ROOMS, [])
+            control_entity_roles = {}
+            for room in configured_rooms:
+                demand_entity = room.get(CONF_DEMAND_ENTITY)
+                if demand_entity:
+                    control_entity_roles.setdefault(demand_entity, []).append(
+                        f"room:{room.get('id', 'unknown')}:demand"
+                    )
+            burner_entity = self.entry.options.get(CONF_BOILER_BURNER_ENTITY)
+            if burner_entity:
+                control_entity_roles.setdefault(burner_entity, []).append("boiler:burner")
+            summary["control_event_inventory"] = build_control_event_inventory(
+                history, control_entity_roles
+            )
             calibration_channels = {
                 "outdoor_temperature": self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY),
                 "solar_radiation": self.entry.options.get(CONF_SOLAR_RADIATION_ENTITY),

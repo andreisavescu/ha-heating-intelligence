@@ -1251,7 +1251,8 @@ def _partial_correlation_diagnostics(
             "design_rank": len(orthogonal),
             "design_columns": len(columns),
             "condition_proxy": round(condition_proxy, 3),
-            "confidence_interval_95": partial_interval,\n            "confidence_interval_degrees_of_freedom": partial_df,
+            "confidence_interval_95": partial_interval,
+            "confidence_interval_degrees_of_freedom": partial_df,
         }
     return {
         "status": "adjusted_association_available",

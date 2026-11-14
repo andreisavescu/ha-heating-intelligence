@@ -127,7 +127,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             CONF_GAS_CONSUMPTION_ENTITY, CONF_WATER_TEMPERATURE_ENTITY,
             CONF_RETURN_WATER_TEMPERATURE_ENTITY, CONF_AC_POWER_ENTITY,
             CONF_AC_ENERGY_ENTITY, CONF_BOILER_BURNER_ENTITY,
-            CONF_BOILER_MODULATION_ENTITY,
+            CONF_BOILER_MODULATION_ENTITY, CONF_ELECTRICITY_BOILER_POWER_ENTITY,
+            CONF_ELECTRICITY_BOILER_ENERGY_ENTITY, CONF_ELECTRICITY_BOILER_ENTITY,
         )
         for key in option_keys:
             entity_id = self.entry.options.get(key)

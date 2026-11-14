@@ -24,6 +24,8 @@ from .const import (
     CONF_OUTDOOR_HUMIDITY_ENTITY,
     CONF_DEW_POINT_ENTITY,
     CONF_OUTDOOR_PRESSURE_ENTITY,
+    CONF_ATTIC_TEMPERATURE_ENTITY,
+    CONF_ATTIC_HUMIDITY_ENTITY,
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
     CONF_ELECTRICITY_CONSUMPTION_ENTITY,
@@ -113,6 +115,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             optional("window_area_south_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_south_m2")),
             optional("window_area_east_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_east_m2")),
             optional("window_area_west_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_west_m2")),
+            optional("roof_area_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=1000, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("roof_area_m2")),
+            optional("roof_u_value", selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)), current.get("roof_u_value")),
+            optional("attic_floor_area_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=1000, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("attic_floor_area_m2")),
+            optional("attic_floor_u_value", selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)), current.get("attic_floor_u_value")),
         ])
         return self.async_show_form(step_id="house_assessment", data_schema=vol.Schema(fields))
 
@@ -165,6 +171,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_OUTDOOR_HUMIDITY_ENTITY,
             CONF_DEW_POINT_ENTITY,
             CONF_OUTDOOR_PRESSURE_ENTITY,
+            CONF_ATTIC_TEMPERATURE_ENTITY,
+            CONF_ATTIC_HUMIDITY_ENTITY,
             CONF_WEATHER_ENTITY,
             CONF_DELTA_T_ENTITY,
             CONF_GAS_CONSUMPTION_ENTITY,
@@ -217,6 +225,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_OUTDOOR_HUMIDITY_ENTITY,
                 CONF_DEW_POINT_ENTITY,
                 CONF_OUTDOOR_PRESSURE_ENTITY,
+                CONF_ATTIC_TEMPERATURE_ENTITY,
+                CONF_ATTIC_HUMIDITY_ENTITY,
                 CONF_DELTA_T_ENTITY,
                 CONF_GAS_CONSUMPTION_ENTITY,
                 CONF_ELECTRICITY_BOILER_POWER_ENTITY,

@@ -4110,3 +4110,120 @@ def build_multizone_physical_calibration_readiness(
         ),
     }
 
+def build_control_event_inventory(
+    history: dict[str, list[Any]],
+    entity_roles: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Summarise native binary control transitions without bridging unknown states.
+
+    Complete on/off dwell intervals are measured only when both endpoints are
+    explicitly recorded. ``unknown`` and ``unavailable`` break continuity; they
+    never become synthetic off transitions. This is event timing evidence, not
+    proof that a controller output represents delivered thermal energy.
+    """
+    from statistics import median
+
+    roles = entity_roles or {}
+    entities: dict[str, Any] = {}
+    for entity_id, states in history.items():
+        points = []
+        for state in states:
+            stamp = _timestamp(state)
+            raw = state.get("state") if isinstance(state, dict) else getattr(state, "state", None)
+            if stamp is not None:
+                points.append((stamp, raw))
+        points.sort(key=lambda item: item[0])
+        if not points:
+            continue
+
+        counts = {"on": 0, "off": 0, "unknown": 0}
+        on_durations: list[float] = []
+        off_durations: list[float] = []
+        transitions = 0
+        interrupted_on_intervals = 0
+        previous_state: bool | None = None
+        previous_stamp: datetime | None = None
+        active_since: datetime | None = None
+        inactive_since: datetime | None = None
+        continuity_broken = True
+        for stamp, raw in points:
+            normal = str(raw).strip().lower() if raw is not None else "unknown"
+            current = _switch_state(raw)
+            if current is None:
+                counts["unknown"] += 1
+                if previous_state is True or active_since is not None:
+                    interrupted_on_intervals += 1
+                previous_state = None
+                previous_stamp = stamp
+                active_since = None
+                inactive_since = None
+                continuity_broken = True
+                continue
+            counts["on" if current else "off"] += 1
+            if not continuity_broken and previous_state is not None and current != previous_state:
+                transitions += 1
+                duration = (stamp - previous_stamp).total_seconds() if previous_stamp else 0.0
+                if duration >= 0:
+                    (on_durations if previous_state else off_durations).append(duration)
+            if continuity_broken or previous_state is None:
+                active_since = stamp if current else None
+                inactive_since = stamp if not current else None
+            elif current and not previous_state:
+                active_since = stamp
+                inactive_since = None
+            elif not current and previous_state:
+                active_since = None
+                inactive_since = stamp
+            previous_state = current
+            previous_stamp = stamp
+            continuity_broken = False
+
+        complete_on = len(on_durations)
+        complete_off = len(off_durations)
+        complete_cycles = min(complete_on, complete_off)
+        status = "available" if complete_on else (
+            "partial_unknown_gaps" if counts["unknown"] else "insufficient_explicit_transitions"
+        )
+        entities[entity_id] = {
+            "status": status,
+            "roles": list(roles.get(entity_id, [])),
+            "samples": len(points),
+            "on_samples": counts["on"],
+            "off_samples": counts["off"],
+            "unknown_or_unavailable_samples": counts["unknown"],
+            "explicit_transitions": transitions,
+            "complete_on_intervals": complete_on,
+            "complete_off_intervals": complete_off,
+            "complete_on_off_cycles": complete_cycles,
+            "interrupted_on_intervals": interrupted_on_intervals,
+            "on_duration_seconds": {
+                "median": round(median(on_durations), 1) if on_durations else None,
+                "minimum": round(min(on_durations), 1) if on_durations else None,
+                "maximum": round(max(on_durations), 1) if on_durations else None,
+            },
+            "off_duration_seconds": {
+                "median": round(median(off_durations), 1) if off_durations else None,
+                "minimum": round(min(off_durations), 1) if off_durations else None,
+                "maximum": round(max(off_durations), 1) if off_durations else None,
+            },
+            "first_event": points[0][0].isoformat(),
+            "last_event": points[-1][0].isoformat(),
+            "interpretation": (
+                "Explicit native-timestamp switch dwell intervals only. Unknown/unavailable "
+                "states break intervals; no off-state or PWM pulse is inferred across a gap."
+            ),
+        }
+
+    available = sum(1 for item in entities.values() if item["complete_on_intervals"] > 0)
+    return {
+        "status": "available" if available else "collecting_explicit_control_transitions",
+        "entities_analysed": len(entities),
+        "entities_with_complete_on_intervals": available,
+        "timestamp_resolution": "native_recorder_timestamps",
+        "entities": entities,
+        "raw_history_retained": False,
+        "interpretation": (
+            "Control-event timing inventory only. It does not establish PWM duty-cycle "
+            "accuracy, delivered heat, or room-level heat allocation."
+        ),
+    }

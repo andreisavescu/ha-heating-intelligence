@@ -327,18 +327,6 @@ class HeatingIntelligenceCard extends HTMLElement {
             }).join("") || '<p class="subtle">The model starts learning from retained room-temperature history.</p>'}
           </div>
           <div class="subtle">${this._esc(attrs.thermal_model?.interpretation || "")}</div>
-          <div class="subsection-title">Historical data for calibration</div>
-          <div class="overview">
-            <div class="metric"><span>Recorder history</span><strong>${this._esc(attrs.thermal_model?.historical_validation?.status || "Waiting")}</strong></div>
-            <div class="metric"><span>Samples / entities</span><strong>${attrs.thermal_model?.historical_validation?.total_samples ?? 0} / ${attrs.thermal_model?.historical_validation?.entities_with_history ?? 0}</strong></div>
-            <div class="metric"><span>Lookback</span><strong>${this._fmt(attrs.thermal_model?.historical_validation?.window_hours, "h", 0)}</strong></div>
-          </div>
-          <div class="subtle">${this._esc(attrs.thermal_model?.historical_validation?.note || "Recorder history is queried locally every six hours; raw samples remain in Home Assistant.")}</div>
-          <div class="subtle">Historical room-response estimates: ${Object.values(attrs.thermal_model?.historical_validation?.room_response || {}).filter(item => item.heating?.status === "available" || item.coasting?.status === "available").length} rooms have sufficient Recorder intervals. These are independent historical slopes, not calibrated RC parameters.</div>
-          <div class="subtle">${Object.entries(attrs.thermal_model?.historical_validation?.room_response || {}).map(([id, item]) => {
-            const room = (attrs.rooms || {})[id] || {};
-            return `${this._esc(room.name || id)}: heat ${this._fmt(item.heating?.rate_c_per_hour, "°C/h", 2)} (${item.heating?.valid_intervals || 0}) · coast ${this._fmt(item.coasting?.rate_c_per_hour, "°C/h", 2)} (${item.coasting?.valid_intervals || 0})`;
-          }).join(" | ") || "Waiting for sufficient clean Recorder intervals."}</div>
           <div class="subsection-title">Multi-zone physical model</div>
           <div class="overview">
             <div class="metric"><span>Observation mapping</span><strong>${this._esc(attrs.thermal_model?.multi_zone?.status || "Waiting")}</strong></div>
@@ -356,6 +344,21 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="subtle">${this._esc(attrs.thermal_model?.multi_zone?.plant?.note || "Plant telemetry is observational; heat output is not inferred from pump electricity.")}</div>
           <div class="subtle">Solar / internal gains: ${this._esc(attrs.thermal_model?.multi_zone?.gain_context?.status || "Not assessed")} · radiation ${this._fmt(attrs.thermal_model?.multi_zone?.gain_context?.solar_radiation_w_m2, "W/m²", 0)} · ${this._esc(attrs.thermal_model?.multi_zone?.gain_context?.note || "")}</div>
 
+        </div>
+        <div class="section"><div class="section-title">Recorder history & calibration</div>
+          <div class="overview">
+            <div class="metric"><span>Recorder status</span><strong>${this._esc(attrs.thermal_model?.historical_validation?.status || "Waiting")}</strong></div>
+            <div class="metric"><span>Historical data points</span><strong>${attrs.thermal_model?.historical_validation?.total_samples ?? 0}</strong></div>
+            <div class="metric"><span>Entities with history</span><strong>${attrs.thermal_model?.historical_validation?.entities_with_history ?? 0} / ${attrs.thermal_model?.historical_validation?.entity_count ?? 0}</strong></div>
+            <div class="metric"><span>Lookback window</span><strong>${this._fmt(attrs.thermal_model?.historical_validation?.window_hours, "h", 0)}</strong></div>
+            <div class="metric"><span>Rooms with usable response data</span><strong>${Object.values(attrs.thermal_model?.historical_validation?.room_response || {}).filter(item => item.heating?.status === "available" || item.coasting?.status === "available").length}</strong></div>
+          </div>
+          <div class="subtle">${this._esc(attrs.thermal_model?.historical_validation?.note || "Recorder history is queried locally every six hours; raw samples remain in Home Assistant.")}</div>
+          <div class="subtle">${Object.entries(attrs.thermal_model?.historical_validation?.room_response || {}).map(([id, item]) => {
+            const room = (attrs.rooms || {})[id] || {};
+            return `${this._esc(room.name || id)}: heat ${this._fmt(item.heating?.rate_c_per_hour, "°C/h", 2)} (${item.heating?.valid_intervals || 0} intervals) · coast ${this._fmt(item.coasting?.rate_c_per_hour, "°C/h", 2)} (${item.coasting?.valid_intervals || 0} intervals)`;
+          }).join(" | ") || "Waiting for sufficient clean Recorder intervals."}</div>
+          <div class="subtle">This is a coverage summary of Home Assistant Recorder history, not a copy of raw history. The physical multi-zone model remains uncalibrated until its missing thermal capacities and conductances are identified.</div>
         </div>
         <div class="section"><div class="section-title">Today's heating activity</div>
           <div class="overview">

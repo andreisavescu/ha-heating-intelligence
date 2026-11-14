@@ -1706,6 +1706,125 @@ def build_multizone_response_identification(
                         break
                 physical = [coefficients[j] / scales[j] for j in range(p)]
                 intercept = y_mean - sum(physical[j] * means[j] for j in range(p))
+
+                # Moving-block bootstrap: resample contiguous four-interval
+                # blocks from the training chronology, preserving short-term
+                # autocorrelation better than independent row resampling.
+                # Fixed, evenly distributed block starts make this diagnostic
+                # deterministic and reproducible without a random seed.
+                bootstrap_block_length = min(4, max(1, len(train) // 4))
+                bootstrap_replicates = 80 if len(train) >= 40 else 0
+                bootstrap_coefficients = [[] for _ in range(p)]
+
+                def fit_bootstrap_rows(bootstrap_rows):
+                    count = len(bootstrap_rows)
+                    local_means = [
+                        sum(row[1][j] for row in bootstrap_rows) / count
+                        for j in range(p)
+                    ]
+                    local_scales = [
+                        math.sqrt(sum((row[1][j] - local_means[j]) ** 2 for row in bootstrap_rows) / count)
+                        for j in range(p)
+                    ]
+                    if any(scale <= 1e-5 for scale in local_scales):
+                        return None
+                    local_design = [
+                        [(row[1][j] - local_means[j]) / local_scales[j] for j in range(p)]
+                        for row in bootstrap_rows
+                    ]
+                    local_y_mean = sum(row[2] for row in bootstrap_rows) / count
+                    local_coefficients = [0.0] * p
+                    local_residual = [row[2] - local_y_mean for row in bootstrap_rows]
+                    for _ in range(500):
+                        largest_change = 0.0
+                        for j in range(p):
+                            column = [row[j] for row in local_design]
+                            denominator = sum(value * value for value in column)
+                            if denominator <= 1e-10:
+                                continue
+                            old_value = local_coefficients[j]
+                            numerator = sum(
+                                value * (error + value * old_value)
+                                for value, error in zip(column, local_residual)
+                            )
+                            new_value = max(0.0, numerator / denominator)
+                            change = new_value - old_value
+                            if change:
+                                local_residual = [
+                                    error - value * change
+                                    for error, value in zip(local_residual, column)
+                                ]
+                                local_coefficients[j] = new_value
+                                largest_change = max(largest_change, abs(change))
+                        if largest_change < 1e-8:
+                            break
+                    return [local_coefficients[j] / local_scales[j] for j in range(p)]
+
+                if bootstrap_replicates:
+                    n_train = len(train)
+                    for replicate in range(bootstrap_replicates):
+                        bootstrap_rows = []
+                        block_number = 0
+                        while len(bootstrap_rows) < n_train:
+                            max_start = n_train - bootstrap_block_length
+                            start_index = (
+                                replicate * 37 + block_number * 17
+                            ) % (max_start + 1)
+                            bootstrap_rows.extend(
+                                train[start_index:start_index + bootstrap_block_length]
+                            )
+                            block_number += 1
+                        bootstrap_rows = bootstrap_rows[:n_train]
+                        estimate = fit_bootstrap_rows(bootstrap_rows)
+                        if estimate is not None:
+                            for j, value in enumerate(estimate):
+                                bootstrap_coefficients[j].append(value)
+
+                coefficient_uncertainty = {}
+                for j, predictor in enumerate(predictors):
+                    estimates = sorted(bootstrap_coefficients[j])
+                    if len(estimates) >= 40:
+                        lower = estimates[int(0.05 * (len(estimates) - 1))]
+                        median = estimates[int(0.50 * (len(estimates) - 1))]
+                        upper = estimates[int(0.95 * (len(estimates) - 1))]
+                        relative_width = (
+                            (upper - lower) / max(abs(median), 1e-6)
+                        )
+                        coefficient_uncertainty[predictor] = {
+                            "method": "deterministic_moving_block_bootstrap",
+                            "block_length_intervals": bootstrap_block_length,
+                            "requested_replicates": bootstrap_replicates,
+                            "successful_replicates": len(estimates),
+                            "lower_90_percentile_1_per_hour": round(lower, 6),
+                            "median_1_per_hour": round(median, 6),
+                            "upper_90_percentile_1_per_hour": round(upper, 6),
+                            "relative_90_percentile_width": round(relative_width, 3),
+                            "stability": (
+                                "relatively_stable" if relative_width <= 1.0
+                                else "high_uncertainty"
+                            ),
+                        }
+                    else:
+                        coefficient_uncertainty[predictor] = {
+                            "method": "deterministic_moving_block_bootstrap",
+                            "block_length_intervals": bootstrap_block_length,
+                            "requested_replicates": bootstrap_replicates,
+                            "successful_replicates": len(estimates),
+                            "lower_90_percentile_1_per_hour": None,
+                            "median_1_per_hour": None,
+                            "upper_90_percentile_1_per_hour": None,
+                            "relative_90_percentile_width": None,
+                            "stability": "insufficient_bootstrap_replicates",
+                        }
+                result["coefficient_uncertainty"] = coefficient_uncertainty
+                result["coefficient_uncertainty_method"] = (
+                    "deterministic_moving_block_bootstrap_90_percentile_range"
+                )
+                result["coefficient_uncertainty_note"] = (
+                    "Ranges quantify sensitivity to resampling contiguous training blocks; "
+                    "they are not formal confidence intervals and do not include sensor bias, "
+                    "unmeasured gains, model misspecification or uncertainty in room heat delivery."
+                )
                 fitted = [intercept + sum(physical[j] * row[1][j] for j in range(p)) for row in train]
                 residual_sum = sum((pred - row[2]) ** 2 for pred, row in zip(fitted, train))
                 total_sum = sum((row[2] - y_mean) ** 2 for row in train)

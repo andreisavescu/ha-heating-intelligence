@@ -51,8 +51,7 @@ def _timeline(history: dict[str, list[Any]], entity_id: str | None):
 def _latest_at(points, stamp):
     if not points:
         return None
-    times = [point[0] for point in points]
-    index = bisect_right(times, stamp) - 1
+    index = bisect_right(points, stamp, key=lambda item: item[0]) - 1
     return points[index][1] if index >= 0 else None
 
 

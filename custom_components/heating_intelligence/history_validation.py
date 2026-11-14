@@ -4126,6 +4126,8 @@ def build_control_event_inventory(
     roles = entity_roles or {}
     entities: dict[str, Any] = {}
     for entity_id, states in history.items():
+        if roles and entity_id not in roles:
+            continue
         points = []
         for state in states:
             stamp = _timestamp(state)

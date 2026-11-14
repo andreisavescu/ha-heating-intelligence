@@ -1163,6 +1163,8 @@ def _partial_correlation_diagnostics(
             "partial_pearson_r": None,
             "design_rank": 0,
             "design_columns": len(names) + 1,
+            "confidence_interval_95": None,
+            "confidence_interval_degrees_of_freedom": n - len(names) - 3,
             "condition_proxy": None,
         }
     columns = [[1.0] * n]
@@ -1228,6 +1230,8 @@ def _partial_correlation_diagnostics(
             "partial_pearson_r": None,
             "design_rank": len(orthogonal),
             "design_columns": len(columns),
+            "confidence_interval_95": None,
+            "confidence_interval_degrees_of_freedom": n - len(names) - 3,
             "condition_proxy": round(max(orthogonal_norms) / max(min(orthogonal_norms), 1e-12), 3),
         }
     correlation = sum(

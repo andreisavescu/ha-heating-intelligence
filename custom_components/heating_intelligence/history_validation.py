@@ -2843,6 +2843,7 @@ def build_multizone_physical_calibration_readiness(
     energy_observability: dict[str, Any] | None = None,
     ufh_observability: dict[str, Any] | None = None,
     water_side_output: dict[str, Any] | None = None,
+    aggregate_capacity_calibration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarise which absolute multi-zone parameters are evidenced vs blocked.
 
@@ -2854,6 +2855,14 @@ def build_multizone_physical_calibration_readiness(
     energy_observability = energy_observability or {}
     ufh_observability = ufh_observability or {}
     water_side_output = water_side_output or {}
+    aggregate_capacity_calibration = aggregate_capacity_calibration or {}
+    aggregate_capacity = _finite_number_or_none(
+        aggregate_capacity_calibration.get("effective_building_thermal_capacity_wh_per_k")
+    )
+    aggregate_capacity_available = (
+        aggregate_capacity_calibration.get("status") == "effective_aggregate_capacity_estimate"
+        and aggregate_capacity is not None and aggregate_capacity > 0
+    )
     water_output_available = (
         water_side_output.get("status") == "system_water_side_output_available"
         and int(water_side_output.get("valid_samples") or 0) > 0
@@ -2913,6 +2922,63 @@ def build_multizone_physical_calibration_readiness(
             "absolute_parameter_status": "withheld_missing_independent_capacity_and_room_heat_input",
         }
 
+    # Allocate an independently estimated aggregate capacity only as
+    # conservative, energy-conserving scenarios. Neither scenario is a
+    # room-level identification or a calibrated RC parameter.
+    room_volumes = {
+        str(room.get("id", "unknown")): _finite_number_or_none(room.get("volume_m3"))
+        for room in rooms
+    }
+    room_volumes = {
+        room_id: volume for room_id, volume in room_volumes.items()
+        if volume is not None and volume > 0
+    }
+    total_volume = sum(room_volumes.values())
+    air_capacity_by_room = {
+        room_id: 1.2 * 1005.0 / 3600.0 * volume
+        for room_id, volume in room_volumes.items()
+    }
+    total_air_capacity = sum(air_capacity_by_room.values())
+    capacity_scenarios = {
+        "status": "withheld_aggregate_capacity_or_complete_room_volume_missing",
+        "aggregate_capacity_wh_per_k": round(aggregate_capacity, 1) if aggregate_capacity_available else None,
+        "configured_air_only_capacity_wh_per_k": round(total_air_capacity, 1) if total_volume > 0 else None,
+        "rooms": {},
+        "assumptions": [
+            "The aggregate effective capacity estimate describes the same conditioned boundary as all configured rooms.",
+            "Configured room volumes are complete and use consistent units.",
+            "Non-air capacity is allocated either in proportion to room volume or equally per room.",
+        ],
+        "interpretation": (
+            "These are aggregate-conserving allocation scenarios for sensitivity analysis only. "
+            "They are not measurements, fitted room capacities, confidence intervals or permission "
+            "to enable physical simulation."
+        ),
+    }
+    if aggregate_capacity_available and total_volume > 0 and len(room_volumes) == len(rooms):
+        excess_capacity = aggregate_capacity - total_air_capacity
+        if excess_capacity >= 0:
+            capacity_scenarios["status"] = "scenario_ranges_available_not_room_identification"
+            capacity_scenarios["non_air_capacity_pool_wh_per_k"] = round(excess_capacity, 1)
+            for room_id, volume in room_volumes.items():
+                air_only = air_capacity_by_room[room_id]
+                volume_weighted = air_only + excess_capacity * volume / total_volume
+                equal_share = air_only + excess_capacity / len(room_volumes)
+                capacity_scenarios["rooms"][room_id] = {
+                    "air_only_capacity_wh_per_k": round(air_only, 2),
+                    "volume_weighted_scenario_wh_per_k": round(volume_weighted, 2),
+                    "equal_non_air_share_scenario_wh_per_k": round(equal_share, 2),
+                    "scenario_min_wh_per_k": round(min(volume_weighted, equal_share), 2),
+                    "scenario_max_wh_per_k": round(max(volume_weighted, equal_share), 2),
+                    "identified_effective_capacity_wh_per_k": None,
+                }
+        else:
+            capacity_scenarios["status"] = "inconsistent_aggregate_capacity_below_configured_air_only"
+            capacity_scenarios["note"] = (
+                "The aggregate effective capacity is below the calculated air-only capacity. "
+                "Check room volumes, heat-loss calibration and conditioned-zone boundaries."
+            )
+
     measured_energy_channels = [
         key for key, item in energy_meters.items()
         if item.get("measured_energy_kwh") is not None
@@ -2971,6 +3037,12 @@ def build_multizone_physical_calibration_readiness(
             "available": water_output_available,
         },
         "independent_room_heat_output_channels": room_heat_output_channels,
+        "aggregate_capacity_evidence": {
+            "status": aggregate_capacity_calibration.get("status", "not_available"),
+            "effective_building_thermal_capacity_wh_per_k": round(aggregate_capacity, 1) if aggregate_capacity_available else None,
+            "room_allocation_status": capacity_scenarios["status"],
+        },
+        "room_capacity_allocation_scenarios": capacity_scenarios,
         "ufh_observability_status": ufh_observability.get("status", "not_available"),
         "absolute_room_parameters_identified": False,
         "physical_simulation_ready": False,

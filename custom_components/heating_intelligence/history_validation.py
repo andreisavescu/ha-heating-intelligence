@@ -2928,6 +2928,7 @@ def build_multizone_physical_calibration_readiness(
     ufh_observability: dict[str, Any] | None = None,
     water_side_output: dict[str, Any] | None = None,
     aggregate_capacity_calibration: dict[str, Any] | None = None,
+    floor_thermal_output: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarise which absolute multi-zone parameters are evidenced vs blocked.
 
@@ -2940,6 +2941,7 @@ def build_multizone_physical_calibration_readiness(
     ufh_observability = ufh_observability or {}
     water_side_output = water_side_output or {}
     aggregate_capacity_calibration = aggregate_capacity_calibration or {}
+    floor_thermal_output = floor_thermal_output or {}
     aggregate_capacity = _finite_number_or_none(
         aggregate_capacity_calibration.get("effective_building_thermal_capacity_wh_per_k")
     )
@@ -3081,6 +3083,10 @@ def build_multizone_physical_calibration_readiness(
             for sample in samples
         )
     ]
+    measured_floor_output_ids = [
+        floor_id for floor_id, item in (floor_thermal_output.get("floors") or {}).items()
+        if int(item.get("valid_samples") or 0) > 0
+    ]
     blockers = []
     if not measured_energy_channels:
         blockers.append("no_verified_system_energy_meter")
@@ -3121,6 +3127,13 @@ def build_multizone_physical_calibration_readiness(
             "available": water_output_available,
         },
         "independent_room_heat_output_channels": room_heat_output_channels,
+        "measured_floor_thermal_output": {
+            "status": floor_thermal_output.get("status", "not_available"),
+            "floors_with_measured_output": measured_floor_output_ids,
+            "independent_floor_totals_available": len(measured_floor_output_ids) == 2,
+            "room_level_delivery_identified": False,
+            "scope": "floor_total_not_room_level_delivery",
+        },
         "aggregate_capacity_evidence": {
             "status": aggregate_capacity_calibration.get("status", "not_available"),
             "effective_building_thermal_capacity_wh_per_k": round(aggregate_capacity, 1) if aggregate_capacity_available else None,
@@ -3136,7 +3149,7 @@ def build_multizone_physical_calibration_readiness(
             *([] if water_output_available else [
                 "Calibrated water flow rate paired with fresh supply and return temperatures, or another independently measured delivered-heat source",
             ]),
-            "A defensible method to allocate measured plant heat to individual rooms or zones",
+            "A defensible method to allocate each floor's measured heat among individual rooms",
             "Independent effective room thermal capacities, including UFH slab storage where applicable",
             "Held-out validation against measured thermal output, not only room-temperature persistence",
         ],

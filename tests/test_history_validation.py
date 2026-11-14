@@ -1176,3 +1176,26 @@ def test_multizone_physical_readiness_withholds_without_any_response_fit_or_ener
     assert result["rooms_with_normalized_response_fit"] == 0
     assert result["system_energy_meters_with_verified_deltas"] == []
     assert result["physical_simulation_ready"] is False
+
+
+def test_multizone_readiness_does_not_mistake_pump_power_or_water_delta_t_for_heat_output():
+    samples = [{
+        "timestamp": "2026-11-14T12:00:00+00:00",
+        "channels": {
+            "pump:ground_floor:power": 35.0,
+            "water_supply_temperature": 35.0,
+            "water_return_temperature": 29.0,
+        },
+        "rooms": {
+            "living": {"temperature": 20.0, "demand": "off", "window": "off"},
+        },
+    }]
+    result = MODULE.build_multizone_physical_calibration_readiness(
+        samples,
+        [{"id": "living", "volume_m3": 100, "air_changes_per_hour": 0.5}],
+    )
+    assert result["water_flow_measurement_channels"] == []
+    assert result["independent_room_heat_output_channels"] == []
+    assert "no_water_flow_measurement_for_water_side_output" in result["blockers"]
+    assert "no_independent_room_or_zone_heat_output_measurement" in result["blockers"]
+    assert result["absolute_room_parameters_identified"] is False

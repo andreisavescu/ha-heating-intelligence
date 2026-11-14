@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -521,6 +522,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
 
 def _as_float(value):
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    return number if math.isfinite(number) else None

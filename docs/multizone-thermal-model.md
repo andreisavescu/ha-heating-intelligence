@@ -115,3 +115,19 @@ thermostats, valves or HVAC equipment. Model outputs are estimates, not
 direct measurements of heat flow. If the available data cannot distinguish
 two physical parameters, the model must expose that uncertainty rather than
 inventing precision.
+
+
+## Room response evidence exposed to calibration
+
+Each room node now carries the existing rolling 30-day heating and coasting
+response rates, their confidence scores and valid interval counts when the
+room learner has enough clean observations. These are observed temperature
+slopes in °C/h, not physical RC parameters.
+
+A temperature slope by itself cannot distinguish thermal storage from heat
+transfer to outdoors or adjacent rooms. In particular, the current demand
+signal is not a measurement of delivered thermal power. Therefore these
+observations are not converted into room heat capacity, envelope conductance
+or a fitted time constant. They are exposed to show which rooms have usable
+response history and to guide later calibration using independent heat-input
+and boundary observations.

@@ -331,3 +331,8 @@ The UFH pump response diagnostic uses pump electrical power only to mark circula
 - Exclude explicitly open-window intervals, stale temperatures/irradiance and cadence gaps; reject unsupported irradiance units.
 - Surface configured per-room window area/orientation as context only. No solar gain watts, glazing transmittance, or absolute room RC parameters are inferred.
 - Include the evidence in the physical-readiness audit without changing the rule that physical simulation remains withheld until independent capacities, delivered-heat allocation and output validation exist.
+### Passive multi-zone fit data-quality gates
+- The normalized free-coasting RC fit now rejects stale room temperatures, demand/window states, solar irradiance, outdoor temperature and configured AC/boiler telemetry using the same 45-minute Recorder freshness limit.
+- Solar irradiance is checked in W/m² (or converted from kW/m²) before applying the low-solar threshold; explicitly unsupported units are excluded rather than compared numerically.
+- Exclusion counts distinguish stale measurements from missing states, active heating and high solar conditions.
+- These checks improve the validity of normalized G/C evidence; they do not convert the fit into absolute conductances or thermal capacities.

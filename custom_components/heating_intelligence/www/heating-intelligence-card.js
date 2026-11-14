@@ -182,6 +182,8 @@ class HeatingIntelligenceCard extends HTMLElement {
       <div class="detail-grid">
         <div class="metric"><span>Floor</span><strong>${this._esc(selected.floor_label || "Unassigned")}</strong></div>
         <div class="metric"><span>Room temperature</span><strong>${this._fmt(selected.temperature)}</strong></div>
+        <div class="metric"><span>Relative humidity</span><strong>${selected.humidity == null ? "Not configured" : this._fmt(selected.humidity, "%", 0) + " · " + (selected.humidity_status || "—")}</strong></div>
+        <div class="metric"><span>CO₂ concentration</span><strong>${selected.co2_entity ? (selected.co2_ppm == null ? "Unavailable" : this._fmt(selected.co2_ppm, "ppm", 0) + " · " + (selected.co2_status || "—")) : "Not configured"}</strong></div>
         <div class="metric"><span>Heating demand</span><strong class="${selected.demand ? "active" : ""}">${selected.demand ? "Requested" : "Not requested"}</strong></div>
         <div class="metric"><span>Window</span><strong class="${selected.window_open ? "warning" : ""}">${selected.window_entity ? (selected.window_open ? "Open" : "Closed") : "Not configured"}</strong></div>
         <div class="metric"><span>Demand today</span><strong>${this._fmt((selected.demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>

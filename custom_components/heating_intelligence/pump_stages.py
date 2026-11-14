@@ -73,7 +73,6 @@ def update_pump_stage(history: dict, power_w: float | None, now: datetime) -> di
             if power_w <= (baseline or 0.0) + max(2.0, (baseline or 0.0) * 0.5):
                 history["stage"] = "idle"
                 history["valve_level_w"] = None
-                history["valve_opened_at"] = None
     elif stage == "pump_running":
         stop_threshold = (baseline or 0.0) + max(
             3.0, ((history.get("valve_level_w") or baseline or 0.0) - (baseline or 0.0)) * 0.5
@@ -87,8 +86,6 @@ def update_pump_stage(history: dict, power_w: float | None, now: datetime) -> di
                 history["stage"] = "idle"
                 history["pump_stopped_at"] = history["below_idle_threshold_since"]
                 history["valve_level_w"] = None
-                history["valve_opened_at"] = None
-                history["pump_started_at"] = None
                 history["below_idle_threshold_since"] = None
         else:
             history["below_idle_threshold_since"] = None

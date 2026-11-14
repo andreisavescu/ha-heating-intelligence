@@ -276,7 +276,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             elif ac_power_unit == "mw":
                 ac_power_value /= 1000
         # Exclude room samples while the configured AC electrical input indicates active use.
-        ac_heating_active = ac_power_value is not None and ac_power_value > 50
+        ac_heating_active = bool(ac_power_entity) and (ac_power_value is None or ac_power_value > 50)
 
         prediction_rooms = {}
         learned_room_models = {}

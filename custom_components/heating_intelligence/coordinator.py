@@ -169,10 +169,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 True, False, True, True,
             )
             summary = build_recorder_history_summary(history, start, now)
+            ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
+            ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
+            ac_unit = (ac_state.attributes.get("unit_of_measurement") or "") if ac_state else ""
+            ac_scale = {"kw": 1000.0, "mw": 1_000_000.0, "mwatt": 0.001}.get(ac_unit.strip().lower(), 1.0)
             summary["room_response"] = build_recorder_room_response(
                 history,
                 self.entry.options.get(CONF_ROOMS, []),
-                self.entry.options.get(CONF_AC_POWER_ENTITY),
+                ac_power_entity,
+                ac_scale,
             )
         except Exception:
             _LOGGER.exception("Unable to read Recorder history for thermal validation")

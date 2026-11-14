@@ -3,6 +3,7 @@
 - Add a Home Assistant-independent lumped RC network solver with bounded integration steps and numerical validation.
 - Map configured room temperatures, demand/window states, CO₂, humidity and ACH alongside outdoor weather, attic, UFH floor context, boiler water temperatures, burner/modulation and pump telemetry.
 - Accept optional measured room volume and estimate ventilation conductance only when both room volume and ACH are configured.
+- Report air-only sensible heat capacity from configured room volume separately from effective room/building capacity. Ventilation conductance uses the configured ACH and volume, with an illustrative ±10% ACH sensitivity (not a confidence interval); missing room volumes remain explicitly uncovered.
 - Expose roof conductance only when roof U-value and area are explicitly configured.
 - Surface existing learned room heating/coasting rates, confidence and sample counts as calibration evidence; do not misrepresent temperature slopes as physical heat capacities or envelope U-values.
 - Query up to seven days of configured Home Assistant Recorder history locally every six hours and show per-entity data coverage for calibration planning. Raw history remains in Recorder and is not copied into integration storage or sent externally.

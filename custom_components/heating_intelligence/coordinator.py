@@ -23,6 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .pump_stages import update_pump_stage
+from .multizone_thermal_model import build_multizone_observation_model
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -625,6 +626,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         )
         result["efficiency"]["weather_normalised"] = weather_model
         result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
+        result["thermal_model"]["multi_zone"] = build_multizone_observation_model(
+            result["rooms"],
+            result["weather"],
+            result["attic_thermal"],
+            self.entry.options.get("house_assessment", {}),
+        )
         result["thermal_model"]["ac_heating_filter"] = (
             "sensor_unavailable" if ac_power_entity and ac_power_value is None
             else "active" if ac_heating_active

@@ -39,3 +39,6 @@ CONF_ELECTRICITY_BOILER_POWER_ENTITY = "electricity_boiler_power_entity"
 CONF_ELECTRICITY_BOILER_ENERGY_ENTITY = "electricity_boiler_energy_entity"
 
 CONF_COMFORT_TARGET_C = "comfort_target_c"
+
+# Optional editable building and heating-system assessment.
+CONF_HOUSE_ASSESSMENT = "house_assessment"

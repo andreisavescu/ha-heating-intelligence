@@ -215,7 +215,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             summary["solar_room_response_analysis"] = build_solar_room_response_analysis(
                 self._calibration_dataset_samples, configured_rooms,
                 interval_minutes=30, max_age_minutes=45,
-                maximum_lag_intervals=4, minimum_pairs=24,
+                maximum_lag_intervals=4, minimum_pairs=32,
             )
             summary["floor_thermal_output_observability"] = build_floor_thermal_output_observability(
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,

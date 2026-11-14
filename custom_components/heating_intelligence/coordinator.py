@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -196,6 +196,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             self._calibration_dataset_samples = aligned_dataset.pop("samples", [])
             summary["calibration_dataset"] = aligned_dataset
+            summary["room_level_excitation_identifiability"] = build_room_level_excitation_identifiability(
+                self._calibration_dataset_samples, configured_rooms, interval_minutes=30, minimum_mode_intervals=4,
+            )
             summary["thermal_input_room_response_alignment"] = build_thermal_input_room_response_alignment(
                 self._calibration_dataset_samples, configured_rooms, interval_minutes=30, max_age_minutes=45,
             )

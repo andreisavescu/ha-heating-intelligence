@@ -768,6 +768,133 @@ def build_recorder_calibration_dataset(
 
 
 
+
+def build_ufh_slab_observability(
+    samples: list[dict[str, Any]],
+    rooms: list[dict[str, Any]],
+    interval_minutes: int = 30,
+    minimum_on_intervals: int = 4,
+    minimum_off_intervals: int = 4,
+) -> dict[str, Any]:
+    """Assess UFH excitation and room response without inferring slab capacity.
+
+    Pump electrical power is used only as an on/off indicator. Supply/return
+    delta-T is a temperature observation, not thermal output without flow.
+    """
+    if interval_minutes <= 0 or minimum_on_intervals < 1 or minimum_off_intervals < 1:
+        raise ValueError("Invalid UFH observability thresholds")
+    results = {}
+    for floor_id in ("ground_floor", "upstairs"):
+        floor_rooms = [
+            room for room in rooms
+            if room.get("floor", "ground_floor") == floor_id
+        ]
+        pump_key = f"pump:{floor_id}:power"
+        on_rates, off_rates, on_water_delta = [], [], []
+        on_count = off_count = skipped = 0
+        previous = None
+        for sample in samples:
+            channels = sample.get("channels") or {}
+            room_values = sample.get("rooms") or {}
+            try:
+                stamp = datetime.fromisoformat(str(sample.get("timestamp")).replace("Z", "+00:00"))
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone.utc)
+                pump_power = _finite_number_or_none(channels.get(pump_key))
+                pump_age = _finite_number_or_none(channels.get(pump_key + "_age_minutes"))
+                if pump_power is None or (pump_age is not None and pump_age > 45):
+                    previous = None
+                    skipped += 1
+                    continue
+                temperatures = [
+                    _finite_number_or_none(room_values.get(str(room.get("id")), {}).get("temperature"))
+                    for room in floor_rooms
+                ]
+                temperatures = [value for value in temperatures if value is not None]
+                if not temperatures:
+                    previous = None
+                    skipped += 1
+                    continue
+                average_temp = sum(temperatures) / len(temperatures)
+                supply = _finite_number_or_none(channels.get("water_supply_temperature"))
+                return_temp = _finite_number_or_none(channels.get("water_return_temperature"))
+                supply_age = _finite_number_or_none(channels.get("water_supply_temperature_age_minutes"))
+                return_age = _finite_number_or_none(channels.get("water_return_temperature_age_minutes"))
+                water_delta = (
+                    supply - return_temp
+                    if supply is not None and return_temp is not None
+                    and (supply_age is None or supply_age <= 45)
+                    and (return_age is None or return_age <= 45)
+                    else None
+                )
+            except (TypeError, ValueError):
+                previous = None
+                skipped += 1
+                continue
+            current = (stamp, average_temp, pump_power > 5.0, water_delta)
+            if previous is not None:
+                elapsed = (stamp - previous[0]).total_seconds() / 60
+                if abs(elapsed - interval_minutes) <= 2:
+                    rate = (average_temp - previous[1]) / (elapsed / 60)
+                    # Use the current sample's pump state; room temperatures are
+                    # an observed response, not a direct measure of slab heat.
+                    if current[2]:
+                        on_count += 1
+                        on_rates.append(rate)
+                        if water_delta is not None:
+                            on_water_delta.append(water_delta)
+                    else:
+                        off_count += 1
+                        off_rates.append(rate)
+                else:
+                    skipped += 1
+            previous = current
+
+        def median_or_none(values):
+            ordered = sorted(values)
+            if not ordered:
+                return None
+            middle = len(ordered) // 2
+            return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+
+        enough_excitation = on_count >= minimum_on_intervals and off_count >= minimum_off_intervals
+        results[floor_id] = {
+            "status": (
+                "pump_on_off_excitation_observed_but_capacity_unidentifiable"
+                if enough_excitation else
+                "insufficient_pump_excitation_or_history"
+            ),
+            "pump_on_intervals": on_count,
+            "pump_off_intervals": off_count,
+            "skipped_intervals": skipped,
+            "median_room_temperature_rate_pump_on_c_per_hour": round(median_or_none(on_rates), 4) if on_rates else None,
+            "median_room_temperature_rate_pump_off_c_per_hour": round(median_or_none(off_rates), 4) if off_rates else None,
+            "median_supply_return_delta_t_pump_on_c": round(median_or_none(on_water_delta), 3) if on_water_delta else None,
+            "rooms_included": len(floor_rooms),
+            "slab_temperature_available": False,
+            "thermal_output_w": None,
+            "slab_capacity_wh_per_k": None,
+            "note": (
+                "Pump-on/off and adjacent-room temperature responses indicate whether useful UFH "
+                "excitation exists in Recorder history. They do not identify slab temperature or "
+                "absolute slab capacity. Supply-return delta-T is not heat output without water flow; "
+                "pump electrical power is auxiliary consumption, not delivered heat."
+            ),
+        }
+    return {
+        "status": "available" if any(
+            item["status"] == "pump_on_off_excitation_observed_but_capacity_unidentifiable"
+            for item in results.values()
+        ) else "insufficient_ufh_excitation",
+        "interval_minutes": interval_minutes,
+        "floors": results,
+        "interpretation": (
+            "This is an excitation and observability screen only. It does not calibrate UFH slab "
+            "capacity or water-side thermal output."
+        ),
+    }
+
+
 def _symmetric_matrix_eigenvalues(matrix: list[list[float]]) -> list[float]:
     """Return eigenvalues of a small real symmetric matrix via Jacobi rotations."""
     size = len(matrix)

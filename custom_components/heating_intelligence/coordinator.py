@@ -23,7 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -60,6 +60,8 @@ from .const import (
     CONF_WATER_TEMPERATURE_ENTITY,
     CONF_RETURN_WATER_TEMPERATURE_ENTITY,
     CONF_WATER_FLOW_RATE_ENTITY,
+    CONF_GROUND_FLOOR_THERMAL_OUTPUT_ENTITY,
+    CONF_UPSTAIRS_THERMAL_OUTPUT_ENTITY,
     CONF_WINDOW_ENTITY,
     CONF_HUMIDITY_ENTITY,
     CONF_CO2_ENTITY,
@@ -126,7 +128,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             CONF_OUTDOOR_TEMPERATURE_ENTITY, CONF_SOLAR_RADIATION_ENTITY,
             CONF_ATTIC_TEMPERATURE_ENTITY, CONF_ATTIC_HUMIDITY_ENTITY,
             CONF_GAS_CONSUMPTION_ENTITY, CONF_WATER_TEMPERATURE_ENTITY,
-            CONF_RETURN_WATER_TEMPERATURE_ENTITY, CONF_WATER_FLOW_RATE_ENTITY, CONF_AC_POWER_ENTITY,
+            CONF_RETURN_WATER_TEMPERATURE_ENTITY, CONF_WATER_FLOW_RATE_ENTITY,
+            CONF_GROUND_FLOOR_THERMAL_OUTPUT_ENTITY, CONF_UPSTAIRS_THERMAL_OUTPUT_ENTITY, CONF_AC_POWER_ENTITY,
             CONF_AC_ENERGY_ENTITY, CONF_BOILER_BURNER_ENTITY,
             CONF_BOILER_MODULATION_ENTITY, CONF_ELECTRICITY_BOILER_POWER_ENTITY,
             CONF_ELECTRICITY_BOILER_ENERGY_ENTITY, CONF_ELECTRICITY_BOILER_ENTITY,
@@ -185,6 +188,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "water_supply_temperature": self.entry.options.get(CONF_WATER_TEMPERATURE_ENTITY),
                 "water_return_temperature": self.entry.options.get(CONF_RETURN_WATER_TEMPERATURE_ENTITY),
                 "water_flow_rate": self.entry.options.get(CONF_WATER_FLOW_RATE_ENTITY),
+                "ground_floor_thermal_output": self.entry.options.get(CONF_GROUND_FLOOR_THERMAL_OUTPUT_ENTITY),
+                "upstairs_thermal_output": self.entry.options.get(CONF_UPSTAIRS_THERMAL_OUTPUT_ENTITY),
                 "boiler_burner": self.entry.options.get(CONF_BOILER_BURNER_ENTITY),
                 "boiler_modulation": self.entry.options.get(CONF_BOILER_MODULATION_ENTITY),
             }
@@ -205,6 +210,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 self._calibration_dataset_samples, configured_rooms, interval_minutes=30, max_age_minutes=45,
             )
             summary["thermal_input_energy_observability"] = build_thermal_input_energy_observability(
+                self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
+            )
+            summary["floor_thermal_output_observability"] = build_floor_thermal_output_observability(
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
             )
             summary["water_side_thermal_output"] = build_water_side_thermal_output(

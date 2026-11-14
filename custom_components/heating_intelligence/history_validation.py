@@ -160,6 +160,116 @@ def build_recorder_room_response(
     return output
 
 
+
+def build_preliminary_room_calibration(
+    history: dict[str, list[Any]],
+    rooms: list[dict[str, Any]],
+    outdoor_temperature_entity: str | None,
+) -> dict[str, Any]:
+    """Estimate an apparent free-cooling time constant from clean Recorder intervals.
+
+    This is a directional, data-derived estimate, not an independently
+    identified room capacity or envelope conductance. Adjacent-room heat
+    exchange, solar/internal gains and unmeasured plant input remain confounders.
+    """
+    from statistics import median
+
+    outdoor = _timeline(history, outdoor_temperature_entity)
+    results: dict[str, Any] = {}
+    for room in rooms:
+        room_id = room.get("id", "unknown")
+        temperatures = []
+        for state in history.get(room.get("temperature_entity"), []):
+            stamp = _timestamp(state)
+            value = _state_value(state)
+            if stamp is not None and value is not None:
+                temperatures.append((stamp, value))
+        temperatures.sort(key=lambda item: item[0])
+        demand = _timeline(history, room.get("demand_entity"))
+        windows = _timeline(history, room.get("window_entity"))
+        observations = []
+        exclusions = {"unknown_demand": 0, "window_not_confirmed_closed": 0,
+                      "outdoor_unavailable": 0, "invalid_interval": 0,
+                      "insufficient_indoor_outdoor_delta": 0}
+        previous = None
+        for stamp, temp in temperatures:
+            mode = _switch_state(_latest_at(demand, stamp))
+            window = _switch_state(_latest_at(windows, stamp))
+            outside_raw = _latest_at(outdoor, stamp)
+            try:
+                outside = float(outside_raw)
+            except (TypeError, ValueError):
+                outside = None
+            if mode is not False:
+                exclusions["unknown_demand"] += 1
+                previous = None
+                continue
+            if window is not False:
+                exclusions["window_not_confirmed_closed"] += 1
+                previous = None
+                continue
+            if outside is None or not math.isfinite(outside):
+                exclusions["outdoor_unavailable"] += 1
+                previous = None
+                continue
+            delta = temp - outside
+            if delta < 1.0:
+                exclusions["insufficient_indoor_outdoor_delta"] += 1
+                previous = None
+                continue
+            if previous is not None:
+                prev_stamp, prev_temp, prev_delta = previous
+                hours = (stamp - prev_stamp).total_seconds() / 3600
+                if 1 / 6 <= hours <= 1.0 and prev_delta >= 1.0:
+                    observations.append(((prev_delta + delta) / 2,
+                                         (temp - prev_temp) / hours))
+                else:
+                    exclusions["invalid_interval"] += 1
+            previous = (stamp, temp, delta)
+
+        # OLS: dT/dt = intercept + slope * (Troom - Tout).
+        # A negative slope implies an apparent first-order decay time constant.
+        n = len(observations)
+        tau = slope = r_squared = None
+        if n >= 8:
+            xs = [item[0] for item in observations]
+            ys = [item[1] for item in observations]
+            x_bar, y_bar = sum(xs) / n, sum(ys) / n
+            sxx = sum((x - x_bar) ** 2 for x in xs)
+            if sxx > 1e-9:
+                slope = sum((x - x_bar) * (y - y_bar) for x, y in zip(xs, ys)) / sxx
+                intercept = y_bar - slope * x_bar
+                residual = sum((y - (intercept + slope * x)) ** 2 for x, y in zip(xs, ys))
+                total = sum((y - y_bar) ** 2 for y in ys)
+                r_squared = max(0.0, min(1.0, 1 - residual / total)) if total > 1e-9 else None
+                if slope < -1e-5:
+                    tau = -1 / slope
+        status = "preliminary_estimate" if tau is not None else "insufficient_or_non_identifiable_data"
+        results[room_id] = {
+            "status": status,
+            "method": "free_cooling_ols_dTdt_vs_indoor_outdoor_delta",
+            "valid_intervals": n,
+            "apparent_time_constant_hours": round(tau, 2) if tau is not None else None,
+            "decay_slope_per_hour": round(slope, 5) if slope is not None else None,
+            "fit_r_squared": round(r_squared, 3) if r_squared is not None else None,
+            "excluded_observations": exclusions,
+            "interpretation": (
+                "Directional first-order decay estimate from demand-off, confirmed-closed-window periods. "
+                "It includes room coupling and unmeasured gains; do not interpret it as a physical room "
+                "capacity or envelope conductance."
+            ),
+        }
+    available = sum(1 for item in results.values() if item["status"] == "preliminary_estimate")
+    return {
+        "status": "preliminary_estimates_available" if available else "collecting_clean_cooling_data",
+        "rooms_with_estimates": available,
+        "rooms_analysed": len(results),
+        "rooms": results,
+        "method": "apparent_free_cooling_time_constant",
+        "note": "First-pass house-specific calibration evidence. Parameters are directional and require held-out validation.",
+    }
+
+
 def build_recorder_history_summary(
     history: dict[str, list[Any]],
     start: datetime,

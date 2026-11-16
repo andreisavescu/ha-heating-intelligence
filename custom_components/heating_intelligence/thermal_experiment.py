@@ -196,6 +196,8 @@ def build_experiment_summary(
     climate_entity: str | None = None,
     power_unit: str = "W",
     max_power_gap_seconds: float = 300.0,
+    periods: dict[str, dict[str, str]] | None = None,
+    user_supplied_event_annotations: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a transparent data-quality inventory for an exported experiment."""
     entities = set(room_temperature_entities.values())
@@ -231,6 +233,21 @@ def build_experiment_summary(
             "User-supplied boiler and pump events remain external annotations, not CSV observations.",
         ],
     }
+    if periods:
+        result["room_temperature_responses"] = {
+            period_name: {
+                room_name: temperature_response(
+                    rows, entity_id, period.get("start"), period.get("end")
+                )
+                for room_name, entity_id in room_temperature_entities.items()
+            }
+            for period_name, period in periods.items()
+        }
+    if user_supplied_event_annotations:
+        # Keep manual operating facts separate from Recorder-derived states.
+        result["user_supplied_event_annotations"] = [
+            dict(item) for item in user_supplied_event_annotations
+        ]
     if ac_power_entity:
         result["combined_ac_electrical_input"] = integrate_power_samples(
             rows, ac_power_entity, max_gap_seconds=max_power_gap_seconds,

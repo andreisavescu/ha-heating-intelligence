@@ -82,11 +82,11 @@ def integrate_power_samples(
     excluded_gap = 0
     for (t0, p0), (t1, p1) in zip(points, points[1:]):
         seconds = (t1 - t0).total_seconds()
-        if p0 < 0 or p1 < 0:
-            excluded_negative += 1
-            continue
         if seconds <= 0 or seconds > max_gap_seconds:
             excluded_gap += 1
+            continue
+        if p0 < 0 or p1 < 0:
+            excluded_negative += 1
             continue
         energy_wh += ((p0 + p1) / 2.0) * seconds / 3600.0
         covered += seconds

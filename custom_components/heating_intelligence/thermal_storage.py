@@ -99,7 +99,7 @@ def build_thermal_storage_response_analysis(
         elif ac is not None and ac_unit not in ("w", "watt", "watts", ""):
             ac = None
         ac_age = _finite(channels.get("ac_power_age_minutes"))
-        if ac is None or (ac_age is not None and ac_age > max_age_minutes):
+        if ac is None or ac < 0 or (ac_age is not None and ac_age > max_age_minutes):
             reasons["missing_or_stale_ac_power"] += 1
             continue
         if ac > ac_active_threshold_w:
@@ -115,7 +115,7 @@ def build_thermal_storage_response_analysis(
         elif pump is not None and pump_unit not in ("w", "watt", "watts", ""):
             pump = None
         pump_age = _finite(channels.get(pump_channel + "_age_minutes"))
-        if pump is None or (pump_age is not None and pump_age > max_age_minutes):
+        if pump is None or pump < 0 or (pump_age is not None and pump_age > max_age_minutes):
             reasons["upstairs_pump_state_unknown"] += 1
             continue
         if pump > pump_off_threshold_w:

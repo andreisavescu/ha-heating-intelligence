@@ -64,3 +64,13 @@ def test_open_window_or_unknown_burner_prevents_clean_passive_classification():
     )
     assert result["eligible_sample_count"] == 5
     assert result["identified_passive_period_count"] == 0
+
+
+def test_negative_power_readings_are_not_treated_as_equipment_off():
+    samples = [make_sample(i, ac=-10 if i == 1 else 0) for i in range(6)]
+    result = MODULE.build_thermal_storage_response_analysis(
+        samples, [{"id": "bedroom"}], [{"id": "upstairs", "floor": "upstairs"}],
+    )
+    assert result["eligible_sample_count"] == 5
+    assert result["excluded_samples"]["missing_or_stale_ac_power"] == 1
+    assert result["identified_passive_period_count"] == 0

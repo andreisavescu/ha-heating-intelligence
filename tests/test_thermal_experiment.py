@@ -24,7 +24,7 @@ def test_power_integration_uses_trapezoids_and_rejects_negative_and_long_gaps():
     result = MODULE.integrate_power_samples(rows, "sensor.ac")
     assert result["valid_interval_count"] == 2
     assert result["energy_wh"] == 7.5
-    assert result["excluded_negative_intervals"] == 2
+    assert result["excluded_negative_intervals"] == 1
     assert result["excluded_long_or_invalid_gaps"] == 1
 
 

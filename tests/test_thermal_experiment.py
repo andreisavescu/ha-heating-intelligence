@@ -85,5 +85,5 @@ def test_experiment_summary_marks_combined_ac_input_not_room_heat():
         ac_power_entity="ac", climate_entity="climate",
     )
     assert result["combined_ac_electrical_input"]["energy_wh"] == 2.5
-    assert "not room-level thermal output" in result["combined_ac_electrical_input"]["scope"]
+    assert "not_room_level_heat_output" in result["combined_ac_electrical_input"]["scope"]
     assert any("not room-level thermal output" in item for item in result["interpretation_limits"])

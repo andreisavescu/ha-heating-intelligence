@@ -85,6 +85,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         self._store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_pump_history")
         self._history: dict = {"pumps": {}, "sync_mismatch_count": 0, "last_sync_result": "unknown"}
         self._calibration_dataset_samples: list[dict] = []
+        self._historical_validation_task = None
         super().__init__(
             hass,
             logger=_LOGGER,
@@ -124,7 +125,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         last_value = self._history.get("recorder_history_checked_at")
         last_check = dt_util.parse_datetime(last_value) if last_value else None
         cached = self._history.get("recorder_history_summary")
-        if last_check and cached and self._calibration_dataset_samples and (now - last_check).total_seconds() < 6 * 3600:
+        if last_check and cached and (now - last_check).total_seconds() < 6 * 3600:
             return cached
 
         entity_ids = set()
@@ -335,6 +336,78 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         self._history["recorder_history_checked_at"] = now.isoformat()
         self._history["recorder_history_summary"] = summary
         return summary
+
+    async def _async_refresh_historical_validation(self) -> None:
+        """Run expensive Recorder analysis after live data is already available."""
+        try:
+            now = dt_util.utcnow()
+            current = dict(self.data or {})
+            validation = await self._async_recorder_history_summary(
+                now, current.get("efficiency", {})
+            )
+            await self._store.async_save(self._history)
+
+            # Merge into the latest live snapshot, preserving newer sensor readings.
+            current = dict(self.data or {})
+            thermal_model = dict(current.get("thermal_model") or {})
+            identification = validation.get("multizone_response_identification", {})
+            learning_state = build_validated_learning_state(
+                self._history.get("validated_calibration_learning"),
+                identification,
+                self._history.get("recorder_history_checked_at") or now.isoformat(),
+            )
+            self._history["validated_calibration_learning"] = learning_state
+            thermal_model["validated_learning"] = validated_learning_diagnostics(learning_state)
+            thermal_model["historical_validation"] = {
+                **validation,
+                "validated_learning": thermal_model["validated_learning"],
+            }
+
+            house_profile = dict(self.entry.options.get("house_assessment", {}))
+            house_profile["house_effective_rc_calibration"] = validation.get(
+                "house_effective_rc_calibration", {}
+            )
+            efficiency = current.get("efficiency") or {}
+            heat_loss_u = _as_float(efficiency.get("heat_loss_u_value_7d"))
+            envelope_area = _as_float(efficiency.get("thermal_model_envelope_area_m2"))
+            thermal_model["multi_zone"] = build_multizone_observation_model(
+                current.get("rooms", {}),
+                current.get("weather", {}),
+                current.get("attic_thermal", {}),
+                house_profile,
+                {
+                    "water_temperature": current.get("water_temperature"),
+                    "water_return_temperature": current.get("water_return_temperature"),
+                    "boiler_context": current.get("boiler_context", {}),
+                    "pumps": current.get("pumps", {}),
+                    "ufh_slab_observability": validation.get("ufh_slab_observability", {}),
+                    "house_heat_loss_coefficient_w_k": (
+                        heat_loss_u * envelope_area
+                        if heat_loss_u is not None and envelope_area is not None else None
+                    ),
+                },
+            )
+            current["thermal_model"] = thermal_model
+            self.async_set_updated_data(current)
+            await self._store.async_save(self._history)
+        except Exception:
+            _LOGGER.exception("Background Recorder thermal validation failed")
+        finally:
+            self._historical_validation_task = None
+
+    def _schedule_historical_validation(self, now) -> None:
+        """Start one background history pass when the cache is absent or stale."""
+        last_value = self._history.get("recorder_history_checked_at")
+        last_check = dt_util.parse_datetime(last_value) if last_value else None
+        cached = self._history.get("recorder_history_summary")
+        fresh = bool(
+            last_check and cached
+            and (now - last_check).total_seconds() < 6 * 3600
+        )
+        if not fresh and self._historical_validation_task is None:
+            self._historical_validation_task = self.hass.async_create_task(
+                self._async_refresh_historical_validation()
+            )
 
     async def _async_update_data(self):
         """Return a snapshot and update pump cycle accounting on state transitions."""
@@ -777,8 +850,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         )
         result["efficiency"]["weather_normalised"] = weather_model
         result["thermal_model"] = build_house_thermal_model(learned_room_models, result["efficiency"])
-        result["thermal_model"]["historical_validation"] = await self._async_recorder_history_summary(now, result["efficiency"])
-        validation = result["thermal_model"]["historical_validation"]
+        validation = self._history.get("recorder_history_summary") or {
+            "status": "pending",
+            "source": "home_assistant_recorder",
+            "note": "Historical thermal validation is running in the background; live monitoring is available.",
+        }
+        result["thermal_model"]["historical_validation"] = validation
         identification = validation.get("multizone_response_identification", {})
         learning_state = build_validated_learning_state(
             self._history.get("validated_calibration_learning"),
@@ -887,6 +964,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         )
         result["predictions"]["validation"] = result["advanced_heating"]["forecast_validation"]
         await self._store.async_save(self._history)
+        self._schedule_historical_validation(now)
         return result
 
 

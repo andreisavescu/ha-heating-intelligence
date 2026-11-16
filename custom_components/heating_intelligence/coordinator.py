@@ -86,6 +86,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         self._history: dict = {"pumps": {}, "sync_mismatch_count": 0, "last_sync_result": "unknown"}
         self._calibration_dataset_samples: list[dict] = []
         self._historical_validation_task = None
+        self._recorder_history_attempted = False
         super().__init__(
             hass,
             logger=_LOGGER,
@@ -125,9 +126,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         last_value = self._history.get("recorder_history_checked_at")
         last_check = dt_util.parse_datetime(last_value) if last_value else None
         cached = self._history.get("recorder_history_summary")
-        if last_check and cached and (now - last_check).total_seconds() < 6 * 3600:
+        if last_check and cached and self._recorder_history_attempted and (now - last_check).total_seconds() < 6 * 3600:
             return cached
 
+        self._recorder_history_attempted = True
         entity_ids = set()
         option_keys = (
             CONF_OUTDOOR_TEMPERATURE_ENTITY, CONF_SOLAR_RADIATION_ENTITY,

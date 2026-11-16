@@ -70,6 +70,7 @@ def test_negative_power_readings_are_not_treated_as_equipment_off():
     samples = [make_sample(i, ac=-10 if i == 1 else 0) for i in range(6)]
     result = MODULE.build_thermal_storage_response_analysis(
         samples, [{"id": "bedroom"}], [{"id": "upstairs", "floor": "upstairs"}],
+        minimum_period_samples=5,
     )
     assert result["eligible_sample_count"] == 5
     assert result["excluded_samples"]["missing_or_stale_ac_power"] == 1

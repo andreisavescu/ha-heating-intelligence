@@ -87,3 +87,27 @@ def test_experiment_summary_marks_combined_ac_input_not_room_heat():
     assert result["combined_ac_electrical_input"]["energy_wh"] == 2.5
     assert "not_room_level_heat_output" in result["combined_ac_electrical_input"]["scope"]
     assert any("not room-level thermal output" in item for item in result["interpretation_limits"])
+
+
+def test_experiment_summary_keeps_manual_events_separate_and_reports_room_periods():
+    rows = [
+        row("bedroom", "2026-11-15T10:00:00Z", "22.0"),
+        row("bedroom", "2026-11-15T11:00:00Z", "22.4"),
+    ]
+    result = MODULE.build_experiment_summary(
+        rows, room_temperature_entities={"bedroom": "bedroom"},
+        periods={"ac_off": {
+            "start": "2026-11-15T10:00:00Z",
+            "end": "2026-11-15T11:00:00Z",
+        }},
+        user_supplied_event_annotations=[{
+            "event": "upstairs_ufh_pump_stopped",
+            "time": "2026-11-15T10:00:00+02:00",
+            "source": "user_report",
+        }],
+    )
+    response = result["room_temperature_responses"]["ac_off"]["bedroom"]
+    assert response["temperature_change_c"] == 0.4
+    assert response["rate_c_per_hour"] == 0.4
+    assert result["user_supplied_event_annotations"][0]["source"] == "user_report"
+    assert "upstairs_ufh_pump_stopped" not in result["entities"]

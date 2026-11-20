@@ -88,7 +88,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["house_assessment", "add_room", "edit_room", "room_air_quality", "room_area", "remove_room", "global_settings", "pump_settings"],
+            menu_options=["house_assessment", "add_room", "edit_room", "room_air_quality", "room_area", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
         )
 
     async def async_step_house_assessment(self, user_input=None):
@@ -314,6 +314,71 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
         })
         return self.async_show_form(step_id="pump_settings", data_schema=schema)
+
+    async def async_step_ufh_circuits(self, user_input=None):
+        """Configure room-demand and manifold associations for UFH circuits."""
+        rooms = self.config_entry.options.get(CONF_ROOMS, [])
+        pumps = self.config_entry.options.get(CONF_PUMPS, [])
+        if not rooms:
+            return self.async_abort(reason="no_rooms")
+        if not pumps:
+            return self.async_abort(reason="no_pumps")
+        circuits = {
+            item["id"]: item
+            for item in self.config_entry.options.get("ufh_circuits", [])
+        }
+        if user_input is not None:
+            number = int(user_input["circuit_number"])
+            circuit_id = f"circuit_{number:02d}"
+            room = next(item for item in rooms if item["id"] == user_input["room_id"])
+            demand_rooms = user_input.get("demand_rooms") or [room["id"]]
+            if not isinstance(demand_rooms, list):
+                demand_rooms = [demand_rooms]
+            circuit = {
+                "id": circuit_id,
+                "circuit_number": number,
+                "name": user_input.get("name") or f"{room['name']} circuit {number}",
+                "room_id": room["id"],
+                "floor": room.get(CONF_FLOOR, "unassigned"),
+                "pipe_length_m": float(user_input["pipe_length_m"]),
+                "pump_id": user_input["pump_id"],
+                "demand_rooms": demand_rooms,
+                "demand_logic": user_input.get("demand_logic", "or"),
+            }
+            updated = dict(self.config_entry.options)
+            updated["ufh_circuits"] = [
+                item for item in self.config_entry.options.get("ufh_circuits", [])
+                if item.get("id") != circuit_id
+            ] + [circuit]
+            return self.async_create_entry(title="", data=updated)
+
+        room_options = {item["id"]: item[CONF_NAME] for item in rooms}
+        pump_options = {item["id"]: item["name"] for item in pumps}
+        current_number = 1
+        current = circuits.get(f"circuit_{current_number:02d}", {})
+        return self.async_show_form(
+            step_id="ufh_circuits",
+            data_schema=vol.Schema({
+                vol.Required("circuit_number", default=current_number): vol.In({
+                    number: f"Circuit {number:02d}" for number in range(1, 17)
+                }),
+                vol.Required("room_id", default=current.get("room_id", rooms[0]["id"])): vol.In(room_options),
+                vol.Optional("name", default=current.get("name", "")): str,
+                vol.Required("pipe_length_m", default=current.get("pipe_length_m", 80.0)):
+                    selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=250, step=0.5, unit_of_measurement="m", mode=selector.NumberSelectorMode.BOX)),
+                vol.Required("pump_id", default=current.get("pump_id", next(iter(pump_options)))): vol.In(pump_options),
+                vol.Optional("demand_rooms", default=current.get("demand_rooms", [rooms[0]["id"]])):
+                    selector.SelectSelector(selector.SelectSelectorConfig(options=[
+                        {"value": room_id, "label": label} for room_id, label in room_options.items()
+                    ], multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)),
+                vol.Required("demand_logic", default=current.get("demand_logic", "or")):
+                    vol.In({"or": "Any selected room requests heat (OR)", "and": "All selected rooms request heat (AND)"}),
+            }),
+            description_placeholders={
+                "configured_circuits": str(len(circuits)),
+                "flow_inputs": "16",
+            },
+        )
 
     async def async_step_add_room(self, user_input=None):
         if user_input is not None:

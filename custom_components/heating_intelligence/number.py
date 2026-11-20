@@ -1,7 +1,7 @@
 """Manual flowmeter inputs for underfloor-heating circuits."""
 from __future__ import annotations
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import NumberMode
 from homeassistant.helpers.restore_state import RestoreNumber
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -21,7 +21,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
 
 class UfhCircuitFlowNumber(
-    HouseDeviceMixin, CoordinatorEntity, RestoreNumber, NumberEntity
+    HouseDeviceMixin, CoordinatorEntity, RestoreNumber
 ):
     """User-entered flowmeter reading for one UFH circuit."""
 
@@ -51,6 +51,7 @@ class UfhCircuitFlowNumber(
                 max(self._attr_native_min_value, float(last_number_data.native_value)),
             )
         self.coordinator.set_ufh_flow_rate(self.circuit_id, self._attr_native_value)
+        await self.coordinator.async_request_refresh()
 
     async def async_set_native_value(self, value: float) -> None:
         """Store a flowmeter reading without controlling any physical device."""

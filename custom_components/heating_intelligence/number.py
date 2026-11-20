@@ -60,7 +60,7 @@ class UfhCircuitFlowNumber(
         )
         self.coordinator.set_ufh_flow_rate(self.circuit_id, self._attr_native_value)
         self.async_write_ha_state()
-        self.coordinator.async_set_updated_data(self.coordinator.data)
+        await self.coordinator.async_request_refresh()
 
     @property
     def extra_state_attributes(self) -> dict:

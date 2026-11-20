@@ -36,6 +36,7 @@ class UfhCircuitFlowNumber(
     def __init__(self, coordinator, circuit_number: int) -> None:
         super().__init__(coordinator)
         self.circuit_number = circuit_number
+        self.circuit_id = f"circuit_{circuit_number:02d}"
         self._attr_name = f"UFH Circuit {circuit_number:02d} Flow"
         self._attr_unique_id = f"{DOMAIN}_ufh_circuit_{circuit_number:02d}_flow"
         self._attr_native_value = 0.0
@@ -49,6 +50,7 @@ class UfhCircuitFlowNumber(
                 self._attr_native_max_value,
                 max(self._attr_native_min_value, float(last_number_data.native_value)),
             )
+        self.coordinator.set_ufh_flow_rate(self.circuit_id, self._attr_native_value)
 
     async def async_set_native_value(self, value: float) -> None:
         """Store a flowmeter reading without controlling any physical device."""
@@ -56,13 +58,16 @@ class UfhCircuitFlowNumber(
             min(self._attr_native_max_value, max(self._attr_native_min_value, value)),
             2,
         )
+        self.coordinator.set_ufh_flow_rate(self.circuit_id, self._attr_native_value)
         self.async_write_ha_state()
+        self.coordinator.async_set_updated_data(self.coordinator.data)
 
     @property
     def extra_state_attributes(self) -> dict:
         """Expose the circuit index until the room mapping is configured."""
         return {
             "circuit_number": self.circuit_number,
+            "circuit_id": self.circuit_id,
             "measurement_type": "manual_flowmeter_setting",
             "note": "User-entered flowmeter reading; not an automatically measured sensor.",
         }

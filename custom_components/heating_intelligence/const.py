@@ -2,7 +2,7 @@
 from homeassistant.const import Platform
 
 DOMAIN = "heating_intelligence"
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.NUMBER]
 CONF_ROOMS = "rooms"
 CONF_CALIBRATION_HISTORY_DAYS = "calibration_history_days"
 DEFAULT_CALIBRATION_HISTORY_DAYS = 90

@@ -249,6 +249,20 @@ class HeatingIntelligenceCard extends HTMLElement {
     return this._heatFlowSankey({circuits}, rooms, "boiler");
   }
 
+  _dailyHeatFlowSankey(row, method, rooms) {
+    if (!row) return '<div class="chart-empty">Daily comparison data is collecting.</div>';
+    const key = method === "modulation" ? "modulation_room_energy_kwh" : "hydraulic_room_energy_kwh";
+    const energy = row[key] || {};
+    const circuits = {};
+    for (const [roomId, value] of Object.entries(energy)) {
+      const room = rooms?.[roomId];
+      if (!room || !(Number(value) > 0)) continue;
+      circuits["daily_" + roomId] = {flow_active:true, estimated_thermal_power_w:Number(value), demand_floor:room.floor || "unassigned", served_rooms:[roomId]};
+    }
+    if (!Object.keys(circuits).length) return '<div class="chart-empty">No room energy has been allocated for this day yet.</div>';
+    return this._heatFlowSankey({circuits}, rooms, method + "_daily", "kWh");
+  }
+
   _dailyAlgorithmEnergyChart(rows, key, title) {
     const data=(rows||[]).filter(d=>d.date&&Number.isFinite(Number(d[key])));
     if(!data.length)return '<div class="chart-empty">Daily comparison data is collecting.</div>';

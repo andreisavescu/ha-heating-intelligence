@@ -187,7 +187,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     const scale=v=>Math.max(1.5,v/max*20);
     const height=Math.max(240,Math.max(activeFloors.length,circuitNodes.length,roomNodes.length)*62+56);
     const yAt=(i,n)=>((i+0.5)*height/n);
-    const floorNodes=activeFloors.map((f,i)=>({...f,y:yAt(i,activeFloors.length),power:f.circuits.reduce((n,[,c])=>n+(Number(c.estimated_thermal_power_w)||0),0)}));
+    const floorNodes=activeFloors.map((f,i)=>({...f,name:f.label,y:yAt(i,activeFloors.length),power:f.circuits.reduce((n,[,c])=>n+(Number(c.estimated_thermal_power_w)||0),0)}));
     const cNodes=circuitNodes.map((c,i)=>({...c,y:yAt(i,circuitNodes.length)}));
     const rNodes=roomNodes.map((r,i)=>({...r,y:yAt(i,roomNodes.length)}));
     const links=[];

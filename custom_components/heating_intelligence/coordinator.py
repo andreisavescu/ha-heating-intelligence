@@ -1023,7 +1023,38 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             elapsed,
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
+            now_local,
         )
+        # Keep a date-keyed side-by-side daily comparison. The hydraulic
+        # baseline sums the existing room thermal-energy estimates; the
+        # experimental series uses gas-reconciled useful boiler heat.
+        comparison = self._history.setdefault("algorithm_daily_comparison", {})
+        day_key = now_local.date().isoformat()
+        baseline_today = sum(
+            float(room.get("thermal_energy_today_kwh") or 0.0)
+            for room in result.get("rooms", {}).values()
+        )
+        experiment_today = float(
+            result["boiler_energy_experiment"].get("boiler_daily_generated_heat_kwh", {}).get(day_key, 0.0)
+        )
+        comparison[day_key] = {
+            "date": day_key,
+            "hydraulic_estimated_heat_kwh": round(baseline_today, 6),
+            "boiler_gas_calibrated_heat_kwh": round(experiment_today, 6),
+            "boiler_allocated_heat_kwh": round(float(
+                result["boiler_energy_experiment"].get("boiler_daily_allocated_heat_kwh", {}).get(day_key, 0.0)
+            ), 6),
+            "boiler_unallocated_heat_kwh": round(float(
+                result["boiler_energy_experiment"].get("boiler_daily_unallocated_heat_kwh", {}).get(day_key, 0.0)
+            ), 6),
+        }
+        for old_day in list(comparison):
+            try:
+                if (now_local.date() - dt_util.parse_date(old_day)).days > 30:
+                    del comparison[old_day]
+            except (TypeError, ValueError):
+                del comparison[old_day]
+        result["algorithm_daily_comparison"] = [comparison[key] for key in sorted(comparison)]
         for room_id, energy_kwh in result["boiler_energy_experiment"].get("boiler_room_energy_kwh", {}).items():
             if room_id in result["rooms"]:
                 result["rooms"][room_id]["boiler_generated_heat_energy_kwh"] = energy_kwh

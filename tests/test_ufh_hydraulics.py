@@ -73,3 +73,52 @@ def test_active_flow_stops_on_demand_end_or_pump_stop():
     snapshot("on", 8.0, state, now + timedelta(seconds=210))
     pump_stopped = snapshot("on", 0.0, state, now + timedelta(seconds=211))
     assert pump_stopped["flow_active"] is False
+
+
+
+def test_floor_any_demand_activates_sensorless_bathroom_circuit():
+    now = datetime(2026, 11, 21, tzinfo=timezone.utc)
+    state = {}
+    circuits = [{
+        "id": "bathroom_upstairs",
+        "name": "Bathroom",
+        "floor": "upstairs",
+        "demand_scope": "floor_any",
+        "pump_id": "upstairs",
+        "demand_rooms": [],
+    }]
+    rooms = {
+        "bedroom": {"floor": "upstairs", "demand": True, "demand_state": "on"},
+        "office": {"floor": "upstairs", "demand": False, "demand_state": "off"},
+        "living": {"floor": "ground_floor", "demand": True, "demand_state": "on"},
+    }
+    pumps = {"upstairs": {"power": 8.0}}
+    first = UFH.build_ufh_hydraulic_snapshot(
+        circuits, rooms, pumps, {"bathroom_upstairs": 0.8}, state, now
+    )["circuits"]["bathroom_upstairs"]
+    assert first["demand_active"] is True
+    assert first["flow_active"] is False
+    active = UFH.build_ufh_hydraulic_snapshot(
+        circuits, rooms, pumps, {"bathroom_upstairs": 0.8}, state,
+        now + timedelta(seconds=180),
+    )["circuits"]["bathroom_upstairs"]
+    assert active["flow_active"] is True
+    assert active["demand_rooms"] == ["bedroom", "office"]
+
+
+def test_floor_any_demand_ignores_other_floor_and_handles_idle_floor():
+    circuits = [{
+        "id": "bathroom_downstairs",
+        "floor": "ground_floor",
+        "demand_scope": "floor_any",
+        "pump_id": "ground_floor",
+    }]
+    rooms = {
+        "upstairs_bedroom": {"floor": "upstairs", "demand": True, "demand_state": "on"},
+    }
+    result = UFH.build_ufh_hydraulic_snapshot(
+        circuits, rooms, {"ground_floor": {"power": 8.0}},
+        {"bathroom_downstairs": 1.0}, {}, datetime(2026, 11, 21, tzinfo=timezone.utc)
+    )["circuits"]["bathroom_downstairs"]
+    assert result["demand_active"] is False
+    assert result["flow_active"] is False

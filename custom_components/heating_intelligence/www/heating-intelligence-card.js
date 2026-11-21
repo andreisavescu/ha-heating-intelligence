@@ -205,7 +205,7 @@ class HeatingIntelligenceCard extends HTMLElement {
   }
   _energyChart(days, rangeHours=720) {
     const cutoff = new Date(Date.now() - rangeHours * 3600000).toLocaleDateString("en-CA");
-    const rows = (days || []).filter(d => d.date >= cutoff && (Number.isFinite(Number(d.gas_kwh)) || Number.isFinite(Number(d.electricity_kwh)));
+    const rows = (days || []).filter(d => d.date >= cutoff && (Number.isFinite(Number(d.gas_kwh)) || Number.isFinite(Number(d.electricity_kwh))));
     if (rows.length < 1) return '<div class="chart-empty">Daily meter history is building up for this range.</div>';
     const max = Math.max(1, ...rows.flatMap(d => [Number(d.gas_kwh) || 0, Number(d.electricity_kwh) || 0]));
     const width = 360 / rows.length;

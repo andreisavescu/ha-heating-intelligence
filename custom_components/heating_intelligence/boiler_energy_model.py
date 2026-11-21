@@ -313,7 +313,10 @@ def update_boiler_energy_model(
         "boiler_modulation_calibrated_output_kw": round(calibrated_output_kw, 3) if calibrated_output_kw is not None else None,
         "boiler_modulation_estimated_energy_kwh": round(float(state["modulation_estimated_energy_kwh"]), 4),
         "boiler_modulation_room_energy_kwh": {k: round(float(v), 6) for k, v in state.get("modulation_room_energy_kwh", {}).items()},
-        "boiler_modulation_daily_room_energy_kwh": {k: round(float(v), 6) for k, v in today_modulation_rooms.items()},
+        "boiler_modulation_daily_room_energy_kwh": {
+            k: round(float(v), 6) for k, v in today_modulation_rooms.items()
+            if isinstance(v, (int, float))
+        },
         "boiler_modulation_weekly_room_energy_kwh": {k: round(float(v), 6) for k, v in weekly_modulation_rooms.items()},
         "boiler_modulation_monthly_room_energy_kwh": {k: round(float(v), 6) for k, v in monthly_modulation_rooms.items()},
         "boiler_daily_modulation_generated_heat_kwh": state.get("daily_modulation_generated_heat_kwh", {}),

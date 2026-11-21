@@ -211,7 +211,7 @@ class HeatingIntelligenceCard extends HTMLElement {
       ...floorNodes.map(f=>({a:boiler,b:f,value:f.power})),
       ...floorNodes.flatMap(f=>f.rooms.map(r=>({a:f,b:r,value:r.power})))
     ];
-    const linkSvg=links.map(l=>`<path d="${curve(l.a,l.b)}" fill="none" stroke="var(--hi-green,#2eaa83)" stroke-opacity=".58" stroke-width="${width(l.value).toFixed(2)}"><title>${this._esc(l.a.name||"Boiler")} → ${this._esc(l.b.name)}: ${l.value.toFixed(0)} W estimated</title></path>`).join("");
+    const linkSvg=links.map(l=>`<path d="${curve(l.a,l.b)}" fill="none" stroke="var(--hi-green,#2eaa83)" stroke-opacity=".58" stroke-width="${width(l.value).toFixed(2)}"><title>${this._esc(l.a.name||"Boiler")} → ${this._esc(l.b.name)}: ${unit==="kWh"?l.value.toFixed(2):l.value.toFixed(0)} ${unit} estimated</title></path>`).join("");
     const formatValue=value=>unit==="kWh"?value.toFixed(2):value.toFixed(0);
     const node=(n,kind,labelX=n.x+17)=>`<g><rect x="${n.x}" y="${(n.y-8).toFixed(1)}" width="12" height="16" rx="4" class="heat-flow-node ${kind}"/><text x="${labelX}" y="${(n.y-2).toFixed(1)}" class="heat-flow-label">${this._esc(n.name)}</text><text x="${labelX}" y="${(n.y+12).toFixed(1)}" class="heat-flow-value">${formatValue(n.power)} ${unit}</text></g>`;
     const columns='<text x="8" y="18" class="heat-flow-column">HEAT SOURCE</text><text x="122" y="18" text-anchor="middle" class="heat-flow-column">MANIFOLDS</text><text x="245" y="18" class="heat-flow-column">ROOMS</text>';

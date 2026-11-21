@@ -123,3 +123,31 @@ def test_floor_any_demand_ignores_other_floor_and_handles_idle_floor():
     )["circuits"]["bathroom_downstairs"]
     assert result["demand_active"] is False
     assert result["flow_active"] is False
+
+
+
+def test_selected_demand_sources_use_or_across_up_to_four_rooms():
+    now = datetime(2026, 11, 21, tzinfo=timezone.utc)
+    circuits = [{
+        "id": "multi_room",
+        "floor": "ground_floor",
+        "pump_id": "ground_floor",
+        "demand_scope": "selected_rooms",
+        "demand_rooms": ["office", "living", "bathroom", "kitchen", "ignored_fifth"],
+        "demand_logic": "and",  # Legacy setting is deliberately ignored.
+    }]
+    rooms = {
+        "office": {"name": "Office", "floor": "ground_floor", "demand": False, "demand_state": "off"},
+        "living": {"name": "Living", "floor": "ground_floor", "demand": True, "demand_state": "on"},
+        "bathroom": {"name": "Bathroom", "floor": "ground_floor", "demand": False, "demand_state": "off"},
+        "kitchen": {"name": "Kitchen", "floor": "ground_floor", "demand": False, "demand_state": "off"},
+        "ignored_fifth": {"name": "Fifth", "floor": "ground_floor", "demand": True, "demand_state": "on"},
+    }
+    result = UFH.build_ufh_hydraulic_snapshot(
+        circuits, rooms, {"ground_floor": {"power": 8.0}},
+        {"multi_room": 1.2}, {}, now
+    )["circuits"]["multi_room"]
+    assert result["demand_active"] is True
+    assert result["demand_logic"] == "or"
+    assert result["demand_rooms"] == ["office", "living", "bathroom", "kitchen"]
+    assert result["demand_room_names"] == ["Office", "Living", "Bathroom", "Kitchen"]

@@ -375,6 +375,14 @@ Historical AC power is normalized from W, kW, MW and mW before the passive-fit A
 - High-resolution event timestamps remain separate from the 30-minute thermal identification dataset; no synthetic 10-second rows are generated.
 
 
+## v0.15.10 — Floor-wide demand for sensorless UFH circuits
+
+- Allow a UFH circuit to be configured without a dedicated room or temperature sensor.
+- Add a floor-wide demand mode: a circuit is considered requested when any configured room on its selected floor requests heat.
+- Keep floor-wide demand isolated to the circuit's selected manifold/floor; demand on the other floor does not activate it.
+- Preserve the independent pump-start timer: it begins when associated pump power rises above 7 W and must remain above that threshold for 180 seconds. A delayed Wi-Fi demand relay can arrive during that interval; if it is already on when the timer expires, the circuit activates immediately.
+- Retain selected-room OR/AND demand mode for existing circuits and preserve the assumed 9°C water temperature drop for estimated thermal output.
+
 ## v0.15.8 — UFH hydraulic flow inputs
 
 - Add 16 persistent, manually adjustable UFH circuit flow inputs (0.00–6.00 L/min, 0.01 L/min steps).

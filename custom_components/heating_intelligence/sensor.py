@@ -31,6 +31,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
             "boiler_generated_heat_kwh", "boiler_allocated_heat_kwh",
             "boiler_unallocated_heat_kwh"))
+        entities.extend(BoilerExperimentDiagnosticSensor(coordinator, metric) for metric in (
+            "boiler_modulation_estimated_output_kw",
+            "boiler_modulation_calibrated_output_kw",
+            "boiler_calibration_factor"))
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         for room in entry.options.get(CONF_ROOMS, []):
             entities.append(RoomBoilerExperimentEnergySensor(coordinator, room["id"], room["name"]))
@@ -149,6 +153,31 @@ class BoilerExperimentSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         return self.coordinator.data.get("boiler_energy_experiment", {})
+
+
+class BoilerExperimentDiagnosticSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Live modulation output and gas-calibration diagnostics."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    METRICS = {
+        "boiler_modulation_estimated_output_kw": ("Modulation Estimated Boiler Output", "kW"),
+        "boiler_modulation_calibrated_output_kw": ("Gas-Calibrated Boiler Output", "kW"),
+        "boiler_calibration_factor": ("Boiler Modulation Calibration Factor", None),
+    }
+
+    def __init__(self, coordinator, metric: str) -> None:
+        super().__init__(coordinator)
+        self.metric = metric
+        self._attr_name, self._attr_native_unit_of_measurement = self.METRICS[metric]
+        self._attr_unique_id = f"{DOMAIN}_{metric}"
+        self._attr_icon = "mdi:chart-bell-curve"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric)
 
 
 class RoomBoilerExperimentEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):

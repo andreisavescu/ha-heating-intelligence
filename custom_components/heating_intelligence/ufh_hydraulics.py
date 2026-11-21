@@ -50,7 +50,7 @@ def build_ufh_hydraulic_snapshot(
                 if room_data.get("floor", "unassigned") == floor_id
             ]
         else:
-            demand_room_ids = circuit.get("demand_rooms", [])
+            demand_room_ids = list(circuit.get("demand_rooms", []))[:4]
         demand_values = []
         for room_id in demand_room_ids:
             room = rooms.get(room_id)
@@ -60,7 +60,7 @@ def build_ufh_hydraulic_snapshot(
             else:
                 demand_values.append(state == "on" and bool(room.get("demand", False)))
 
-        demand_active = evaluate_activation(demand_values, circuit.get("demand_logic", "or"))
+        demand_active = evaluate_activation(demand_values, "or")
         pump_id = circuit.get("pump_id")
         pump = pumps.get(pump_id) if pump_id else None
         pump_power = pump.get("power") if pump else None
@@ -107,9 +107,10 @@ def build_ufh_hydraulic_snapshot(
             "pipe_length_m": circuit.get("pipe_length_m"),
             "pump_id": pump_id,
             "demand_rooms": list(demand_room_ids),
+            "demand_room_names": [rooms[room_id].get("name", room_id) for room_id in demand_room_ids if room_id in rooms],
             "demand_scope": demand_scope,
             "demand_floor": circuit.get("floor", "unassigned"),
-            "demand_logic": circuit.get("demand_logic", "or"),
+            "demand_logic": "or",
             "demand_active": demand_active,
             "pump_power_w": pump_power,
             "pump_start_threshold_w": FLOW_START_POWER_THRESHOLD_W,

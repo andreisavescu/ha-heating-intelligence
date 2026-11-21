@@ -345,7 +345,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def async_step_ufh_circuit_details(self, user_input=None):
-        """Configure the room, pipe length, manifold and demand rule."""
+        """Configure the circuit, floor, manifold and demand rule."""
         rooms = self.config_entry.options.get(CONF_ROOMS, [])
         pumps = self.config_entry.options.get(CONF_PUMPS, [])
         circuit_id = f"circuit_{self._ufh_circuit_number:02d}"
@@ -355,18 +355,22 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             {},
         )
         if user_input is not None:
-            room = next(item for item in rooms if item["id"] == user_input["room_id"])
-            demand_rooms = user_input.get("demand_rooms") or [room["id"]]
+            room_id = user_input.get("room_id")
+            room = next((item for item in rooms if item["id"] == room_id), None)
+            floor = user_input.get("floor", (room or {}).get(CONF_FLOOR, "unassigned"))
+            demand_scope = user_input.get("demand_scope", "selected_rooms")
+            demand_rooms = user_input.get("demand_rooms") or ([room_id] if room_id else [])
             if not isinstance(demand_rooms, list):
                 demand_rooms = [demand_rooms]
             circuit = {
                 "id": circuit_id,
                 "circuit_number": self._ufh_circuit_number,
-                "name": user_input.get("name") or f"{room['name']} circuit {self._ufh_circuit_number}",
-                "room_id": room["id"],
-                "floor": room.get(CONF_FLOOR, "unassigned"),
+                "name": user_input.get("name") or ((room or {}).get("name") or f"Circuit {self._ufh_circuit_number}"),
+                "room_id": room_id,
+                "floor": floor,
                 "pipe_length_m": float(user_input["pipe_length_m"]),
                 "pump_id": user_input["pump_id"],
+                "demand_scope": demand_scope,
                 "demand_rooms": demand_rooms,
                 "demand_logic": user_input.get("demand_logic", "or"),
             }
@@ -379,17 +383,22 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
 
         room_options = {item["id"]: item[CONF_NAME] for item in rooms}
         pump_options = {item["id"]: item["name"] for item in pumps}
-        default_room = existing.get("room_id", rooms[0]["id"])
+        floor_options = {"ground_floor": "Downstairs", "upstairs": "Upstairs"}
+        default_room = existing.get("room_id")
         default_pump = existing.get("pump_id", next(iter(pump_options)))
+        default_floor = existing.get("floor", "ground_floor")
         return self.async_show_form(
             step_id="ufh_circuit_details",
             data_schema=vol.Schema({
-                vol.Required("room_id", default=default_room): vol.In(room_options),
+                vol.Optional("room_id", default=default_room): vol.In(room_options),
                 vol.Optional("name", default=existing.get("name", "")): str,
+                vol.Required("floor", default=default_floor): vol.In(floor_options),
                 vol.Required("pipe_length_m", default=existing.get("pipe_length_m", 80.0)):
                     selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=250, step=0.5, unit_of_measurement="m", mode=selector.NumberSelectorMode.BOX)),
                 vol.Required("pump_id", default=default_pump): vol.In(pump_options),
-                vol.Optional("demand_rooms", default=existing.get("demand_rooms", [default_room])):
+                vol.Required("demand_scope", default=existing.get("demand_scope", "selected_rooms")):
+                    vol.In({"selected_rooms": "Selected room demand sources", "floor_any": "Any room on this floor requests heat"}),
+                vol.Optional("demand_rooms", default=existing.get("demand_rooms", [default_room] if default_room else [])):
                     selector.SelectSelector(selector.SelectSelectorConfig(options=[
                         {"value": room_id, "label": label} for room_id, label in room_options.items()
                     ], multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)),

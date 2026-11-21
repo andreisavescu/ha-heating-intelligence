@@ -33,8 +33,8 @@ def test_circuit_flow_requires_demand_and_pump_confirmation():
         "demand_logic": "or",
     }]
     rooms = {
-        "bathroom_one": {"demand": True, "demand_state_known": True},
-        "bathroom_two": {"demand": False, "demand_state_known": True},
+        "bathroom_one": {"demand": True, "demand_state": "on"},
+        "bathroom_two": {"demand": False, "demand_state": "unavailable"},
     }
     pumps = {"upstairs": {"power": 18.0, "running": True}}
     result = UFH.build_ufh_hydraulic_snapshot(
@@ -54,7 +54,7 @@ def test_missing_pump_power_does_not_confirm_circulation():
             "id": "living_1", "pump_id": "ground_floor",
             "demand_rooms": ["living"], "demand_logic": "or",
         }],
-        {"living": {"demand": True, "demand_state_known": True}},
+        {"living": {"demand": True, "demand_state": "on"}},
         {"ground_floor": {"power": None, "running": False}},
         {"living_1": 0.85},
     )

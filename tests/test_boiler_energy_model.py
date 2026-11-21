@@ -98,3 +98,34 @@ def test_daily_room_allocation_is_split_at_midnight():
     assert daily["2026-11-20"]["r"] > 0
     assert daily["2026-11-21"]["r"] > 0
     assert abs(daily["2026-11-20"]["r"] + daily["2026-11-21"]["r"] - 0.9495) < 1e-8
+
+
+def test_modulation_maps_to_25kw_with_minimum_firing_output():
+    assert MODEL._modulation_output_kw(100) == 25.0
+    assert MODEL._modulation_output_kw(50) == 12.5
+    assert MODEL._modulation_output_kw(10) == 3.2
+    assert MODEL._modulation_output_kw(0) == 0.0
+    assert MODEL._modulation_output_kw(None) is None
+
+
+def test_gas_meter_calibrates_modulation_output_cumulatively():
+    history = {}
+    circuits = {"c": {"flow_active": True, "configured_flow_l_min": 1.0, "served_rooms": ["r"]}}
+    rooms = {"r": {"demand": True}}
+    MODEL.update_boiler_energy_model(history, 10.0, 2.0, True, 100, circuits, rooms, 90)
+    result = MODEL.update_boiler_energy_model(history, 10.1, 2.0, True, 100, circuits, rooms, 90)
+    # The interval's raw modulation estimate is 25 kW × 90 s.
+    assert result["boiler_last_meter_interval_modulation_energy_kwh"] == 0.625
+    assert result["boiler_meter_interval_useful_heat_kwh"] == 0.9495
+    assert abs(result["boiler_calibration_factor"] - (0.9495 / 0.625)) < 1e-5
+    assert abs(result["boiler_modulation_calibrated_output_kw"] - 25 * (0.9495 / 0.625)) < 1e-3
+    assert result["boiler_modulation_calibration_status"] == "calibrated"
+
+
+def test_modulation_estimate_is_available_between_gas_meter_updates():
+    history = {}
+    first = MODEL.update_boiler_energy_model(history, 1.0, 0.0, True, 40, {}, {}, 10)
+    second = MODEL.update_boiler_energy_model(history, 1.0, 0.0, True, 40, {}, {}, 10)
+    assert first["boiler_modulation_estimated_output_kw"] == 10.0
+    assert second["boiler_modulation_calibrated_output_kw"] == 10.0
+    assert second["boiler_modulation_calibration_status"] == "initial_25kw_estimate"

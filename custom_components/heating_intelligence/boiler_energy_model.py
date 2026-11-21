@@ -1,4 +1,4 @@
-"""Experimental gas-calibrated boiler heat allocation (v0.17)."""
+"""Experimental gas-calibrated boiler heat allocation (v0.17.1)."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -6,6 +6,21 @@ from typing import Any
 
 DEFAULT_GAS_KWH_PER_M3 = 10.55
 DEFAULT_BOILER_EFFICIENCY = 0.90
+DEFAULT_BOILER_RATED_OUTPUT_KW = 25.0
+DEFAULT_BOILER_MIN_OUTPUT_KW = 3.2
+
+
+def _modulation_output_kw(modulation_percent: float | None) -> float | None:
+    """Convert the boiler modulation percentage to an initial heat-output estimate."""
+    if modulation_percent is None:
+        return None
+    modulation = min(100.0, max(0.0, float(modulation_percent)))
+    if modulation <= 0:
+        return 0.0
+    return max(
+        DEFAULT_BOILER_MIN_OUTPUT_KW,
+        DEFAULT_BOILER_RATED_OUTPUT_KW * modulation / 100.0,
+    )
 
 
 def update_boiler_energy_model(
@@ -21,13 +36,14 @@ def update_boiler_energy_model(
     boiler_efficiency: float = DEFAULT_BOILER_EFFICIENCY,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Accumulate burner-on exposure between meter updates and reconcile deltas.
+    """Estimate output from modulation, then calibrate it against heating gas.
 
-    The gas registers are sampled on every coordinator refresh, but their
-    values normally advance only about every two hours. Each actual counter
-    difference (0.1, 0.2, 0.5 m³, etc.) is reconciled when it appears. Room
-    exposure is retained between meter updates and divided by local date so
-    daily energy can be compared fairly across midnight.
+    Modulation initially maps linearly to the 25 kW rated output, with a
+    3.2 kW minimum firing output while modulation is above zero. Actual
+    heating-gas counter deltas provide interval energy references. The
+    cumulative ratio of gas-derived useful heat to modulation-estimated heat
+    becomes the calibration factor. Room allocation continues to reconcile
+    actual gas-derived useful heat, not an unverified instantaneous estimate.
     """
     now = now or datetime.now().astimezone()
     today = now.date().isoformat()
@@ -44,7 +60,24 @@ def update_boiler_energy_model(
         "last_meter_interval_useful_heat_kwh": 0.0,
         "last_meter_interval_seconds": 0.0,
         "last_room_interval_allocations_kwh": {},
+        "modulation_estimated_energy_kwh": 0.0,
+        "calibration_reference_heat_kwh": 0.0,
+        "calibration_reference_modulation_kwh": 0.0,
+        "modulation_energy_since_meter_kwh": 0.0,
+        "calibration_factor": 1.0,
+        "last_meter_interval_modulation_kwh": 0.0,
     })
+    # Backfill defaults when restoring history written by an earlier version.
+    for key, default in {
+        "modulation_estimated_energy_kwh": 0.0,
+        "calibration_reference_heat_kwh": 0.0,
+        "calibration_reference_modulation_kwh": 0.0,
+        "modulation_energy_since_meter_kwh": 0.0,
+        "calibration_factor": 1.0,
+        "last_meter_interval_modulation_kwh": 0.0,
+    }.items():
+        state.setdefault(key, default)
+
     factor = max(0.1, float(gas_kwh_per_m3 or DEFAULT_GAS_KWH_PER_M3))
     efficiency = min(1.0, max(0.5, float(boiler_efficiency or DEFAULT_BOILER_EFFICIENCY)))
     interval = max(0.0, min(float(elapsed_seconds or 0.0), 90.0))
@@ -53,12 +86,25 @@ def update_boiler_energy_model(
     room_energy = state.setdefault("room_energy_kwh", {})
     daily_rooms = state.setdefault("daily_room_energy_kwh", {})
 
+    output_kw = _modulation_output_kw(modulation_percent) if burner_on is True else 0.0
+    modulation_energy = (
+        output_kw * interval / 3600.0
+        if burner_on is True and output_kw is not None and interval > 0
+        else 0.0
+    )
+    if modulation_energy > 0:
+        state["modulation_estimated_energy_kwh"] = (
+            float(state.get("modulation_estimated_energy_kwh", 0.0)) + modulation_energy
+        )
+        state["modulation_energy_since_meter_kwh"] = (
+            float(state.get("modulation_energy_since_meter_kwh", 0.0)) + modulation_energy
+        )
+
     if burner_on is True and interval > 0:
         burner_seconds[today] = float(burner_seconds.get(today, 0.0)) + interval
-        modulation_weight = (
-            min(100.0, max(0.0, float(modulation_percent))) / 100.0
-            if modulation_percent is not None else 1.0
-        )
+        # Modulation-derived output is the exposure weight. If modulation is
+        # temporarily unavailable, retain the previous neutral weighting.
+        output_weight = output_kw if output_kw is not None else DEFAULT_BOILER_RATED_OUTPUT_KW
         room_weights: dict[str, float] = {}
         for circuit in circuits.values():
             if not circuit.get("flow_active"):
@@ -72,7 +118,7 @@ def update_boiler_energy_model(
                 room_weights[rid] = room_weights.get(rid, 0.0) + flow / len(eligible)
         day_exposure = exposures.setdefault(today, {})
         for rid, weight in room_weights.items():
-            day_exposure[rid] = float(day_exposure.get(rid, 0.0)) + weight * modulation_weight * interval
+            day_exposure[rid] = float(day_exposure.get(rid, 0.0)) + weight * output_weight * interval
 
     def meter_delta(key: str, current: float | None) -> tuple[float, bool]:
         previous = state.get(key)
@@ -81,6 +127,11 @@ def update_boiler_energy_model(
         value = max(0.0, float(current))
         state[key] = value
         if previous is None:
+            if key == "last_heating_gas_m3":
+                # Establish a clean modulation baseline at the first valid
+                # cumulative gas reading; pre-baseline runtime has no matching
+                # gas interval and must not influence calibration.
+                state["modulation_energy_since_meter_kwh"] = 0.0
             return 0.0, False
         if value < float(previous):
             state["meter_reset_count"] = int(state.get("meter_reset_count", 0)) + 1
@@ -100,7 +151,26 @@ def update_boiler_energy_model(
     interval_allocated = 0.0
     interval_unallocated = 0.0
     interval_seconds = sum(max(0.0, float(v)) for v in burner_seconds.values())
+    interval_modulation_energy = float(state.get("modulation_energy_since_meter_kwh", 0.0))
     if heating_delta > 0:
+        # Learn a stable cumulative calibration ratio instead of reacting to
+        # each coarse (and variably sized) meter increment independently.
+        if interval_modulation_energy > 0:
+            state["calibration_reference_heat_kwh"] = (
+                float(state.get("calibration_reference_heat_kwh", 0.0)) + useful_heat
+            )
+            state["calibration_reference_modulation_kwh"] = (
+                float(state.get("calibration_reference_modulation_kwh", 0.0))
+                + interval_modulation_energy
+            )
+            reference_modulation = float(state["calibration_reference_modulation_kwh"])
+            if reference_modulation > 0:
+                state["calibration_factor"] = (
+                    float(state["calibration_reference_heat_kwh"]) / reference_modulation
+                )
+        state["last_meter_interval_modulation_kwh"] = interval_modulation_energy
+        state["modulation_energy_since_meter_kwh"] = 0.0
+
         total_burner_seconds = sum(max(0.0, float(v)) for v in burner_seconds.values())
         date_heat: dict[str, float] = {}
         if total_burner_seconds > 0:
@@ -139,7 +209,6 @@ def update_boiler_energy_model(
         state["last_meter_interval_seconds"] = interval_seconds
         state["last_room_interval_allocations_kwh"] = interval_allocations
 
-    # Retain a bounded daily series for the comparison dashboard.
     for key in ("daily_room_energy_kwh", "daily_generated_heat_kwh", "daily_allocated_heat_kwh", "daily_unallocated_heat_kwh"):
         mapping = state.setdefault(key, {})
         for day in list(mapping):
@@ -156,6 +225,8 @@ def update_boiler_energy_model(
     }
     latest_useful = float(state.get("last_meter_interval_useful_heat_kwh") or 0.0)
     latest_input = float(state.get("last_meter_interval_input_kwh") or 0.0)
+    calibration = max(0.0, float(state.get("calibration_factor", 1.0)))
+    calibrated_output_kw = output_kw * calibration if output_kw is not None else None
     return {
         "heating_input_energy_kwh": round(state["heating_input_kwh"], 4),
         "dhw_input_energy_kwh": round(state["dhw_input_kwh"], 4),
@@ -185,11 +256,25 @@ def update_boiler_energy_model(
         "boiler_meter_reset_count": int(state.get("meter_reset_count", 0)),
         "boiler_efficiency_assumption": efficiency,
         "boiler_gas_energy_factor_kwh_m3": factor,
-        "boiler_modulation_used_as_relative_weight": modulation_percent is not None,
+        "boiler_rated_output_kw": DEFAULT_BOILER_RATED_OUTPUT_KW,
+        "boiler_minimum_output_kw": DEFAULT_BOILER_MIN_OUTPUT_KW,
+        "boiler_modulation_percent": round(float(modulation_percent), 2) if modulation_percent is not None else None,
+        "boiler_modulation_estimated_output_kw": round(output_kw, 3) if output_kw is not None else None,
+        "boiler_modulation_calibrated_output_kw": round(calibrated_output_kw, 3) if calibrated_output_kw is not None else None,
+        "boiler_modulation_estimated_energy_kwh": round(float(state["modulation_estimated_energy_kwh"]), 4),
+        "boiler_last_meter_interval_modulation_energy_kwh": round(float(state["last_meter_interval_modulation_kwh"]), 4),
+        "boiler_calibration_factor": round(calibration, 5),
+        "boiler_calibration_reference_heat_kwh": round(float(state["calibration_reference_heat_kwh"]), 4),
+        "boiler_calibration_reference_modulation_kwh": round(float(state["calibration_reference_modulation_kwh"]), 4),
+        "boiler_modulation_calibration_status": (
+            "calibrated" if float(state["calibration_reference_modulation_kwh"]) > 0 else "initial_25kw_estimate"
+        ),
+        "boiler_modulation_used_as_relative_weight": False,
         "boiler_energy_model_note": (
-            "Gas counters are sampled every coordinator refresh and reconciled whenever their cumulative values advance "
-            "(normally about every two hours). The actual counter difference is used; increments may vary. Modulation "
-            "weights burner-on room exposure but is not treated as linear boiler output. DHW gas is excluded from room "
-            "allocation. Burner-off pump overrun creates no new boiler heat."
+            "Modulation initially estimates output as 25 kW × modulation %, with a 3.2 kW minimum "
+            "while firing. A cumulative calibration factor is learned from heating-gas-derived useful "
+            "heat versus modulation-estimated energy. Gas-meter deltas remain the energy reference for "
+            "room allocation; DHW is excluded. Modulation calibration is approximate when heating and "
+            "DHW burner operation overlap within one meter interval."
         ),
     }

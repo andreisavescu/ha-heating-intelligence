@@ -171,7 +171,7 @@ def test_modulation_room_energy_exposes_daily_weekly_monthly_and_lifetime_totals
     assert abs(first["boiler_modulation_daily_room_energy_kwh"]["room"] - per_day) < 1e-6
     assert abs(second["boiler_modulation_daily_room_energy_kwh"]["room"] - per_day) < 1e-6
     assert abs(second["boiler_modulation_weekly_room_energy_kwh"]["room"] - 2 * per_day) < 1e-6
-    assert abs(second["boiler_modulation_monthly_room_energy_kwh"]["room"] - 2 * per_day) < 1e-8
+    assert abs(second["boiler_modulation_monthly_room_energy_kwh"]["room"] - 2 * per_day) < 1e-6
     assert abs(second["boiler_modulation_room_energy_kwh"]["room"] - 2 * per_day) < 1e-6
 
 

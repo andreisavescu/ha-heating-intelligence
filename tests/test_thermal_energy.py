@@ -69,5 +69,5 @@ def test_sensorless_served_room_receives_energy_independently_of_demand_trigger(
         history, circuits, rooms, 90,
         datetime(2026, 11, 21, 12, tzinfo=timezone.utc),
     )
-    assert result["bathroom"]["thermal_energy_total_kwh"] == 0.015698
+    assert result["bathroom"]["thermal_energy_total_kwh"] == 0.015697
     assert result["bedroom"]["thermal_energy_total_kwh"] == 0

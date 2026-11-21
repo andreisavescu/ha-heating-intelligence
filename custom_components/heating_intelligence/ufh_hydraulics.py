@@ -60,27 +60,27 @@ def build_ufh_hydraulic_snapshot(
             pump_power = float(pump_power) if pump_power is not None else None
         except (TypeError, ValueError):
             pump_power = None
-        start_conditions = demand_active is True and pump_power is not None and pump_power > FLOW_START_POWER_THRESHOLD_W
-
+        pump_running_long_enough = False
         state = circuit_state.setdefault(circuit_id, {})
-        pending_since = state.get("pending_since")
+        pending_since = state.get("pump_above_threshold_since")
         flow_active = bool(state.get("flow_active", False))
-        if flow_active:
-            # Once established, the circuit remains active until its demand ends.
-            # Pump power is a start-confirmation signal, not a stop signal.
-            if demand_active is not True:
-                state["pending_since"] = None
-                state["flow_active"] = False
-                flow_active = False
-        elif not start_conditions:
-            state["pending_since"] = None
+
+        # The three-minute timer belongs exclusively to pump power. It starts
+        # as soon as the pump exceeds 7 W, regardless of relay/Wi-Fi demand delay.
+        if pump_power is None or pump_power <= FLOW_START_POWER_THRESHOLD_W:
+            state["pump_above_threshold_since"] = None
+            state["flow_active"] = False
+            flow_active = False
         else:
             if pending_since is None:
-                state["pending_since"] = now_ts
+                state["pump_above_threshold_since"] = now_ts
                 pending_since = now_ts
-            if now_ts - float(pending_since) >= FLOW_START_DELAY_SECONDS:
-                state["flow_active"] = True
-                flow_active = True
+            pump_running_long_enough = (
+                now_ts - float(pending_since) >= FLOW_START_DELAY_SECONDS
+            )
+            flow_active = demand_active is True and pump_running_long_enough
+            state["flow_active"] = flow_active
+
 
         configured_flow = round(max(0.0, min(6.0, float(flow_rates.get(circuit_id, 0.0)))), 2)
         active_flow = configured_flow if flow_active else 0.0
@@ -103,8 +103,8 @@ def build_ufh_hydraulic_snapshot(
             "demand_active": demand_active,
             "pump_power_w": pump_power,
             "pump_start_threshold_w": FLOW_START_POWER_THRESHOLD_W,
-            "flow_start_delay_seconds": FLOW_START_DELAY_SECONDS,
-            "flow_pending_seconds": round(max(0.0, now_ts - float(pending_since))) if pending_since is not None and not flow_active else 0,
+            "pump_confirmation_delay_seconds": FLOW_START_DELAY_SECONDS,
+            "pump_above_threshold_seconds": round(max(0.0, now_ts - float(pending_since))) if pending_since is not None and pump_power is not None and pump_power > FLOW_START_POWER_THRESHOLD_W else 0,
             "flow_active": flow_active,
             "circulation_confirmed": flow_active,
             "configured_flow_l_min": configured_flow,

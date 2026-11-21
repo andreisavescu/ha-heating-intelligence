@@ -27,6 +27,7 @@ from .validated_learning import build_validated_learning_state, validated_learni
 from .thermal_storage import build_thermal_storage_response_analysis
 from .ufh_hydraulics import build_ufh_hydraulic_snapshot
 from .thermal_energy import update_room_thermal_energy
+from .boiler_energy_model import update_boiler_energy_model
 from .system_history import record_system_sample
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
@@ -48,6 +49,8 @@ from .const import (
     CONF_ATTIC_HUMIDITY_ENTITY,
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
+    CONF_HEATING_GAS_ENTITY,
+    CONF_DHW_GAS_ENTITY,
     CONF_ELECTRICITY_BOILER_POWER_ENTITY,
     CONF_ELECTRICITY_BOILER_ENERGY_ENTITY,
     CONF_ELECTRICITY_BOILER_ENTITY,
@@ -998,6 +1001,32 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         modulation_entity = self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)
         burner_state = self.hass.states.get(burner_entity) if burner_entity else None
         modulation_state = self.hass.states.get(modulation_entity) if modulation_entity else None
+        heating_gas_entity = self.entry.options.get(CONF_HEATING_GAS_ENTITY)
+        dhw_gas_entity = self.entry.options.get(CONF_DHW_GAS_ENTITY)
+        heating_gas_state = self.hass.states.get(heating_gas_entity) if heating_gas_entity else None
+        dhw_gas_state = self.hass.states.get(dhw_gas_entity) if dhw_gas_entity else None
+        heating_gas_m3 = _as_float(heating_gas_state.state) if heating_gas_state else None
+        dhw_gas_m3 = _as_float(dhw_gas_state.state) if dhw_gas_state else None
+        burner_on = (
+            burner_state.state.lower() in ("on", "true", "1")
+            if burner_state and burner_state.state.lower() not in ("unknown", "unavailable")
+            else None
+        )
+        result["boiler_energy_experiment"] = update_boiler_energy_model(
+            self._history,
+            heating_gas_m3,
+            dhw_gas_m3,
+            burner_on,
+            _as_float(modulation_state.state) if modulation_state else None,
+            result.get("ufh_hydraulics", {}).get("circuits", {}),
+            result.get("rooms", {}),
+            elapsed,
+            float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
+            float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
+        )
+        for room_id, energy_kwh in result["boiler_energy_experiment"].get("boiler_room_energy_kwh", {}).items():
+            if room_id in result["rooms"]:
+                result["rooms"][room_id]["boiler_generated_heat_energy_kwh"] = energy_kwh
         record_system_sample(self._history, now_local, {
             "thermal_power_w": result.get("ufh_hydraulics", {}).get("active_estimated_thermal_power_w"),
             "pump_power_w": sum(float(p.get("power") or 0.0) for p in result.get("pumps", {}).values()),

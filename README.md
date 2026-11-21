@@ -1,3 +1,11 @@
+## v0.15.13 — UFH hydraulic flow display
+
+- Add a UFH circuit flow section to the Demand tab, grouped by downstairs and upstairs manifold.
+- Show every configured circuit as Running or Stopped, with configured and active flow in L/min.
+- Summarize active circuit count, total active flow and estimated thermal output in kW.
+- Keep manually configured flowmeter values static; active flow is zero while a circuit is stopped.
+- Clarify that thermal output is an estimate based on the assumed 9°C water temperature drop, not measured heat delivery.
+
 ## 0.15.5 — simplified card and readable demand timeline
 
 - Add a compact Home view as the default card tab, surfacing room demand, indoor temperature, pump state and water inlet temperature.

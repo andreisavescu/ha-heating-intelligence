@@ -197,6 +197,15 @@ class HeatingIntelligenceCard extends HTMLElement {
     const downstairsRooms = entries.filter((room) => room.floor === "ground_floor");
     const upstairsRooms = entries.filter((room) => room.floor === "upstairs");
     const unassignedRooms = entries.filter((room) => !["ground_floor", "upstairs"].includes(room.floor));
+    const roomRenderer = (list) => list.length ? list.map((room) => `<div class="simple-room">
+      <div class="simple-room-main"><strong>${this._esc(room.name)}</strong><span class="simple-temp">${this._fmt(room.temperature)}</span></div>
+      <div class="simple-room-meta">
+        <span class="simple-state ${room.demand ? "is-heating" : ""}">${room.demand ? "Heating requested" : "No heat demand"}</span>
+        ${room.window_entity && room.window_state_known && room.window_open ? '<span class="simple-alert">Window open</span>' : ""}
+        ${room.window_entity && !room.window_state_known ? '<span class="simple-muted">Window unavailable</span>' : ""}
+        <span class="simple-muted">Heat ${this._fmt(room.estimated_thermal_power_w, "W", 0)}</span>
+      </div>
+    </div>`).join("") : '<p class="simple-muted">No rooms configured.</p>';
     const thermalRanking = entries.filter((r) => r.heat_retention_hours_per_degree != null)
       .sort((a,b) => b.heat_retention_hours_per_degree - a.heat_retention_hours_per_degree);
     const selected = entries.find((r) => r.id === this._selectedRoom) || entries[0];

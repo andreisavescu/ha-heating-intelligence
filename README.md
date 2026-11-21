@@ -373,3 +373,30 @@ Historical AC power is normalized from W, kW, MW and mW before the passive-fit A
 - Reports per-entity sample counts, explicit transitions, complete on/off intervals and cycle counts, dwell-time median/minimum/maximum, and interrupted active intervals. Raw history is not retained in the summary.
 - This is controller-event timing evidence, not proof of PWM duty-cycle accuracy or delivered heat. A switch stream that alternates `on`/`unavailable` cannot establish pulse durations until explicit `off` transitions are recorded.
 - High-resolution event timestamps remain separate from the 30-minute thermal identification dataset; no synthetic 10-second rows are generated.
+
+
+## v0.15.12 — Generic UFH circuit configuration
+
+- Configure each of the 16 circuits independently with a user-defined name, pipe length and floor.
+- Bind the circuit to the manifold pump for its selected floor, preventing accidental cross-floor pump assignment.
+- Select up to four room heating-demand sources per circuit; any selected demand being ON activates the demand condition (OR).
+- Retain a floor-wide demand option for sensorless circuits such as bathrooms; any configured room on that floor can request the circuit.
+- Keep the persistent per-circuit flowmeter number entity as the adjustable flow input, and label it with the configured circuit name while preserving its unique ID and restored value.
+- Keep the 180-second pump confirmation and assumed 9°C water temperature drop unchanged.
+
+## v0.15.10 — Floor-wide demand for sensorless UFH circuits
+
+- Allow a UFH circuit to be configured without a dedicated room or temperature sensor.
+- Add a floor-wide demand mode: a circuit is considered requested when any configured room on its selected floor requests heat.
+- Keep floor-wide demand isolated to the circuit's selected manifold/floor; demand on the other floor does not activate it.
+- Preserve the independent pump-start timer: it begins when associated pump power rises above 7 W and must remain above that threshold for 180 seconds. A delayed Wi-Fi demand relay can arrive during that interval; if it is already on when the timer expires, the circuit activates immediately.
+- Retain selected-room OR/AND demand mode for existing circuits and preserve the assumed 9°C water temperature drop for estimated thermal output.
+
+## v0.15.8 — UFH hydraulic flow inputs
+
+- Add 16 persistent, manually adjustable UFH circuit flow inputs (0.00–6.00 L/min, 0.01 L/min steps).
+- Add per-circuit configuration for room association, pipe length, manifold pump, and one or more room-demand sources with OR/AND logic.
+- Combine configured room demand with the associated manifold pump's >5 W circulation state before counting a circuit's configured flow as active.
+- Keep manually entered flowmeter values distinct from automatically measured flow. The resulting active-flow totals are conditional estimates, not independent per-circuit measurements.
+- Expose the hydraulic snapshot in the Heating Intelligence overview attributes.
+\n\n## v0.15.9 — Timed UFH flow and estimated thermal output\n\n- Start each configured circuit's flow only after its associated pump power remains above 7 W while its configured demand is on for 180 seconds.\n- Stop circuit flow immediately when configured demand turns off or pump power falls to 7 W or below.\n- Estimate circuit thermal output using the manually entered flow rate and a fixed assumed 9°C water temperature drop (approximately 628 W per L/min).\n- Expose per-circuit and total estimated thermal power. These are model estimates, not measured heat output.\n

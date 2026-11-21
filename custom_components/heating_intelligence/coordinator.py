@@ -25,6 +25,7 @@ from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
 from .validated_learning import build_validated_learning_state, validated_learning_diagnostics
 from .thermal_storage import build_thermal_storage_response_analysis
+from .ufh_hydraulics import build_ufh_hydraulic_snapshot
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
@@ -85,6 +86,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         self._store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_pump_history")
         self._history: dict = {"pumps": {}, "sync_mismatch_count": 0, "last_sync_result": "unknown"}
         self._calibration_dataset_samples: list[dict] = []
+        self.ufh_flow_rates: dict[str, float] = {}
+        self.ufh_circuit_state: dict[str, dict] = {}
         self._historical_validation_task = None
         self._recorder_history_attempted = False
         super().__init__(
@@ -111,6 +114,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "weather": {},
             "attic_thermal": {},
         }
+
+    def set_ufh_flow_rate(self, circuit_id: str, value: float) -> None:
+        """Keep the manually entered flowmeter value available to analysis."""
+        self.ufh_flow_rates[circuit_id] = round(max(0.0, min(6.0, float(value))), 2)
 
     async def async_load_history(self) -> None:
         """Restore pump cycle counters and active-cycle timestamps."""
@@ -704,6 +711,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "daily_demand_seconds": round(demand_seconds),
                 "demand_history": [{"start": item.get("start"), "end": item.get("end"), "duration_seconds": item.get("duration_seconds")} for item in room_history.get("cycles", []) if item.get("start") and item.get("end")][-500:] + ([{"start": room_history.get("cycle_start"), "end": now_local.isoformat(), "duration_seconds": max(0, (now_local - dt_util.parse_datetime(room_history["cycle_start"])).total_seconds()), "active": True}] if room_history.get("last_demand") is True and room_history.get("cycle_start") else []),
             }
+        result["ufh_hydraulics"] = build_ufh_hydraulic_snapshot(
+            self.entry.options.get("ufh_circuits", []),
+            result["rooms"],
+            result["pumps"],
+            self.ufh_flow_rates,
+            self.ufh_circuit_state,
+            now,
+        )
         result["indoor_air_quality"] = build_indoor_air_analysis(result["rooms"])
         for room_id, air_assessment in result["indoor_air_quality"].get("rooms", {}).items():
             if room_id in result["rooms"]:

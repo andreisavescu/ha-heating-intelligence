@@ -2,7 +2,8 @@
 
 - Add persistent per-room estimated UFH thermal energy sensors for today, this week, this month and lifetime total.
 - Estimate delivered heat from manually configured circuit flow and the assumed 9°C water temperature drop, integrating only confirmed active circulation.
-- Split shared-circuit energy equally across its configured demand rooms to avoid double-counting; expose the estimate method in sensor attributes.
+- Separate each circuit's demand-trigger rooms from its served rooms; split shared-circuit energy equally across served rooms to avoid double-counting, including sensorless rooms.
+- Expose the estimate method in sensor attributes.
 - Allow rooms to be created with only a name and floor; demand, temperature, humidity, CO₂ and window entities are optional and can be configured later.
 - Remove the obsolete manifold electrical-stage diagnostic entities while preserving pump power, energy, cycle and runtime statistics.
 - Preserve the UFH circuit flow section in the Demand view.

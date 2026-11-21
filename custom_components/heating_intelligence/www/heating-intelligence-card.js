@@ -273,16 +273,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         .simple-stat span{display:block;color:var(--secondary-text-color);font-size:.7rem;margin-bottom:4px}
         .simple-stat strong{font-size:1.12rem;font-weight:750}
         .simple-floor-sections{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.simple-pump-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-items:start}.pump-floor{min-width:0;padding:8px 8px}.pump-floor .simple-heading{font-size:.72rem}.pump-floor .simple-pump{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;align-items:start}.pump-floor .simple-pump strong{font-size:.72rem}.pump-floor .simple-state{font-size:.68rem}.pump-floor .simple-temp{grid-column:2;font-size:.72rem}
-        .simple-home-columns .simple-section{min-width:0;padding:8px 8px}
-        .simple-home-columns .simple-heading{font-size:.76rem}
-        .simple-home-columns .simple-room-main{align-items:flex-start}
-        .simple-home-columns .simple-room-main strong{font-size:.76rem}
-        .simple-home-columns .simple-temp{font-size:.76rem}
-        .simple-home-columns .simple-room-meta{gap:4px;font-size:.65rem}
-        .simple-home-columns .simple-pump{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 5px;align-items:start}
-        .simple-home-columns .simple-pump strong{font-size:.72rem}
-        .simple-home-columns .simple-pump .simple-state{font-size:.68rem}
-        .simple-home-columns .simple-pump .simple-temp{grid-column:2;font-size:.72rem}
+        .simple-floor-sections .simple-section{min-width:0;padding:8px 10px}
         .simple-section{border:1px solid var(--divider-color);border-radius:10px;padding:8px 10px}
         .simple-heading{font-size:.8rem;font-weight:750;margin-bottom:5px}
         .simple-room{padding:7px 0;border-top:1px solid var(--divider-color)}
@@ -361,7 +352,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="simple-floor-sections">
             <div class="simple-section">
               <div class="simple-heading">Downstairs rooms</div>
-              ${roomRenderer(downstairsRooms)}
+              ${downstairsRooms.length ? downstairsRooms.map((room) => `<div class="simple-room"><div class="simple-room-main"><strong>${this._esc(room.name)}</strong><span class="simple-temp">${this._fmt(room.temperature)}</span></div><div class="simple-room-meta"><span class="simple-state ${room.demand ? "is-heating" : ""}">${room.demand ? "Heating requested" : "No heat demand"}</span>${room.window_entity && room.window_state_known && room.window_open ? '<span class="simple-alert">Window open</span>' : ""}${room.window_entity && !room.window_state_known ? '<span class="simple-muted">Window unavailable</span>' : ""}<span class="simple-muted">Heat ${this._fmt(room.estimated_thermal_power_w, "W", 0)}</span></div></div>`).join("") : '<p class="simple-muted">No downstairs rooms configured.</p>'}
             </div>
             <div class="simple-section">
               <div class="simple-heading">Upstairs rooms</div>

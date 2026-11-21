@@ -398,7 +398,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             }),
             description_placeholders={
                 "circuit": f"{self._ufh_circuit_number:02d}",
-                "flow_input": f"number.heating_intelligence_ufh_circuit_{self._ufh_circuit_number:02d}_flow",
+                "flow_input": f"number.ufh_circuit_{self._ufh_circuit_number:02d}_flow",
             },
         )
 

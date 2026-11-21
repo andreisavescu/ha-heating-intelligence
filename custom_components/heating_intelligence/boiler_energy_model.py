@@ -1,11 +1,11 @@
 """Experimental gas-calibrated boiler heat allocation (v0.17)."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 DEFAULT_GAS_KWH_PER_M3 = 10.55
 DEFAULT_BOILER_EFFICIENCY = 0.90
-METER_RESOLUTION_M3 = 0.1
 
 
 def update_boiler_energy_model(
@@ -19,35 +19,42 @@ def update_boiler_energy_model(
     elapsed_seconds: float,
     gas_kwh_per_m3: float = DEFAULT_GAS_KWH_PER_M3,
     boiler_efficiency: float = DEFAULT_BOILER_EFFICIENCY,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Accumulate burner-on room exposure, then reconcile it to heating gas.
+    """Accumulate burner-on exposure between meter updates and reconcile deltas.
 
-    Gas meters update infrequently, so energy is allocated over the exposure
-    accumulated since the previous meter increment, not at the instant of the
-    coordinator refresh. Modulation is a relative weight only; it is not
-    interpreted as a linear measurement of boiler output.
+    The gas registers are sampled on every coordinator refresh, but their
+    values normally advance only about every two hours. Each actual counter
+    difference (0.1, 0.2, 0.5 m³, etc.) is reconciled when it appears. Room
+    exposure is retained between meter updates and divided by local date so
+    daily energy can be compared fairly across midnight.
     """
+    now = now or datetime.now().astimezone()
+    today = now.date().isoformat()
     state = history.setdefault("boiler_energy_experiment", {
-        "last_heating_gas_m3": None,
-        "last_dhw_gas_m3": None,
-        "room_exposure": {},
-        "room_energy_kwh": {},
-        "generated_heat_kwh": 0.0,
-        "allocated_heat_kwh": 0.0,
-        "unallocated_heat_kwh": 0.0,
-        "dhw_input_kwh": 0.0,
-        "heating_input_kwh": 0.0,
-        "meter_reset_count": 0,
+        "last_heating_gas_m3": None, "last_dhw_gas_m3": None,
+        "room_exposure_by_date": {}, "burner_seconds_by_date": {},
+        "room_energy_kwh": {}, "daily_room_energy_kwh": {},
+        "daily_generated_heat_kwh": {}, "daily_allocated_heat_kwh": {},
+        "daily_unallocated_heat_kwh": {}, "generated_heat_kwh": 0.0,
+        "allocated_heat_kwh": 0.0, "unallocated_heat_kwh": 0.0,
+        "dhw_input_kwh": 0.0, "heating_input_kwh": 0.0,
+        "meter_reset_count": 0, "meter_sync_count": 0,
+        "last_meter_sync": None, "last_meter_interval_input_kwh": 0.0,
+        "last_meter_interval_useful_heat_kwh": 0.0,
+        "last_meter_interval_seconds": 0.0,
+        "last_room_interval_allocations_kwh": {},
     })
     factor = max(0.1, float(gas_kwh_per_m3 or DEFAULT_GAS_KWH_PER_M3))
     efficiency = min(1.0, max(0.5, float(boiler_efficiency or DEFAULT_BOILER_EFFICIENCY)))
-    interval = min(90.0, max(0.0, float(elapsed_seconds or 0.0)))
-    exposure = state.setdefault("room_exposure", {})
+    interval = max(0.0, min(float(elapsed_seconds or 0.0), 90.0))
+    exposures = state.setdefault("room_exposure_by_date", {})
+    burner_seconds = state.setdefault("burner_seconds_by_date", {})
     room_energy = state.setdefault("room_energy_kwh", {})
+    daily_rooms = state.setdefault("daily_room_energy_kwh", {})
 
-    # Exposure only accrues during confirmed burner operation. Pump overrun
-    # with burner off therefore contributes no newly generated boiler energy.
     if burner_on is True and interval > 0:
+        burner_seconds[today] = float(burner_seconds.get(today, 0.0)) + interval
         modulation_weight = (
             min(100.0, max(0.0, float(modulation_percent))) / 100.0
             if modulation_percent is not None else 1.0
@@ -56,21 +63,16 @@ def update_boiler_energy_model(
         for circuit in circuits.values():
             if not circuit.get("flow_active"):
                 continue
-            flow = max(0.0, float(circuit.get("configured_flow_l_min") or 0.0))
+            flow = max(0.0, float(circuit.get("configured_flow_l_min") or circuit.get("active_configured_flow_l_min") or 0.0))
             served = circuit.get("served_rooms") or circuit.get("demand_rooms") or []
-            eligible = [
-                room_id for room_id in served
-                if room_id in rooms and rooms[room_id].get("demand") is True
-            ]
-            if not eligible or flow <= 0:
+            eligible = [rid for rid in served if rid in rooms and rooms[rid].get("demand") is True]
+            if flow <= 0 or not eligible:
                 continue
-            # Shared circuit flow is divided among only the served rooms that
-            # are actually requesting heat at this time.
-            share = flow / len(eligible)
-            for room_id in eligible:
-                room_weights[room_id] = room_weights.get(room_id, 0.0) + share
-        for room_id, flow_weight in room_weights.items():
-            exposure[room_id] = float(exposure.get(room_id, 0.0)) + flow_weight * modulation_weight * interval
+            for rid in eligible:
+                room_weights[rid] = room_weights.get(rid, 0.0) + flow / len(eligible)
+        day_exposure = exposures.setdefault(today, {})
+        for rid, weight in room_weights.items():
+            day_exposure[rid] = float(day_exposure.get(rid, 0.0)) + weight * modulation_weight * interval
 
     def meter_delta(key: str, current: float | None) -> tuple[float, bool]:
         previous = state.get(key)
@@ -81,40 +83,79 @@ def update_boiler_energy_model(
         if previous is None:
             return 0.0, False
         if value < float(previous):
-            # Monthly cumulative meters reset to a lower value. Count the
-            # post-reset register as new usage, never emit negative energy.
             state["meter_reset_count"] = int(state.get("meter_reset_count", 0)) + 1
             return value, True
         return value - float(previous), False
 
-    heating_delta_m3, heating_reset = meter_delta("last_heating_gas_m3", heating_gas_m3)
-    dhw_delta_m3, dhw_reset = meter_delta("last_dhw_gas_m3", dhw_gas_m3)
-    heating_input = heating_delta_m3 * factor
-    dhw_input = dhw_delta_m3 * factor
+    heating_delta, heating_reset = meter_delta("last_heating_gas_m3", heating_gas_m3)
+    dhw_delta, dhw_reset = meter_delta("last_dhw_gas_m3", dhw_gas_m3)
+    heating_input = heating_delta * factor
+    dhw_input = dhw_delta * factor
     useful_heat = heating_input * efficiency
     state["heating_input_kwh"] = float(state.get("heating_input_kwh", 0.0)) + heating_input
     state["dhw_input_kwh"] = float(state.get("dhw_input_kwh", 0.0)) + dhw_input
     state["generated_heat_kwh"] = float(state.get("generated_heat_kwh", 0.0)) + useful_heat
 
-    total_exposure = sum(max(0.0, float(value)) for value in exposure.values())
-    allocated = 0.0
-    allocations: dict[str, float] = {}
-    if useful_heat > 0 and total_exposure > 0:
-        for room_id, room_exposure in exposure.items():
-            share = useful_heat * max(0.0, float(room_exposure)) / total_exposure
-            if share <= 0:
-                continue
-            room_energy[room_id] = float(room_energy.get(room_id, 0.0)) + share
-            allocations[room_id] = share
-            allocated += share
-    unallocated = max(0.0, useful_heat - allocated)
-    state["allocated_heat_kwh"] = float(state.get("allocated_heat_kwh", 0.0)) + allocated
-    state["unallocated_heat_kwh"] = float(state.get("unallocated_heat_kwh", 0.0)) + unallocated
+    interval_allocations: dict[str, float] = {}
+    interval_allocated = 0.0
+    interval_unallocated = 0.0
+    interval_seconds = sum(max(0.0, float(v)) for v in burner_seconds.values())
+    if heating_delta > 0:
+        total_burner_seconds = sum(max(0.0, float(v)) for v in burner_seconds.values())
+        date_heat: dict[str, float] = {}
+        if total_burner_seconds > 0:
+            for day, seconds in burner_seconds.items():
+                date_heat[day] = useful_heat * max(0.0, float(seconds)) / total_burner_seconds
+        else:
+            date_heat[today] = useful_heat
+        for day, day_heat in date_heat.items():
+            day_exposure = exposures.get(day, {})
+            total_exposure = sum(max(0.0, float(v)) for v in day_exposure.values())
+            day_allocated = 0.0
+            if day_heat > 0 and total_exposure > 0:
+                daily = daily_rooms.setdefault(day, {})
+                for rid, exposure in day_exposure.items():
+                    amount = day_heat * max(0.0, float(exposure)) / total_exposure
+                    if amount <= 0:
+                        continue
+                    room_energy[rid] = float(room_energy.get(rid, 0.0)) + amount
+                    daily[rid] = float(daily.get(rid, 0.0)) + amount
+                    interval_allocations[rid] = interval_allocations.get(rid, 0.0) + amount
+                    day_allocated += amount
+            day_unallocated = max(0.0, day_heat - day_allocated)
+            state.setdefault("daily_generated_heat_kwh", {})[day] = float(state["daily_generated_heat_kwh"].get(day, 0.0)) + day_heat
+            state.setdefault("daily_allocated_heat_kwh", {})[day] = float(state["daily_allocated_heat_kwh"].get(day, 0.0)) + day_allocated
+            state.setdefault("daily_unallocated_heat_kwh", {})[day] = float(state["daily_unallocated_heat_kwh"].get(day, 0.0)) + day_unallocated
+            interval_allocated += day_allocated
+            interval_unallocated += day_unallocated
+        state["allocated_heat_kwh"] = float(state.get("allocated_heat_kwh", 0.0)) + interval_allocated
+        state["unallocated_heat_kwh"] = float(state.get("unallocated_heat_kwh", 0.0)) + interval_unallocated
+        state["room_exposure_by_date"] = {}
+        state["burner_seconds_by_date"] = {}
+        state["meter_sync_count"] = int(state.get("meter_sync_count", 0)) + 1
+        state["last_meter_sync"] = now.isoformat()
+        state["last_meter_interval_input_kwh"] = heating_input
+        state["last_meter_interval_useful_heat_kwh"] = useful_heat
+        state["last_meter_interval_seconds"] = interval_seconds
+        state["last_room_interval_allocations_kwh"] = interval_allocations
 
-    # Exposure describes only the interval just reconciled to the meter.
-    if heating_delta_m3 > 0:
-        exposure.clear()
+    # Retain a bounded daily series for the comparison dashboard.
+    for key in ("daily_room_energy_kwh", "daily_generated_heat_kwh", "daily_allocated_heat_kwh", "daily_unallocated_heat_kwh"):
+        mapping = state.setdefault(key, {})
+        for day in list(mapping):
+            try:
+                if (now.date() - datetime.fromisoformat(day).date()).days > 30:
+                    del mapping[day]
+            except (TypeError, ValueError):
+                del mapping[day]
 
+    last_seconds = float(state.get("last_meter_interval_seconds") or 0.0)
+    avg_power = {
+        rid: (value * 1000.0 / (last_seconds / 3600.0)) if last_seconds > 0 else 0.0
+        for rid, value in state.get("last_room_interval_allocations_kwh", {}).items()
+    }
+    latest_useful = float(state.get("last_meter_interval_useful_heat_kwh") or 0.0)
+    latest_input = float(state.get("last_meter_interval_input_kwh") or 0.0)
     return {
         "heating_input_energy_kwh": round(state["heating_input_kwh"], 4),
         "dhw_input_energy_kwh": round(state["dhw_input_kwh"], 4),
@@ -123,26 +164,32 @@ def update_boiler_energy_model(
         "boiler_unallocated_heat_kwh": round(state["unallocated_heat_kwh"], 4),
         "boiler_meter_interval_input_kwh": round(heating_input, 4),
         "boiler_meter_interval_useful_heat_kwh": round(useful_heat, 4),
-        "boiler_room_allocations_kwh": {key: round(value, 6) for key, value in allocations.items()},
-        "boiler_room_energy_kwh": {key: round(float(value), 6) for key, value in room_energy.items()},
-        "boiler_allocation_exposure": round(total_exposure, 3),
+        "boiler_room_allocations_kwh": {k: round(v, 6) for k, v in interval_allocations.items()},
+        "boiler_room_interval_average_power_w": {k: round(v, 2) for k, v in avg_power.items()},
+        "boiler_room_energy_kwh": {k: round(float(v), 6) for k, v in room_energy.items()},
+        "boiler_daily_room_energy_kwh": daily_rooms,
+        "boiler_daily_generated_heat_kwh": state.get("daily_generated_heat_kwh", {}),
+        "boiler_daily_allocated_heat_kwh": state.get("daily_allocated_heat_kwh", {}),
+        "boiler_daily_unallocated_heat_kwh": state.get("daily_unallocated_heat_kwh", {}),
+        "boiler_allocation_exposure": round(sum(sum(v.values()) for v in exposures.values()), 3),
         "boiler_allocation_status": (
-            "allocated" if allocated and not unallocated else
-            "partially_unallocated" if allocated else
+            "allocated" if interval_allocated and not interval_unallocated else
+            "partially_unallocated" if interval_allocated else
             "unallocated_no_confirmed_room_exposure" if useful_heat else
             "waiting_for_heating_gas_meter"
         ),
-        "boiler_meter_resolution_kwh": round(METER_RESOLUTION_M3 * factor, 4),
+        "boiler_meter_sync_count": int(state.get("meter_sync_count", 0)),
+        "boiler_last_meter_sync": state.get("last_meter_sync"),
+        "boiler_meter_interval_seconds": round(last_seconds, 1),
         "boiler_meter_reset_detected": heating_reset or dhw_reset,
         "boiler_meter_reset_count": int(state.get("meter_reset_count", 0)),
         "boiler_efficiency_assumption": efficiency,
         "boiler_gas_energy_factor_kwh_m3": factor,
         "boiler_modulation_used_as_relative_weight": modulation_percent is not None,
         "boiler_energy_model_note": (
-            "Experimental gas-calibrated estimate. Gas energy is reconciled only "
-            "when the cumulative heating meter changes; 0.1 m³ meter resolution "
-            "limits precision. Modulation weights burner-on room exposure but is "
-            "not treated as a linear boiler-output measurement. DHW gas is excluded "
-            "from room allocation. No new heat is generated during burner-off pump overrun."
+            "Gas counters are sampled every coordinator refresh and reconciled whenever their cumulative values advance "
+            "(normally about every two hours). The actual counter difference is used; increments may vary. Modulation "
+            "weights burner-on room exposure but is not treated as linear boiler output. DHW gas is excluded from room "
+            "allocation. Burner-off pump overrun creates no new boiler heat."
         ),
     }

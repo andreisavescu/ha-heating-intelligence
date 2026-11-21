@@ -61,3 +61,40 @@ def test_monthly_meter_reset_never_produces_negative_energy():
     assert result["boiler_meter_interval_input_kwh"] == 2.11
     assert result["boiler_meter_reset_detected"] is True
     assert result["boiler_meter_reset_count"] == 2
+
+
+def test_variable_meter_increment_is_reconciled_as_actual_delta():
+    history = {}
+    circuits = {"c": {"flow_active": True, "configured_flow_l_min": 1.0, "served_rooms": ["r"]}}
+    rooms = {"r": {"demand": True}}
+    MODEL.update_boiler_energy_model(history, 10.0, 4.0, True, 100, circuits, rooms, 60)
+    result = MODEL.update_boiler_energy_model(history, 10.5, 4.2, False, 0, circuits, rooms, 60)
+    assert result["boiler_meter_interval_input_kwh"] == 5.275
+    assert result["boiler_meter_interval_useful_heat_kwh"] == 4.7475
+    assert result["boiler_meter_sync_count"] == 1
+    assert result["boiler_room_allocations_kwh"]["r"] == 4.7475
+
+
+def test_daily_room_allocation_is_split_at_midnight():
+    from datetime import datetime, timezone
+
+    history = {}
+    circuits = {"c": {"flow_active": True, "configured_flow_l_min": 1.0, "served_rooms": ["r"]}}
+    rooms = {"r": {"demand": True}}
+    MODEL.update_boiler_energy_model(
+        history, 1.0, 0.0, True, 100, circuits, rooms, 60,
+        now=datetime(2026, 11, 20, 23, 59, 0, tzinfo=timezone.utc),
+    )
+    MODEL.update_boiler_energy_model(
+        history, 1.0, 0.0, True, 100, circuits, rooms, 60,
+        now=datetime(2026, 11, 21, 0, 0, 0, tzinfo=timezone.utc),
+    )
+    result = MODEL.update_boiler_energy_model(
+        history, 1.1, 0.0, False, 0, circuits, rooms, 60,
+        now=datetime(2026, 11, 21, 0, 1, 0, tzinfo=timezone.utc),
+    )
+    daily = result["boiler_daily_room_energy_kwh"]
+    assert set(daily) == {"2026-11-20", "2026-11-21"}
+    assert daily["2026-11-20"]["r"] > 0
+    assert daily["2026-11-21"]["r"] > 0
+    assert abs(daily["2026-11-20"]["r"] + daily["2026-11-21"]["r"] - 0.9495) < 1e-8

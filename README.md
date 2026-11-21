@@ -375,7 +375,7 @@ Historical AC power is normalized from W, kW, MW and mW before the passive-fit A
 - High-resolution event timestamps remain separate from the 30-minute thermal identification dataset; no synthetic 10-second rows are generated.
 
 
-## v0.15.11 — Generic UFH circuit configuration
+## v0.15.12 — Generic UFH circuit configuration
 
 - Configure each of the 16 circuits independently with a user-defined name, pipe length and floor.
 - Bind the circuit to the manifold pump for its selected floor, preventing accidental cross-floor pump assignment.

@@ -1,8 +1,7 @@
 """Manual flowmeter inputs for underfloor-heating circuits."""
 from __future__ import annotations
 
-from homeassistant.components.number import NumberMode
-from homeassistant.helpers.restore_state import RestoreNumber
+from homeassistant.components.number import NumberMode, RestoreNumber
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN

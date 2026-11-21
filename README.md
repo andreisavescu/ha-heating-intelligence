@@ -373,3 +373,12 @@ Historical AC power is normalized from W, kW, MW and mW before the passive-fit A
 - Reports per-entity sample counts, explicit transitions, complete on/off intervals and cycle counts, dwell-time median/minimum/maximum, and interrupted active intervals. Raw history is not retained in the summary.
 - This is controller-event timing evidence, not proof of PWM duty-cycle accuracy or delivered heat. A switch stream that alternates `on`/`unavailable` cannot establish pulse durations until explicit `off` transitions are recorded.
 - High-resolution event timestamps remain separate from the 30-minute thermal identification dataset; no synthetic 10-second rows are generated.
+
+
+## v0.15.8 — UFH hydraulic flow inputs
+
+- Add 16 persistent, manually adjustable UFH circuit flow inputs (0.00–6.00 L/min, 0.01 L/min steps).
+- Add per-circuit configuration for room association, pipe length, manifold pump, and one or more room-demand sources with OR/AND logic.
+- Combine configured room demand with the associated manifold pump's >5 W circulation state before counting a circuit's configured flow as active.
+- Keep manually entered flowmeter values distinct from automatically measured flow. The resulting active-flow totals are conditional estimates, not independent per-circuit measurements.
+- Expose the hydraulic snapshot in the Heating Intelligence overview attributes.

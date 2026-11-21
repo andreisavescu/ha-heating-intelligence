@@ -316,28 +316,53 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(step_id="pump_settings", data_schema=schema)
 
     async def async_step_ufh_circuits(self, user_input=None):
-        """Configure room-demand and manifold associations for UFH circuits."""
+        """Select one of the 16 UFH circuits to configure."""
         rooms = self.config_entry.options.get(CONF_ROOMS, [])
         pumps = self.config_entry.options.get(CONF_PUMPS, [])
         if not rooms:
             return self.async_abort(reason="no_rooms")
         if not pumps:
             return self.async_abort(reason="no_pumps")
-        circuits = {
+        if user_input is not None:
+            self._ufh_circuit_number = int(user_input["circuit_number"])
+            return await self.async_step_ufh_circuit_details()
+
+        configured = {
             item["id"]: item
             for item in self.config_entry.options.get("ufh_circuits", [])
         }
+        return self.async_show_form(
+            step_id="ufh_circuits",
+            data_schema=vol.Schema({
+                vol.Required("circuit_number", default=1): vol.In({
+                    number: (
+                        f"Circuit {number:02d}"
+                        + (" — configured" if f"circuit_{number:02d}" in configured else "")
+                    )
+                    for number in range(1, 17)
+                }),
+            }),
+        )
+
+    async def async_step_ufh_circuit_details(self, user_input=None):
+        """Configure the room, pipe length, manifold and demand rule."""
+        rooms = self.config_entry.options.get(CONF_ROOMS, [])
+        pumps = self.config_entry.options.get(CONF_PUMPS, [])
+        circuit_id = f"circuit_{self._ufh_circuit_number:02d}"
+        existing = next(
+            (item for item in self.config_entry.options.get("ufh_circuits", [])
+             if item.get("id") == circuit_id),
+            {},
+        )
         if user_input is not None:
-            number = int(user_input["circuit_number"])
-            circuit_id = f"circuit_{number:02d}"
             room = next(item for item in rooms if item["id"] == user_input["room_id"])
             demand_rooms = user_input.get("demand_rooms") or [room["id"]]
             if not isinstance(demand_rooms, list):
                 demand_rooms = [demand_rooms]
             circuit = {
                 "id": circuit_id,
-                "circuit_number": number,
-                "name": user_input.get("name") or f"{room['name']} circuit {number}",
+                "circuit_number": self._ufh_circuit_number,
+                "name": user_input.get("name") or f"{room['name']} circuit {self._ufh_circuit_number}",
                 "room_id": room["id"],
                 "floor": room.get(CONF_FLOOR, "unassigned"),
                 "pipe_length_m": float(user_input["pipe_length_m"]),
@@ -354,29 +379,26 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
 
         room_options = {item["id"]: item[CONF_NAME] for item in rooms}
         pump_options = {item["id"]: item["name"] for item in pumps}
-        current_number = 1
-        current = circuits.get(f"circuit_{current_number:02d}", {})
+        default_room = existing.get("room_id", rooms[0]["id"])
+        default_pump = existing.get("pump_id", next(iter(pump_options)))
         return self.async_show_form(
-            step_id="ufh_circuits",
+            step_id="ufh_circuit_details",
             data_schema=vol.Schema({
-                vol.Required("circuit_number", default=current_number): vol.In({
-                    number: f"Circuit {number:02d}" for number in range(1, 17)
-                }),
-                vol.Required("room_id", default=current.get("room_id", rooms[0]["id"])): vol.In(room_options),
-                vol.Optional("name", default=current.get("name", "")): str,
-                vol.Required("pipe_length_m", default=current.get("pipe_length_m", 80.0)):
+                vol.Required("room_id", default=default_room): vol.In(room_options),
+                vol.Optional("name", default=existing.get("name", "")): str,
+                vol.Required("pipe_length_m", default=existing.get("pipe_length_m", 80.0)):
                     selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=250, step=0.5, unit_of_measurement="m", mode=selector.NumberSelectorMode.BOX)),
-                vol.Required("pump_id", default=current.get("pump_id", next(iter(pump_options)))): vol.In(pump_options),
-                vol.Optional("demand_rooms", default=current.get("demand_rooms", [rooms[0]["id"]])):
+                vol.Required("pump_id", default=default_pump): vol.In(pump_options),
+                vol.Optional("demand_rooms", default=existing.get("demand_rooms", [default_room])):
                     selector.SelectSelector(selector.SelectSelectorConfig(options=[
                         {"value": room_id, "label": label} for room_id, label in room_options.items()
                     ], multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)),
-                vol.Required("demand_logic", default=current.get("demand_logic", "or")):
+                vol.Required("demand_logic", default=existing.get("demand_logic", "or")):
                     vol.In({"or": "Any selected room requests heat (OR)", "and": "All selected rooms request heat (AND)"}),
             }),
             description_placeholders={
-                "configured_circuits": str(len(circuits)),
-                "flow_inputs": "16",
+                "circuit": f"{self._ufh_circuit_number:02d}",
+                "flow_input": f"number.heating_intelligence_ufh_circuit_{self._ufh_circuit_number:02d}_flow",
             },
         )
 

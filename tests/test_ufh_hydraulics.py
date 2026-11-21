@@ -58,3 +58,14 @@ def test_or_and_demand_logic_preserves_unknowns():
     assert UFH.evaluate_activation([True, True], "and") is True
     assert UFH.evaluate_activation([False, None], "or") is None
     assert UFH.evaluate_activation([True, None], "and") is None
+
+
+def test_active_flow_stops_on_demand_end_even_if_pump_power_has_changed():
+    now = datetime(2026, 11, 21, tzinfo=timezone.utc)
+    state = {}
+    snapshot("on", 8.0, state, now)
+    snapshot("on", 8.0, state, now + timedelta(seconds=180))
+    still_active = snapshot("on", 0.0, state, now + timedelta(seconds=190))
+    assert still_active["flow_active"] is True
+    stopped = snapshot("off", 0.0, state, now + timedelta(seconds=200))
+    assert stopped["flow_active"] is False

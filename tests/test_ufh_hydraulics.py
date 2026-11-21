@@ -115,6 +115,7 @@ def test_floor_any_demand_ignores_other_floor_and_handles_idle_floor():
     }]
     rooms = {
         "upstairs_bedroom": {"floor": "upstairs", "demand": True, "demand_state": "on"},
+        "downstairs_hall": {"floor": "ground_floor", "demand": False, "demand_state": "off"},
     }
     result = UFH.build_ufh_hydraulic_snapshot(
         circuits, rooms, {"ground_floor": {"power": 8.0}},

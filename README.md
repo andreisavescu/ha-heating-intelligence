@@ -1,3 +1,8 @@
+## v0.15.17 — compact home overview layout
+
+- Display the Rooms and Heating pumps panels side by side in a two-column layout, matching the two-column summary above.
+- Tighten room and pump row typography and spacing so the panels remain usable on mobile screens.
+
 ## v0.15.16 — Room energy registration and UFH layout
 
 - Fix room thermal energy sensor device association so all four energy sensors register under their room device.

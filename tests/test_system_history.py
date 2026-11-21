@@ -18,11 +18,11 @@ def test_system_history_samples_every_five_minutes_and_keeps_circuit_and_room_va
         "circuits": {"loop_1": {"name": "Living loop", "flow_active": True, "active_configured_flow_l_min": 2.0, "estimated_thermal_power_w": 1250}},
         "rooms": {"living": {"name": "Living", "temperature": 21.2, "estimated_thermal_power_w": 1250, "demand": True}},
     }
-    first = record_system_sample(history, now, snapshot)
-    same_minute = record_system_sample(history, now + timedelta(seconds=60), snapshot)
+    record_system_sample(history, now, snapshot)
+    assert len(history["system_samples"]) == 1
+    record_system_sample(history, now + timedelta(seconds=60), snapshot)
+    assert len(history["system_samples"]) == 1
     next_sample = record_system_sample(history, now + timedelta(seconds=300), snapshot)
-    assert len(first) == 1
-    assert len(same_minute) == 1
     assert len(next_sample) == 2
     assert next_sample[-1]["circuits"]["loop_1"]["active"] is True
     assert next_sample[-1]["rooms"]["living"]["temperature_c"] == 21.2

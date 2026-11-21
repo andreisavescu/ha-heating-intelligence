@@ -257,12 +257,16 @@ def update_boiler_energy_model(
             date = datetime.fromisoformat(day).date()
         except (TypeError, ValueError):
             continue
+        if not isinstance(allocations, dict):
+            continue
         if date >= week_start:
             for rid, value in allocations.items():
-                weekly_modulation_rooms[rid] = weekly_modulation_rooms.get(rid, 0.0) + float(value or 0.0)
+                if isinstance(value, (int, float)):
+                    weekly_modulation_rooms[rid] = weekly_modulation_rooms.get(rid, 0.0) + float(value)
         if date >= month_start:
             for rid, value in allocations.items():
-                monthly_modulation_rooms[rid] = monthly_modulation_rooms.get(rid, 0.0) + float(value or 0.0)
+                if isinstance(value, (int, float)):
+                    monthly_modulation_rooms[rid] = monthly_modulation_rooms.get(rid, 0.0) + float(value)
 
     last_seconds = float(state.get("last_meter_interval_seconds") or 0.0)
     avg_power = {

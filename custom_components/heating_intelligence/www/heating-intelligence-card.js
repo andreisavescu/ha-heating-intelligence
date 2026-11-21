@@ -229,6 +229,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         <div class="metric"><span>CO₂ concentration</span><strong>${selected.co2_entity ? (selected.co2_ppm == null ? "Unavailable" : this._fmt(selected.co2_ppm, "ppm", 0) + " · " + (selected.co2_status || "—")) : "Not configured"}</strong><div class="subtle">${selected.co2_status === "good" ? "Good ventilation indicator." : selected.co2_status === "elevated" ? "Ventilation may be beneficial." : selected.co2_status === "high" ? "Ventilate the room." : selected.co2_status === "very_high" ? "High CO₂ reading; ventilate and check the sensor." : ""}</div></div>
         <div class="metric"><span>Indoor air assessment</span><strong class="${selected.air_quality_assessment?.status === "attention" ? "warning" : selected.air_quality_assessment?.status === "good" ? "active" : ""}">${this._esc(selected.air_quality_assessment?.status || "No readings")}</strong><div class="subtle">${this._esc(selected.air_quality_assessment?.recommendation || "Configure room CO2 and/or humidity sensors for live interpretation.")}</div></div>
         <div class="metric"><span>Heating demand</span><strong class="${selected.demand ? "active" : ""}">${selected.demand ? "Requested" : "Not requested"}</strong></div>
+        <div class="metric"><span>Estimated UFH heating power</span><strong>${this._fmt(selected.estimated_thermal_power_w, "W", 0)}</strong><div class="subtle">Instantaneous estimate allocated from active circuits.</div></div>
         <div class="metric"><span>Window</span><strong class="${selected.window_open ? "warning" : ""}">${selected.window_entity ? (selected.window_state_known ? (selected.window_open ? "Open" : "Closed") : "Unavailable") : "Not configured"}</strong></div>
         <div class="metric"><span>Demand today</span><strong>${this._fmt((selected.demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>
         <div class="metric"><span>Demand this week</span><strong>${this._fmt((selected.demand_seconds_week ?? 0) / 3600, "h", 2)}</strong></div>
@@ -267,6 +268,17 @@ class HeatingIntelligenceCard extends HTMLElement {
         .simple-stat{padding:9px 10px;border:1px solid var(--divider-color);border-radius:10px;background:var(--secondary-background-color)}
         .simple-stat span{display:block;color:var(--secondary-text-color);font-size:.7rem;margin-bottom:4px}
         .simple-stat strong{font-size:1.12rem;font-weight:750}
+        .simple-home-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-items:start}
+        .simple-home-columns .simple-section{min-width:0;padding:8px 8px}
+        .simple-home-columns .simple-heading{font-size:.76rem}
+        .simple-home-columns .simple-room-main{align-items:flex-start}
+        .simple-home-columns .simple-room-main strong{font-size:.76rem}
+        .simple-home-columns .simple-temp{font-size:.76rem}
+        .simple-home-columns .simple-room-meta{gap:4px;font-size:.65rem}
+        .simple-home-columns .simple-pump{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 5px;align-items:start}
+        .simple-home-columns .simple-pump strong{font-size:.72rem}
+        .simple-home-columns .simple-pump .simple-state{font-size:.68rem}
+        .simple-home-columns .simple-pump .simple-temp{grid-column:2;font-size:.72rem}
         .simple-section{border:1px solid var(--divider-color);border-radius:10px;padding:8px 10px}
         .simple-heading{font-size:.8rem;font-weight:750;margin-bottom:5px}
         .simple-room{padding:7px 0;border-top:1px solid var(--divider-color)}
@@ -342,6 +354,7 @@ class HeatingIntelligenceCard extends HTMLElement {
             <div class="simple-stat"><span>Pumps running</span><strong>${attrs.running_pumps ?? pumps.filter(p=>p.running).length} / ${pumps.length}</strong></div>
             <div class="simple-stat"><span>Water inlet</span><strong>${this._fmt(attrs.water_temperature)}</strong></div>
           </div>
+          <div class="simple-home-columns">
           <div class="simple-section">
             <div class="simple-heading">Rooms</div>
             ${entries.length ? entries.map((room) => `<div class="simple-room">
@@ -350,6 +363,7 @@ class HeatingIntelligenceCard extends HTMLElement {
                 <span class="simple-state ${room.demand ? "is-heating" : ""}">${room.demand ? "Heating requested" : "No heat demand"}</span>
                 ${room.window_entity && room.window_state_known && room.window_open ? '<span class="simple-alert">Window open</span>' : ""}
                 ${room.window_entity && !room.window_state_known ? '<span class="simple-muted">Window unavailable</span>' : ""}
+                <span class="simple-muted">Heat ${this._fmt(room.estimated_thermal_power_w, "W", 0)}</span>
               </div>
             </div>`).join("") : '<p class="simple-muted">No rooms configured.</p>'}
           </div>
@@ -360,6 +374,7 @@ class HeatingIntelligenceCard extends HTMLElement {
               <span class="simple-state ${pump.running ? "is-heating" : ""}">${pump.running ? "Running" : "Stopped"}</span>
               <span class="simple-temp">${this._fmt(pump.power, "W", 0)}</span>
             </div>`).join("") : '<p class="simple-muted">No pumps configured.</p>'}
+          </div>
           </div>
           ${insights.some(item => item.severity === "warning") ? `<div class="simple-section">
             <div class="simple-heading">Needs attention</div>

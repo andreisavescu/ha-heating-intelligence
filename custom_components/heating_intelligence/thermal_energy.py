@@ -30,6 +30,7 @@ def update_room_thermal_energy(
             "today_kwh": 0.0, "week_kwh": 0.0, "month_kwh": 0.0,
             "total_kwh": 0.0,
         })
+        item["estimated_thermal_power_w"] = 0.0
         if item.get("date") != date_key:
             item["date"] = date_key
             item["today_kwh"] = 0.0
@@ -49,9 +50,11 @@ def update_room_thermal_energy(
         targets = [room_id for room_id in circuit.get("served_rooms") or circuit.get("demand_rooms", []) if room_id in rooms]
         if not targets:
             continue
+        share_power_w = power_w / len(targets)
         share_kwh = power_w * interval / 3_600_000.0 / len(targets)
         for room_id in targets:
             item = energy[room_id]
+            item["estimated_thermal_power_w"] += share_power_w
             item["today_kwh"] += share_kwh
             item["week_kwh"] += share_kwh
             item["month_kwh"] += share_kwh
@@ -60,6 +63,7 @@ def update_room_thermal_energy(
     for room_id in rooms:
         item = energy[room_id]
         result[room_id] = {
+            "estimated_thermal_power_w": round(item["estimated_thermal_power_w"], 1),
             "thermal_energy_today_kwh": round(item["today_kwh"], 6),
             "thermal_energy_week_kwh": round(item["week_kwh"], 6),
             "thermal_energy_month_kwh": round(item["month_kwh"], 6),

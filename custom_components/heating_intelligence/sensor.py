@@ -37,6 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     for room in entry.options.get(CONF_ROOMS, []):
         if room.get("temperature_entity"):
             entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
+        entities.append(RoomThermalPowerSensor(coordinator, room["id"], room["name"]))
         entities.extend(
             RoomThermalEnergySensor(coordinator, room["id"], room["name"], metric)
             for metric in ROOM_THERMAL_ENERGY_METRICS
@@ -266,6 +267,31 @@ ROOM_THERMAL_ENERGY_METRICS = {
     "thermal_energy_month_kwh": ("Estimated UFH Thermal Energy This Month", SensorStateClass.TOTAL),
     "thermal_energy_total_kwh": ("Estimated UFH Thermal Energy Total", SensorStateClass.TOTAL_INCREASING),
 }
+
+
+class RoomThermalPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Estimated instantaneous UFH thermal power allocated to a room."""
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "W"
+    _attr_icon = "mdi:heat-wave"
+
+    def __init__(self, coordinator, room_id: str, room_name: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self._attr_name = f"{room_name} Estimated UFH Heating Power"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_estimated_thermal_power_w"
+
+    @property
+    def native_value(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        return room.get("estimated_thermal_power_w", 0.0)
+
+    @property
+    def extra_state_attributes(self):
+        return {"estimate": True, "method": "Active configured circuit thermal power is split equally among served rooms; circuit power uses configured flow and an assumed 9°C water delta.", "assumed_water_delta_t_c": 9.0}
 
 
 class RoomThermalEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):

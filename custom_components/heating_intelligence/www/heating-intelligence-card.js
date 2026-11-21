@@ -176,33 +176,46 @@ class HeatingIntelligenceCard extends HTMLElement {
     const circuits=Object.entries(hydraulics?.circuits||{}).filter(([,c])=>c.flow_active&&Number(c.estimated_thermal_power_w)>0);
     if(!circuits.length)return '<div class="chart-empty">No active UFH heat flow right now. The diagram will populate when a circuit is active.</div>';
     const roomMap=rooms||{};
-    const floors=[{id:"ground_floor",label:"Downstairs manifold"},{id:"upstairs",label:"Upstairs manifold"}];
-    const activeFloors=floors.map(f=>({...f,circuits:circuits.filter(([,c])=>(c.demand_floor||"unassigned")===f.id)})).filter(f=>f.circuits.length);
-    const circuitNodes=circuits.map(([id,c])=>({id,name:c.name||id,floor:c.demand_floor||"unassigned",power:Number(c.estimated_thermal_power_w)||0,served:(c.served_rooms||[]).filter(r=>roomMap[r])}));
-    const roomTotals={};
-    for(const c of circuitNodes){const served=c.served.length?c.served:["unassigned"];for(const id of served){if(id==="unassigned")continue;roomTotals[id]=(roomTotals[id]||0)+c.power/served.length;}}
-    const roomNodes=Object.entries(roomTotals).map(([id,power])=>({id,name:roomMap[id]?.name||id,power}));
-    const total=circuitNodes.reduce((n,c)=>n+c.power,0);
-    const max=Math.max(1,...circuitNodes.map(c=>c.power),...roomNodes.map(r=>r.power));
-    const scale=v=>Math.max(1.5,v/max*20);
-    const height=Math.max(240,Math.max(activeFloors.length,circuitNodes.length,roomNodes.length)*62+56);
-    const yAt=(i,n)=>((i+0.5)*height/n);
-    const floorNodes=activeFloors.map((f,i)=>({...f,name:f.label,y:yAt(i,activeFloors.length),power:f.circuits.reduce((n,[,c])=>n+(Number(c.estimated_thermal_power_w)||0),0)}));
-    const cNodes=circuitNodes.map((c,i)=>({...c,y:yAt(i,circuitNodes.length)}));
-    const rNodes=roomNodes.map((r,i)=>({...r,y:yAt(i,roomNodes.length)}));
-    const links=[];
-    for(const c of cNodes){
-      const floor=floorNodes.find(f=>f.id===c.floor);
-      if(floor)links.push({a:floor,b:c,value:c.power});
-      const served=c.served.length?c.served:[];
-      for(const id of served){const room=rNodes.find(r=>r.id===id);if(room)links.push({a:c,b:room,value:c.power/served.length});}
+    const floors=[
+      {id:"ground_floor",label:"Downstairs",x:122},
+      {id:"upstairs",label:"Upstairs",x:122}
+    ];
+    const allocations={ground_floor:{},upstairs:{}};
+    for(const [,c] of circuits){
+      const floor=c.demand_floor;
+      if(!allocations[floor])continue;
+      const served=(c.served_rooms||[]).filter(id=>roomMap[id]);
+      if(!served.length)continue;
+      const share=(Number(c.estimated_thermal_power_w)||0)/served.length;
+      for(const id of served)allocations[floor][id]=(allocations[floor][id]||0)+share;
     }
-    const path=(a,b)=>{const x1=a.x+12,y1=a.y,x2=b.x,y2=b.y,mid=(x1+x2)/2;return `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;};
-    floorNodes.forEach(n=>n.x=180);cNodes.forEach(n=>n.x=500);rNodes.forEach(n=>n.x=820);
-    const linkSvg=links.map(l=>`<path d="${path(l.a,l.b)}" fill="none" stroke="var(--hi-green, #2eaa83)" stroke-opacity=".34" stroke-width="${scale(l.value).toFixed(1)}"><title>${this._esc(l.a.name)} → ${this._esc(l.b.name)}: ${l.value.toFixed(0)} W estimated</title></path>`).join("");
-    const nodeSvg=(nodes,kind)=>nodes.map(n=>`<g><rect x="${n.x}" y="${(n.y-12).toFixed(1)}" width="12" height="24" rx="4" class="heat-flow-node ${kind}"/><text x="${n.x+20}" y="${(n.y-3).toFixed(1)}" class="heat-flow-label">${this._esc(n.name)}</text><text x="${n.x+20}" y="${(n.y+13).toFixed(1)}" class="heat-flow-value">${n.power.toFixed(0)} W</text></g>`).join("");
-    const columns='<text x="180" y="22" text-anchor="middle" class="heat-flow-column">MANIFOLDS</text><text x="500" y="22" text-anchor="middle" class="heat-flow-column">ACTIVE CIRCUITS</text><text x="820" y="22" text-anchor="middle" class="heat-flow-column">SERVED ROOMS</text>';
-    return `<div class="heat-flow-summary"><div><span>Estimated active UFH output</span><strong>${(total/1000).toFixed(2)} kW</strong></div><div><span>Active circuits</span><strong>${circuitNodes.length}</strong></div><div><span>Served rooms</span><strong>${roomNodes.length}</strong></div></div><div class="heat-flow-scroll"><svg viewBox="0 0 980 ${height+42}" role="img" aria-label="Sankey diagram of estimated active underfloor heating power flowing from manifolds through active circuits to served rooms">${columns}${linkSvg}${nodeSvg(floorNodes,"manifold")}${nodeSvg(cNodes,"circuit")}${nodeSvg(rNodes,"room")}</svg></div><div class="subtle">Link widths represent estimated thermal power. Circuit output is calculated from manually configured flow and the assumed 9°C water temperature drop, then divided equally among each circuit's served rooms. This is not a measurement of boiler output or room heat delivery.</div>`;
+    const floorNodes=floors.map(f=>{
+      const roomsForFloor=Object.entries(allocations[f.id]).map(([id,power])=>({id,name:roomMap[id]?.name||id,power,floor:f.id}));
+      const power=circuits.filter(([,c])=>c.demand_floor===f.id).reduce((n,[,c])=>n+(Number(c.estimated_thermal_power_w)||0),0);
+      return {...f,name:f.label,rooms:roomsForFloor,power};
+    }).filter(f=>f.power>0&&f.rooms.length>0);
+    if(!floorNodes.length)return '<div class="chart-empty">No active room allocations are available for the running circuits.</div>';
+    const roomNodes=floorNodes.flatMap(f=>f.rooms).sort((a,b)=>a.floor.localeCompare(b.floor)||a.name.localeCompare(b.name));
+    const total=floorNodes.reduce((n,f)=>n+f.power,0);
+    const height=Math.max(190,roomNodes.length*56+54);
+    const roomStart=45, roomStep=(height-48)/Math.max(1,roomNodes.length);
+    roomNodes.forEach((r,i)=>{r.x=245;r.y=roomStart+i*roomStep+roomStep/2;});
+    floorNodes.forEach(f=>{
+      const ys=f.rooms.map(r=>r.y);
+      f.y=ys.reduce((a,b)=>a+b,0)/ys.length;
+    });
+    const boiler={x:8,y:floorNodes.reduce((n,f)=>n+f.y,0)/floorNodes.length,name:"Boiler",power:total};
+    const width=value=>Math.max(.8,value/total*34);
+    const curve=(a,b)=>{const x1=a.x+12,x2=b.x,mid=(x1+x2)/2;return `M ${x1} ${a.y} C ${mid} ${a.y}, ${mid} ${b.y}, ${x2} ${b.y}`;};
+    const links=[
+      ...floorNodes.map(f=>({a:boiler,b:f,value:f.power})),
+      ...floorNodes.flatMap(f=>f.rooms.map(r=>({a:f,b:r,value:r.power})))
+    ];
+    const linkSvg=links.map(l=>`<path d="${curve(l.a,l.b)}" fill="none" stroke="var(--hi-green,#2eaa83)" stroke-opacity=".58" stroke-width="${width(l.value).toFixed(2)}"><title>${this._esc(l.a.name||"Boiler")} → ${this._esc(l.b.name)}: ${l.value.toFixed(0)} W estimated</title></path>`).join("");
+    const node=(n,kind,labelX=n.x+17)=>`<g><rect x="${n.x}" y="${(n.y-8).toFixed(1)}" width="12" height="16" rx="4" class="heat-flow-node ${kind}"/><text x="${labelX}" y="${(n.y-2).toFixed(1)}" class="heat-flow-label">${this._esc(n.name)}</text><text x="${labelX}" y="${(n.y+12).toFixed(1)}" class="heat-flow-value">${n.power.toFixed(0)} W</text></g>`;
+    const columns='<text x="8" y="18" class="heat-flow-column">HEAT SOURCE</text><text x="122" y="18" text-anchor="middle" class="heat-flow-column">MANIFOLDS</text><text x="245" y="18" class="heat-flow-column">ROOMS</text>';
+    const roomSvg=roomNodes.map(r=>node(r,"room")).join("");
+    return `<div class="heat-flow-summary"><div><span>Estimated active UFH output</span><strong>${(total/1000).toFixed(2)} kW</strong></div><div><span>Downstairs</span><strong>${(allocations.ground_floor?Object.values(allocations.ground_floor).reduce((a,b)=>a+b,0)/1000:0).toFixed(2)} kW</strong></div><div><span>Upstairs</span><strong>${(allocations.upstairs?Object.values(allocations.upstairs).reduce((a,b)=>a+b,0)/1000:0).toFixed(2)} kW</strong></div></div><div class="heat-flow-scroll"><svg viewBox="0 0 360 ${height+30}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Three-layer Sankey diagram showing estimated heat from the boiler to downstairs and upstairs manifolds, then to served rooms">${columns}${linkSvg}${node(boiler,"boiler")}${floorNodes.map(f=>node(f,"manifold")).join("")}${roomSvg}</svg></div><div class="subtle">Link widths represent estimated thermal power. Room allocations are derived from manually configured circuit flow and an assumed 9°C water temperature drop, divided equally among each circuit's served rooms. The boiler total is the sum of the two manifold allocations; it is not a direct measurement of boiler heat output or room heat delivery.</div>`;
   }
   _systemFlowDiagram(hydraulics, rooms, pumps) {
     const circuits=Object.entries(hydraulics?.circuits||{});
@@ -409,14 +422,14 @@ class HeatingIntelligenceCard extends HTMLElement {
         .heat-flow-summary>div{background:var(--secondary-background-color);border-radius:10px;padding:10px;min-width:0}
         .heat-flow-summary span{display:block;color:var(--secondary-text-color);font-size:.72rem}
         .heat-flow-summary strong{display:block;font-size:1.05rem;margin-top:3px}
-        .heat-flow-scroll{overflow-x:auto;overscroll-behavior-inline:contain}
-        .heat-flow-scroll svg{display:block;width:100%;min-width:690px;height:auto;overflow:visible}
+        .heat-flow-scroll{width:100%;overflow:hidden}
+        .heat-flow-scroll svg{display:block;width:100%;height:auto;overflow:visible}
         .heat-flow-node{fill:var(--hi-green,#2eaa83)}
-        .heat-flow-node.circuit{fill:var(--primary-color)}
+        .heat-flow-node.manifold{fill:var(--primary-color)}
         .heat-flow-node.room{fill:var(--accent-color)}
-        .heat-flow-label{fill:var(--primary-text-color);font-size:13px;font-weight:600}
-        .heat-flow-value{fill:var(--secondary-text-color);font-size:11px}
-        .heat-flow-column{fill:var(--secondary-text-color);font-size:11px;font-weight:700;letter-spacing:1px}
+        .heat-flow-label{fill:var(--primary-text-color);font-size:12px;font-weight:600}
+        .heat-flow-value{fill:var(--secondary-text-color);font-size:10px}
+        .heat-flow-column{fill:var(--secondary-text-color);font-size:9px;font-weight:700;letter-spacing:.7px}
         .subhead{color:var(--secondary-text-color);font-size:.75rem;margin:-4px 0 9px}
         @media(min-width:560px){.overview,.detail-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pumps{grid-template-columns:repeat(2,minmax(0,1fr))}}
       </style>

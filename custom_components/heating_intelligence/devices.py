@@ -110,13 +110,29 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
             via_device=_house_identifier(coordinator),
         )
 
-    # Remove only the two retired legacy entities explicitly identified for this upgrade.
+    # Remove obsolete electrical-stage diagnostics from the earlier manifold
+    # experiment. Keep pump power, energy, cycle and runtime entities untouched.
+    retired_stage_metrics = {
+        "stage",
+        "idle_baseline_w",
+        "pump_started_at",
+        "valve_level_w",
+        "valve_opened_at",
+        "valve_to_pump_delay",
+    }
+    retired_unique_ids = {
+        f"{DOMAIN}_{pump_id}_{metric}"
+        for pump_id in ("ground_floor", "upstairs")
+        for metric in retired_stage_metrics
+    }
     retired_entity_ids = {
         "sensor.heating_intelligence_downstairs_pump_electricity_today",
         "sensor.heating_intelligence_upstairs_pump_electricity_today",
     }
     for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
-        if entity.platform == DOMAIN and entity.entity_id in retired_entity_ids:
+        if entity.platform == DOMAIN and (
+            entity.unique_id in retired_unique_ids or entity.entity_id in retired_entity_ids
+        ):
             entity_registry.async_remove(entity.entity_id)
 
     repaired = 0

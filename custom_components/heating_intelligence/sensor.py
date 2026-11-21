@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
-from homeassistant.util import dt as dt_util
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -36,19 +35,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     if entry.options.get("water_temperature_entity"):
         entities.append(WaterTemperatureSensor(coordinator))
     for room in entry.options.get(CONF_ROOMS, []):
-        entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
+        if room.get("temperature_entity"):
+            entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
+        entities.extend(
+            RoomThermalEnergySensor(coordinator, room["id"], room["name"], metric)
+            for metric in ROOM_THERMAL_ENERGY_METRICS
+        )
         if room.get("humidity_entity"):
             entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "humidity"))
         if room.get("co2_entity"):
             entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "co2_ppm"))
-        entities.extend(
-            RoomAnalyticsSensor(coordinator, room["id"], room["name"], metric)
-            for metric in ROOM_ANALYTICS_METRICS
-        )
-        thermal_metrics = [
-            metric for metric in ROOM_THERMAL_METRICS
-            if metric != "window_open_demand_seconds_today" or room.get("window_entity")
-        ]
+        if room.get("demand_entity"):
+            entities.extend(
+                RoomAnalyticsSensor(coordinator, room["id"], room["name"], metric)
+                for metric in ROOM_ANALYTICS_METRICS
+            )
+        thermal_metrics = []
+        if room.get("temperature_entity"):
+            thermal_metrics.extend(
+                metric for metric in ROOM_THERMAL_METRICS
+                if metric != "window_open_demand_seconds_today"
+            )
+        if room.get("temperature_entity") and room.get("demand_entity") and room.get("window_entity"):
+            thermal_metrics.append("window_open_demand_seconds_today")
         entities.extend(
             RoomThermalAnalyticsSensor(coordinator, room["id"], room["name"], metric)
             for metric in thermal_metrics
@@ -251,6 +260,45 @@ class WaterTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
         return super().available and self.coordinator.data.get("water_temperature") is not None
 
 
+ROOM_THERMAL_ENERGY_METRICS = {
+    "thermal_energy_today_kwh": ("Estimated UFH Thermal Energy Today", SensorStateClass.TOTAL),
+    "thermal_energy_week_kwh": ("Estimated UFH Thermal Energy This Week", SensorStateClass.TOTAL),
+    "thermal_energy_month_kwh": ("Estimated UFH Thermal Energy This Month", SensorStateClass.TOTAL),
+    "thermal_energy_total_kwh": ("Estimated UFH Thermal Energy Total", SensorStateClass.TOTAL_INCREASING),
+}
+
+
+class RoomThermalEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Estimated UFH heat delivered to a room, allocated from active circuits."""
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_icon = "mdi:heat-wave"
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.metric = metric
+        label, state_class = ROOM_THERMAL_ENERGY_METRICS[metric]
+        self._attr_name = f"{room_name} {label}"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+        self._attr_state_class = state_class
+
+    @property
+    def native_value(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        return room.get(self.metric, 0.0)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "estimate": True,
+            "method": "Configured circuit flow × assumed 9°C water delta; active circuit energy is split equally among its assigned demand rooms.",
+            "assumed_water_delta_t_c": 9.0,
+        }
+
+
 class RoomTemperatureSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "°C"
     _attr_should_poll = False
@@ -408,58 +456,6 @@ class EfficiencySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("efficiency", {}).get(self.metric)
-
-PUMP_STAGE_METRICS = {
-    "stage": ("Detected Electrical Stage", None, "mdi:state-machine"),
-    "valve_opened_at": ("Valve Opening Detected", "timestamp", "mdi:valve-open"),
-    "pump_started_at": ("Pump Stage Started", "timestamp", "mdi:pump"),
-    "valve_to_pump_delay": ("Valve-to-Pump Delay", "s", "mdi:timer-outline"),
-    "idle_baseline_w": ("Idle Power Baseline", "W", "mdi:flash"),
-    "valve_level_w": ("Valve Actuator Power Level", "W", "mdi:flash-outline"),
-}
-
-
-class PumpStageDiagnosticSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
-    """Read-only electrical-signature diagnostics for one manifold pump."""
-
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_should_poll = False
-
-    def __init__(self, coordinator, pump_id: str, pump_name: str, metric: str) -> None:
-        super().__init__(coordinator)
-        self.pump_id = pump_id
-        self.pump_name = pump_name
-        self.metric = metric
-        label, unit, icon = PUMP_STAGE_METRICS[metric]
-        self._attr_name = f"{pump_name} {label}"
-        self._attr_unique_id = f"{DOMAIN}_{pump_id}_{metric}"
-        self._attr_icon = icon
-        if unit == "timestamp":
-            self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        elif unit:
-            self._attr_native_unit_of_measurement = unit
-            self._attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def native_value(self):
-        pump = self.coordinator.data.get("pumps", {}).get(self.pump_id, {})
-        if self.metric == "valve_to_pump_delay":
-            valve = dt_util.parse_datetime(pump.get("valve_opened_at") or "")
-            started = dt_util.parse_datetime(pump.get("pump_started_at") or "")
-            return round((started - valve).total_seconds()) if valve and started else None
-        value = pump.get(self.metric)
-        if self.metric in ("valve_opened_at", "pump_started_at"):
-            return dt_util.parse_datetime(value or "")
-        return value
-
-    @property
-    def extra_state_attributes(self):
-        pump = self.coordinator.data.get("pumps", {}).get(self.pump_id, {})
-        return {
-            "detection_basis": pump.get("detection_basis"),
-            "power_source_state": pump.get("power_source_state"),
-        }
-
 
 class PumpPowerSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "W"

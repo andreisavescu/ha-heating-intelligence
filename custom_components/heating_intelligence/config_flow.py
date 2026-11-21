@@ -353,6 +353,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             {},
         )
         room_options = {item["id"]: item[CONF_NAME] for item in rooms}
+        demand_room_options = {
+            item["id"]: item[CONF_NAME] for item in rooms
+            if item.get(CONF_DEMAND_ENTITY)
+        }
         pump_options = {item["id"]: item["name"] for item in pumps}
         floor_options = {"ground_floor": "Downstairs", "upstairs": "Upstairs"}
 
@@ -365,7 +369,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             if len(demand_rooms) > 4:
                 return self.async_show_form(
                     step_id="ufh_circuit_details",
-                    data_schema=self._ufh_circuit_schema(existing, room_options, floor_options),
+                    data_schema=self._ufh_circuit_schema(existing, demand_room_options, floor_options, room_options),
                     errors={"demand_rooms": "max_four_demands"},
                     description_placeholders={
                         "circuit": f"{self._ufh_circuit_number:02d}",
@@ -378,7 +382,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             if pump_id not in pump_options:
                 return self.async_show_form(
                     step_id="ufh_circuit_details",
-                    data_schema=self._ufh_circuit_schema(existing, room_options, floor_options),
+                    data_schema=self._ufh_circuit_schema(existing, demand_room_options, floor_options, room_options),
                     errors={"floor": "missing_floor_pump"},
                     description_placeholders={
                         "circuit": f"{self._ufh_circuit_number:02d}",
@@ -395,6 +399,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 "pump_id": pump_id,
                 "demand_scope": demand_scope,
                 "demand_rooms": demand_rooms[:4],
+                "served_rooms": list(user_input.get("served_rooms") or []),
                 "demand_logic": "or",
             }
             updated = dict(self.config_entry.options)
@@ -406,7 +411,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="ufh_circuit_details",
-            data_schema=self._ufh_circuit_schema(existing, room_options, floor_options),
+            data_schema=self._ufh_circuit_schema(existing, demand_room_options, floor_options, room_options),
             description_placeholders={
                 "circuit": f"{self._ufh_circuit_number:02d}",
                 "flow_input": f"number.ufh_circuit_{self._ufh_circuit_number:02d}_flow",
@@ -414,7 +419,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         )
 
     @staticmethod
-    def _ufh_circuit_schema(existing, room_options, floor_options):
+    def _ufh_circuit_schema(existing, demand_room_options, floor_options, room_options):
         """Build a circuit form shared by initial display and validation errors."""
         default_floor = existing.get("floor", "ground_floor")
         return vol.Schema({
@@ -427,7 +432,14 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                     "selected_rooms": "Selected heating demands (up to 4, OR)",
                     "floor_any": "Any configured room on this floor (OR)",
                 }),
-            vol.Optional("demand_rooms", default=existing.get("demand_rooms", [])):
+            vol.Optional("demand_rooms", default=[
+                room_id for room_id in existing.get("demand_rooms", [])
+                if room_id in demand_room_options
+            ]):
+                selector.SelectSelector(selector.SelectSelectorConfig(options=[
+                    {"value": room_id, "label": label} for room_id, label in demand_room_options.items()
+                ], multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)),
+            vol.Optional("served_rooms", default=existing.get("served_rooms", existing.get("demand_rooms", []))):
                 selector.SelectSelector(selector.SelectSelectorConfig(options=[
                     {"value": room_id, "label": label} for room_id, label in room_options.items()
                 ], multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)),
@@ -446,8 +458,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(CONF_AREA): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=500, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional("volume_m3"): selector.NumberSelector(selector.NumberSelectorConfig(min=2, max=2000, step=0.1, unit_of_measurement="m³", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional(CONF_ACH): selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=20, step=0.01, unit_of_measurement="1/h", mode=selector.NumberSelectorMode.BOX)),
-            vol.Required(CONF_DEMAND_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig()),
-            vol.Required(CONF_TEMPERATURE_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_DEMAND_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig()),
+            vol.Optional(CONF_TEMPERATURE_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_WINDOW_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),
             vol.Optional(CONF_HUMIDITY_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_ENABLE_CO2, default=False): selector.BooleanSelector(),
@@ -484,8 +496,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_AREA: float(user_input[CONF_AREA]) if user_input.get(CONF_AREA) not in (None, "") else None,
             "volume_m3": float(user_input["volume_m3"]) if user_input.get("volume_m3") not in (None, "") else None,
             CONF_ACH: float(user_input[CONF_ACH]) if user_input.get(CONF_ACH) not in (None, "") else None,
-            CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY],
-            CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY],
+            **({CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY]} if user_input.get(CONF_DEMAND_ENTITY) else {}),
+            **({CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY]} if user_input.get(CONF_TEMPERATURE_ENTITY) else {}),
             CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
             CONF_HUMIDITY_ENTITY: user_input.get(CONF_HUMIDITY_ENTITY),
             CONF_CO2_ENTITY: co2_entity,

@@ -107,6 +107,7 @@ def build_ufh_hydraulic_snapshot(
             "pipe_length_m": circuit.get("pipe_length_m"),
             "pump_id": pump_id,
             "demand_rooms": list(demand_room_ids),
+            "served_rooms": list(circuit.get("served_rooms") or circuit.get("demand_rooms", [])),
             "demand_room_names": [rooms[room_id].get("name", room_id) for room_id in demand_room_ids if room_id in rooms],
             "demand_scope": demand_scope,
             "demand_floor": circuit.get("floor", "unassigned"),

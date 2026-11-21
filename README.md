@@ -1,3 +1,11 @@
+## v0.16.0 — Sankey heat-flow visualisation
+
+- Replace the basic system overview with a proportional Sankey-style heat-flow diagram.
+- Visualise active estimated UFH thermal power from each manifold through active circuits to their served rooms.
+- Scale link widths to the estimated power allocated to each branch and show live wattage totals.
+- Keep configured flow and estimated thermal output clearly distinguished from measured boiler output and room heat delivery.
+- Retain the System trends dashboard and selectable 24-hour, 7-day and 30-day history views.
+
 ## v0.15.19 — room settings menu and editable heating demand
 
 - Group room floor, heating-demand, air-quality, area, ACH and window-contact settings under a single **Edit rooms** menu.
@@ -109,7 +117,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.15.0 development)
+## Current scope (0.16.0 development)
 
 - Editable multi-step house profile for envelope construction, insulation, glazing/orientation/shading, heating plant, thermal mass, ventilation, occupancy and internal gains. Profile completeness is reported separately from measured thermal performance; no U-values or EPC rating are inferred from insulation thickness alone.
 - Optional per-room humidity and CO2 sensor configuration, native live Home Assistant sensors, combined room-level interpretation and whole-house/floor coverage, averages, highest-CO2 room and humidity exception summaries. Room setup also accepts optional measured ACH values from ventilation/CO2-decay experiments; existing rooms can add or change ACH and window contacts in the room-area settings flow.

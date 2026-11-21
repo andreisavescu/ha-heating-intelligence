@@ -1035,7 +1035,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             for room in result.get("rooms", {}).values()
         )
         experiment_today = float(
-            result["boiler_energy_experiment"].get("boiler_daily_generated_heat_kwh", {}).get(day_key, 0.0)
+            result["boiler_energy_experiment"].get("boiler_daily_allocated_heat_kwh", {}).get(day_key, 0.0)
         )
         comparison[day_key] = {
             "date": day_key,

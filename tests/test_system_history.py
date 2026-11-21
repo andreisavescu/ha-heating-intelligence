@@ -15,6 +15,9 @@ def test_system_history_samples_every_five_minutes_and_keeps_circuit_and_room_va
     snapshot = {
         "thermal_power_w": 1250,
         "active_flow_l_min": 2.0,
+        "modulation": 48,
+        "modulation_output_kw": 12.0,
+        "modulation_calibrated_output_kw": 10.8,
         "circuits": {"loop_1": {"name": "Living loop", "flow_active": True, "active_configured_flow_l_min": 2.0, "estimated_thermal_power_w": 1250}},
         "rooms": {"living": {"name": "Living", "temperature": 21.2, "estimated_thermal_power_w": 1250, "demand": True}},
     }
@@ -26,6 +29,9 @@ def test_system_history_samples_every_five_minutes_and_keeps_circuit_and_room_va
     assert len(next_sample) == 2
     assert next_sample[-1]["circuits"]["loop_1"]["active"] is True
     assert next_sample[-1]["rooms"]["living"]["temperature_c"] == 21.2
+    assert next_sample[-1]["modulation"] == 48.0
+    assert next_sample[-1]["modulation_output_kw"] == 12.0
+    assert next_sample[-1]["modulation_calibrated_output_kw"] == 10.8
 
 
 def test_system_history_prunes_samples_older_than_thirty_days():

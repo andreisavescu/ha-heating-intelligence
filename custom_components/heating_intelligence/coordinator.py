@@ -1037,6 +1037,27 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         experiment_today = float(
             result["boiler_energy_experiment"].get("boiler_daily_allocated_heat_kwh", {}).get(day_key, 0.0)
         )
+        hydraulic_room_energy = {
+            room_id: round(float(room.get("thermal_energy_today_kwh") or 0.0), 6)
+            for room_id, room in result.get("rooms", {}).items()
+        }
+        modulation_room_energy = {
+            str(room_id): round(float(value or 0.0), 6)
+            for room_id, value in result["boiler_energy_experiment"].get("boiler_daily_modulation_room_energy_kwh", {}).get(day_key, {}).items()
+        }
+        modulation_total_energy = float(
+            result["boiler_energy_experiment"].get("boiler_daily_modulation_generated_heat_kwh", {}).get(day_key, 0.0)
+        )
+        floor_energy = {"ground_floor": 0.0, "upstairs": 0.0}
+        for room_id, room in result.get("rooms", {}).items():
+            floor_id = room.get("floor", "unassigned")
+            if floor_id in floor_energy:
+                floor_energy[floor_id] += hydraulic_room_energy.get(room_id, 0.0)
+        modulation_floor_energy = {"ground_floor": 0.0, "upstairs": 0.0}
+        for room_id, value in modulation_room_energy.items():
+            floor_id = result.get("rooms", {}).get(room_id, {}).get("floor", "unassigned")
+            if floor_id in modulation_floor_energy:
+                modulation_floor_energy[floor_id] += value
         comparison[day_key] = {
             "date": day_key,
             "hydraulic_estimated_heat_kwh": round(baseline_today, 6),
@@ -1047,6 +1068,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "boiler_unallocated_heat_kwh": round(float(
                 result["boiler_energy_experiment"].get("boiler_daily_unallocated_heat_kwh", {}).get(day_key, 0.0)
             ), 6),
+            "hydraulic_room_energy_kwh": hydraulic_room_energy,
+            "hydraulic_floor_energy_kwh": floor_energy,
+            "modulation_generated_energy_kwh": round(modulation_total_energy, 6),
+            "modulation_room_energy_kwh": modulation_room_energy,
+            "modulation_floor_energy_kwh": {key: round(value, 6) for key, value in modulation_floor_energy.items()},
         }
         for old_day in list(comparison):
             try:
@@ -1070,6 +1096,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "attic_c": result.get("attic_thermal", {}).get("attic_temperature"),
             "burner": burner_state.state if burner_state else None,
             "modulation": _as_float(modulation_state.state) if modulation_state else None,
+            "modulation_output_kw": result.get("boiler_energy_experiment", {}).get("boiler_modulation_estimated_output_kw"),
+            "modulation_calibrated_output_kw": result.get("boiler_energy_experiment", {}).get("boiler_modulation_calibrated_output_kw"),
             "circuits": result.get("ufh_hydraulics", {}).get("circuits", {}),
             "rooms": result.get("rooms", {}),
         })

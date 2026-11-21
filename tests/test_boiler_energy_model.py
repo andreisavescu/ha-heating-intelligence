@@ -129,3 +129,23 @@ def test_modulation_estimate_is_available_between_gas_meter_updates():
     assert first["boiler_modulation_estimated_output_kw"] == 10.0
     assert second["boiler_modulation_calibrated_output_kw"] == 10.0
     assert second["boiler_modulation_calibration_status"] == "initial_25kw_estimate"
+
+
+def test_daily_modulation_energy_is_allocated_across_active_ufh_rooms():
+    from datetime import datetime, timezone
+
+    history = {}
+    circuits = {
+        "downstairs": {"flow_active": True, "active_configured_flow_l_min": 1.0, "served_rooms": ["living"]},
+        "upstairs": {"flow_active": True, "active_configured_flow_l_min": 3.0, "served_rooms": ["bedroom"]},
+    }
+    rooms = {"living": {"demand": True}, "bedroom": {"demand": False}}
+    result = MODEL.update_boiler_energy_model(
+        history, 1.0, 0.0, True, 40, circuits, rooms, 60,
+        now=datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    daily = result["boiler_daily_modulation_room_energy_kwh"]["2026-11-21"]
+    assert abs(daily["living"] - 10.0 / 60.0 / 4.0) < 1e-8
+    assert abs(daily["bedroom"] - 3.0 * 10.0 / 60.0 / 4.0) < 1e-8
+    assert abs(result["boiler_daily_modulation_generated_heat_kwh"]["2026-11-21"] - 10.0 / 60.0) < 1e-8
+    assert abs(sum(daily.values()) - result["boiler_daily_modulation_generated_heat_kwh"]["2026-11-21"]) < 1e-8

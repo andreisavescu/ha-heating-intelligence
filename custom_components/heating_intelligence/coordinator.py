@@ -715,6 +715,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["rooms"],
             result["pumps"],
             self.ufh_flow_rates,
+            self.ufh_circuit_state,
+            now,
         )
         result["indoor_air_quality"] = build_indoor_air_analysis(result["rooms"])
         for room_id, air_assessment in result["indoor_air_quality"].get("rooms", {}).items():

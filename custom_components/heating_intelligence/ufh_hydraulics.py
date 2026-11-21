@@ -1,7 +1,14 @@
-"""Pure helpers for UFH circuit activation and hydraulic summaries."""
+"""Pure helpers for timed UFH circuit activation and hydraulic estimates."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+
+FLOW_START_POWER_THRESHOLD_W = 7.0
+FLOW_START_DELAY_SECONDS = 180
+WATER_DELTA_T_C = 9.0
+WATER_DENSITY_KG_L = 1.0
+WATER_HEAT_CAPACITY_J_KG_K = 4186.0
 
 
 def evaluate_activation(demand_values: list[bool | None], logic: str = "or") -> bool | None:
@@ -22,10 +29,14 @@ def build_ufh_hydraulic_snapshot(
     rooms: dict[str, dict[str, Any]],
     pumps: dict[str, dict[str, Any]],
     flow_rates: dict[str, float],
+    circuit_state: dict[str, dict[str, Any]],
+    now: datetime,
 ) -> dict[str, Any]:
-    """Combine room demand, configured pump state and manual circuit flow."""
+    """Apply the 7 W + 3 minute start rule and estimate heat transfer at ΔT=9°C."""
     circuit_results: dict[str, dict[str, Any]] = {}
     pump_totals: dict[str, float] = {}
+    total_thermal_power_w = 0.0
+    now_ts = now.timestamp()
 
     for circuit in circuits:
         circuit_id = str(circuit.get("id", ""))
@@ -35,22 +46,46 @@ def build_ufh_hydraulic_snapshot(
         demand_values = []
         for room_id in demand_room_ids:
             room = rooms.get(room_id)
-            if room is None or room.get("demand_state") in (None, "unavailable"):
+            state = room.get("demand_state") if room else None
+            if state in (None, "unavailable", "unknown"):
                 demand_values.append(None)
             else:
-                # Match Heating Intelligence demand semantics: any available
-                # source state, including "unknown", represents a request.
-                demand_values.append(bool(room.get("demand", False)))
+                demand_values.append(state == "on" and bool(room.get("demand", False)))
 
-        logic = circuit.get("demand_logic", "or")
-        demand_active = evaluate_activation(demand_values, logic)
+        demand_active = evaluate_activation(demand_values, circuit.get("demand_logic", "or"))
         pump_id = circuit.get("pump_id")
         pump = pumps.get(pump_id) if pump_id else None
-        pump_running = None if pump is None or pump.get("power") is None else bool(pump.get("running"))
+        pump_power = pump.get("power") if pump else None
+        try:
+            pump_power = float(pump_power) if pump_power is not None else None
+        except (TypeError, ValueError):
+            pump_power = None
+        start_conditions = demand_active is True and pump_power is not None and pump_power > FLOW_START_POWER_THRESHOLD_W
+
+        state = circuit_state.setdefault(circuit_id, {})
+        pending_since = state.get("pending_since")
+        flow_active = bool(state.get("flow_active", False))
+        if not start_conditions:
+            state["pending_since"] = None
+            state["flow_active"] = False
+            flow_active = False
+        elif not flow_active:
+            if pending_since is None:
+                state["pending_since"] = now_ts
+                pending_since = now_ts
+            if now_ts - float(pending_since) >= FLOW_START_DELAY_SECONDS:
+                state["flow_active"] = True
+                flow_active = True
+
         configured_flow = round(max(0.0, min(6.0, float(flow_rates.get(circuit_id, 0.0)))), 2)
-        circulation_confirmed = demand_active is True and pump_running is True
-        active_flow = configured_flow if circulation_confirmed else 0.0
-        if circulation_confirmed and pump_id:
+        active_flow = configured_flow if flow_active else 0.0
+        thermal_power_w = (
+            active_flow / 60.0 * WATER_DENSITY_KG_L
+            * WATER_HEAT_CAPACITY_J_KG_K * WATER_DELTA_T_C
+        )
+        thermal_power_w = round(thermal_power_w, 1)
+        total_thermal_power_w += thermal_power_w
+        if flow_active and pump_id:
             pump_totals[pump_id] = pump_totals.get(pump_id, 0.0) + active_flow
 
         circuit_results[circuit_id] = {
@@ -59,12 +94,18 @@ def build_ufh_hydraulic_snapshot(
             "pipe_length_m": circuit.get("pipe_length_m"),
             "pump_id": pump_id,
             "demand_rooms": list(demand_room_ids),
-            "demand_logic": logic,
+            "demand_logic": circuit.get("demand_logic", "or"),
             "demand_active": demand_active,
-            "pump_running": pump_running,
-            "circulation_confirmed": circulation_confirmed,
+            "pump_power_w": pump_power,
+            "pump_start_threshold_w": FLOW_START_POWER_THRESHOLD_W,
+            "flow_start_delay_seconds": FLOW_START_DELAY_SECONDS,
+            "flow_pending_seconds": round(max(0.0, now_ts - float(pending_since))) if pending_since is not None and not flow_active else 0,
+            "flow_active": flow_active,
+            "circulation_confirmed": flow_active,
             "configured_flow_l_min": configured_flow,
             "active_configured_flow_l_min": active_flow,
+            "assumed_water_delta_t_c": WATER_DELTA_T_C,
+            "estimated_thermal_power_w": thermal_power_w,
             "flow_is_manual_input": True,
         }
 
@@ -73,9 +114,12 @@ def build_ufh_hydraulic_snapshot(
         "pump_configured_flow_totals_l_min": {
             pump_id: round(value, 2) for pump_id, value in sorted(pump_totals.items())
         },
+        "active_estimated_thermal_power_w": round(total_thermal_power_w, 1),
+        "assumed_water_delta_t_c": WATER_DELTA_T_C,
         "flow_semantics": (
-            "Flow values are manually entered flowmeter readings. Active flow totals "
-            "are conditional estimates based on configured room-demand logic and pump "
-            "power state; they are not independently measured per-circuit flow."
+            "Flow activates after associated pump power stays above 7 W while the "
+            "configured demand is on for 180 seconds. It stops immediately when either "
+            "condition is no longer true. Thermal power is estimated from manual flow "
+            "and an assumed 9°C water temperature drop; it is not measured."
         ),
     }

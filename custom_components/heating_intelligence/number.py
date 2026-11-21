@@ -36,7 +36,13 @@ class UfhCircuitFlowNumber(
         super().__init__(coordinator)
         self.circuit_number = circuit_number
         self.circuit_id = f"circuit_{circuit_number:02d}"
-        self._attr_name = f"UFH Circuit {circuit_number:02d} Flow"
+        circuit = next(
+            (item for item in coordinator.entry.options.get("ufh_circuits", [])
+             if item.get("id") == self.circuit_id),
+            {},
+        )
+        circuit_name = circuit.get("name") or f"Circuit {circuit_number:02d}"
+        self._attr_name = f"{circuit_name} Flow"
         self._attr_unique_id = f"{DOMAIN}_ufh_circuit_{circuit_number:02d}_flow"
         self._attr_native_value = 0.0
 
@@ -65,9 +71,20 @@ class UfhCircuitFlowNumber(
     @property
     def extra_state_attributes(self) -> dict:
         """Expose the circuit index until the room mapping is configured."""
+        circuit = next(
+            (item for item in self.coordinator.entry.options.get("ufh_circuits", [])
+             if item.get("id") == self.circuit_id),
+            {},
+        )
         return {
             "circuit_number": self.circuit_number,
             "circuit_id": self.circuit_id,
+            "circuit_name": circuit.get("name"),
+            "floor": circuit.get("floor"),
+            "pipe_length_m": circuit.get("pipe_length_m"),
+            "demand_scope": circuit.get("demand_scope", "selected_rooms"),
+            "demand_rooms": circuit.get("demand_rooms", []),
+            "demand_logic": "or",
             "measurement_type": "manual_flowmeter_setting",
             "note": "User-entered flowmeter reading; not an automatically measured sensor.",
         }

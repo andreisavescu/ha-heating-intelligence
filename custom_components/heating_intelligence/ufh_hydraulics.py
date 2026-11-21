@@ -42,7 +42,15 @@ def build_ufh_hydraulic_snapshot(
         circuit_id = str(circuit.get("id", ""))
         if not circuit_id:
             continue
-        demand_room_ids = circuit.get("demand_rooms", [])
+        demand_scope = circuit.get("demand_scope", "selected_rooms")
+        if demand_scope == "floor_any":
+            floor_id = circuit.get("floor", "unassigned")
+            demand_room_ids = [
+                room_id for room_id, room_data in rooms.items()
+                if room_data.get("floor", "unassigned") == floor_id
+            ]
+        else:
+            demand_room_ids = circuit.get("demand_rooms", [])
         demand_values = []
         for room_id in demand_room_ids:
             room = rooms.get(room_id)
@@ -99,6 +107,8 @@ def build_ufh_hydraulic_snapshot(
             "pipe_length_m": circuit.get("pipe_length_m"),
             "pump_id": pump_id,
             "demand_rooms": list(demand_room_ids),
+            "demand_scope": demand_scope,
+            "demand_floor": circuit.get("floor", "unassigned"),
             "demand_logic": circuit.get("demand_logic", "or"),
             "demand_active": demand_active,
             "pump_power_w": pump_power,
@@ -122,8 +132,10 @@ def build_ufh_hydraulic_snapshot(
         "active_estimated_thermal_power_w": round(total_thermal_power_w, 1),
         "assumed_water_delta_t_c": WATER_DELTA_T_C,
         "flow_semantics": (
-            "Flow activates after associated pump power stays above 7 W while the "
-            "configured demand is on for 180 seconds. It stops immediately when either "
+            "The 180-second timer starts when associated pump power first stays above "
+            "7 W, independently of demand relay availability. Flow activates once that "
+            "timer has elapsed and the configured demand is on. Demand may be a selected "
+            "room set or any room on the circuit floor. It stops immediately when either "
             "condition is no longer true. Thermal power is estimated from manual flow "
             "and an assumed 9°C water temperature drop; it is not measured."
         ),

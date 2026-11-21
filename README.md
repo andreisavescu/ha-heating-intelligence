@@ -1,3 +1,8 @@
+## v0.15.16 — Room energy registration and UFH layout
+
+- Fix room thermal energy sensor device association so all four energy sensors register under their room device.
+- Display UFH circuit zones in a two-column layout, with active flow prominent and configured flow in smaller text below.
+
 ## v0.15.15 — room thermal energy and manifold cleanup
 
 - Add persistent per-room estimated UFH thermal energy sensors for today, this week, this month and lifetime total.

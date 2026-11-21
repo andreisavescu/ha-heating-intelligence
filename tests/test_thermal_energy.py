@@ -1,6 +1,12 @@
 from datetime import datetime, timezone
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 
-from custom_components.heating_intelligence.thermal_energy import update_room_thermal_energy
+MODULE_PATH = Path(__file__).parents[1] / "custom_components" / "heating_intelligence" / "thermal_energy.py"
+SPEC = spec_from_file_location("thermal_energy", MODULE_PATH)
+THERMAL_ENERGY = module_from_spec(SPEC)
+SPEC.loader.exec_module(THERMAL_ENERGY)
+update_room_thermal_energy = THERMAL_ENERGY.update_room_thermal_energy
 
 
 def test_room_energy_accumulates_and_splits_shared_circuit_without_double_counting():

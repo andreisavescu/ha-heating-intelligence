@@ -192,7 +192,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     const floorNodes=floors.map(f=>{
       const roomsForFloor=Object.entries(allocations[f.id]).map(([id,power])=>({id,name:roomMap[id]?.name||id,power,floor:f.id}));
       const power=circuits.filter(([,c])=>c.demand_floor===f.id).reduce((n,[,c])=>n+(Number(c.estimated_thermal_power_w)||0),0);\n      return {...f,name:f.label,rooms:roomsForFloor,power};
-    }).filter(f=>f.power>0);
+    }).filter(f=>f.power>0&&f.rooms.length>0);
     if(!floorNodes.length)return '<div class="chart-empty">No active room allocations are available for the running circuits.</div>';
     const roomNodes=floorNodes.flatMap(f=>f.rooms).sort((a,b)=>a.floor.localeCompare(b.floor)||a.name.localeCompare(b.name));
     const total=floorNodes.reduce((n,f)=>n+f.power,0);

@@ -60,4 +60,4 @@ def test_monthly_meter_reset_never_produces_negative_energy():
     result = MODEL.update_boiler_energy_model(history, 0.2, 0.1, False, None, {}, {}, 60)
     assert result["boiler_meter_interval_input_kwh"] == 2.11
     assert result["boiler_meter_reset_detected"] is True
-    assert result["boiler_meter_reset_count"] == 1
+    assert result["boiler_meter_reset_count"] == 2

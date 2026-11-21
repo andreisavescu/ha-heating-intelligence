@@ -203,9 +203,10 @@ class HeatingIntelligenceCard extends HTMLElement {
     const ticks=hours===2?["−2h","−1h 30m","−1h","−30m","Now"]:hours===4?["−4h","−3h","−2h","−1h","Now"]:hours===12?["−12h","−9h","−6h","−3h","Now"]:["−24h","−18h","−12h","−6h","Now"];
     return `<div class="demand-axis">${ticks.map(t=>`<span>${t}</span>`).join("")}</div>${rows||'<div class="chart-empty">No rooms configured.</div>'}`;
   }
-  _energyChart(days) {
-    const rows = (days || []).filter(d => Number.isFinite(Number(d.gas_kwh)) || Number.isFinite(Number(d.electricity_kwh)));
-    if (rows.length < 2) return '<div class="chart-empty">Daily meter history is building up. At least two days are needed.</div>';
+  _energyChart(days, rangeHours=720) {
+    const cutoff = new Date(Date.now() - rangeHours * 3600000).toLocaleDateString("en-CA");
+    const rows = (days || []).filter(d => d.date >= cutoff && (Number.isFinite(Number(d.gas_kwh)) || Number.isFinite(Number(d.electricity_kwh)));
+    if (rows.length < 1) return '<div class="chart-empty">Daily meter history is building up for this range.</div>';
     const max = Math.max(1, ...rows.flatMap(d => [Number(d.gas_kwh) || 0, Number(d.electricity_kwh) || 0]));
     const width = 360 / rows.length;
     const bars = rows.map((d, i) => {
@@ -590,7 +591,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
         </div>
         <div class="section"><div class="section-title">Historical comparisons ${this._info("Historical comparisons","Compares the latest seven completed days with the preceding seven completed days. Percentage change is descriptive and is not weather-adjusted unless the weather-normalised series is available. Only the last 30 daily records are currently retained in the overview payload.")}</div><div class="section-content"><div class="comparison-heading">Latest 7 days vs preceding 7 days</div>${this._historyComparisons(attrs.energy_history)}</div></div>
-        <div class="section"><div class="section-title">Energy history</div>${this._energyChart(attrs.energy_history)}</div>
+        <div class="section"><div class="section-title">Energy history</div>${this._energyChart(attrs.energy_history,this._systemRange||720)}</div>
         <div class="section"><div class="section-title">Weather-normalised efficiency</div>
           <div class="overview">
             <div class="metric"><span>Model status</span><strong>${this._esc(attrs.efficiency?.weather_normalised?.status || "collecting data")}</strong></div>

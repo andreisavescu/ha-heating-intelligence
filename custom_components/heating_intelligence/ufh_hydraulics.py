@@ -35,9 +35,11 @@ def build_ufh_hydraulic_snapshot(
         demand_values = []
         for room_id in demand_room_ids:
             room = rooms.get(room_id)
-            if room is None or not room.get("demand_state_known", False):
+            if room is None or room.get("demand_state") in (None, "unavailable"):
                 demand_values.append(None)
             else:
+                # Match Heating Intelligence demand semantics: any available
+                # source state, including "unknown", represents a request.
                 demand_values.append(bool(room.get("demand", False)))
 
         logic = circuit.get("demand_logic", "or")

@@ -65,11 +65,16 @@ def build_ufh_hydraulic_snapshot(
         state = circuit_state.setdefault(circuit_id, {})
         pending_since = state.get("pending_since")
         flow_active = bool(state.get("flow_active", False))
-        if not start_conditions:
+        if flow_active:
+            # Once established, the circuit remains active until its demand ends.
+            # Pump power is a start-confirmation signal, not a stop signal.
+            if demand_active is not True:
+                state["pending_since"] = None
+                state["flow_active"] = False
+                flow_active = False
+        elif not start_conditions:
             state["pending_since"] = None
-            state["flow_active"] = False
-            flow_active = False
-        elif not flow_active:
+        else:
             if pending_since is None:
                 state["pending_since"] = now_ts
                 pending_since = now_ts

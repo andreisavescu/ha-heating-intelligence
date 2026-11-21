@@ -231,7 +231,7 @@ def update_boiler_energy_model(
         state["last_meter_interval_seconds"] = interval_seconds
         state["last_room_interval_allocations_kwh"] = interval_allocations
 
-    for key in ("daily_room_energy_kwh", "daily_generated_heat_kwh", "daily_allocated_heat_kwh", "daily_unallocated_heat_kwh"):
+    for key in ("daily_room_energy_kwh", "daily_generated_heat_kwh", "daily_allocated_heat_kwh", "daily_unallocated_heat_kwh", "daily_modulation_room_energy_kwh", "daily_modulation_generated_heat_kwh"):
         mapping = state.setdefault(key, {})
         for day in list(mapping):
             try:

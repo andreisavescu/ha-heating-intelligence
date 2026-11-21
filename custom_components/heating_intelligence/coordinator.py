@@ -1070,6 +1070,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "attic_c": result.get("attic_thermal", {}).get("attic_temperature"),
             "burner": burner_state.state if burner_state else None,
             "modulation": _as_float(modulation_state.state) if modulation_state else None,
+            "modulation_output_kw": result.get("boiler_energy_experiment", {}).get("boiler_modulation_estimated_output_kw"),
+            "modulation_calibrated_output_kw": result.get("boiler_energy_experiment", {}).get("boiler_modulation_calibrated_output_kw"),
             "circuits": result.get("ufh_hydraulics", {}).get("circuits", {}),
             "rooms": result.get("rooms", {}),
         })

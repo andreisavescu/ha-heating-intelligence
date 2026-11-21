@@ -119,6 +119,45 @@ class HeatingIntelligenceCard extends HTMLElement {
         <text x="36" y="138" class="chart-label">−24h</text><text x="208" y="138" text-anchor="middle" class="chart-label">Now</text><text x="380" y="138" text-anchor="end" class="chart-label">+12h</text>
       </svg><div class="chart-legend"><span><i class="legend-actual"></i>Measured</span><span><i class="legend-forecast"></i>Forecast</span><span><i class="legend-target"></i>Target ${Number(comfortTarget).toFixed(1)}°C</span><span><i class="legend-demand"></i>Heat demand</span></div></div>`;
   }
+  _ufhCircuitFlow(hydraulics) {
+    const circuits = Object.entries(hydraulics?.circuits || {}).map(([id, circuit]) => ({id, ...circuit}));
+    if (!circuits.length) return '<div class="chart-empty">No UFH circuits configured yet.</div>';
+    const floors = [
+      {id:"ground_floor", label:"Downstairs manifold"},
+      {id:"upstairs", label:"Upstairs manifold"}
+    ];
+    const fmtFlow = value => `${(Number(value) || 0).toFixed(2)} L/min`;
+    const floorSections = floors.map(floor => {
+      const rows = circuits.filter(c => c.demand_floor === floor.id);
+      if (!rows.length) return "";
+      const active = rows.filter(c => c.flow_active);
+      const totalFlow = active.reduce((sum, c) => sum + (Number(c.active_configured_flow_l_min) || 0), 0);
+      const totalPower = active.reduce((sum, c) => sum + (Number(c.estimated_thermal_power_w) || 0), 0);
+      return `<div class="ufh-floor">
+        <div class="pump-head"><strong>${floor.label}</strong><span>${active.length} / ${rows.length} active</span></div>
+        <div class="overview">
+          <div class="metric"><span>Active flow</span><strong>${fmtFlow(totalFlow)}</strong></div>
+          <div class="metric"><span>Estimated thermal output</span><strong>${this._fmt(totalPower / 1000, "kW", 2)}</strong></div>
+        </div>
+        <div class="pumps">${rows.sort((a,b) => String(a.name).localeCompare(String(b.name))).map(c => {
+          const running = Boolean(c.flow_active);
+          return `<div class="metric">
+            <span>${this._esc(c.name)} · <span class="demand-status ${running ? "active" : ""}">${running ? "Running" : "Stopped"}</span></span>
+            <strong>Active: ${fmtFlow(c.active_configured_flow_l_min)} · Configured: ${fmtFlow(c.configured_flow_l_min)}</strong>
+          </div>`;
+        }).join("")}</div>
+      </div>`;
+    }).join("");
+    const activeCount = circuits.filter(c => c.flow_active).length;
+    const totalFlow = circuits.reduce((sum, c) => sum + (Number(c.active_configured_flow_l_min) || 0), 0);
+    const totalPower = Number(hydraulics?.active_estimated_thermal_power_w) || 0;
+    return `<div class="overview">
+      <div class="metric"><span>Active circuits</span><strong>${activeCount} / ${circuits.length}</strong></div>
+      <div class="metric"><span>Total active flow</span><strong>${fmtFlow(totalFlow)}</strong></div>
+      <div class="metric"><span>Estimated thermal output</span><strong>${this._fmt(totalPower / 1000, "kW", 2)}</strong></div>
+    </div>${floorSections || '<div class="chart-empty">No floor assignment found for configured circuits.</div>'}
+    <div class="subtle">Active flow uses the saved manual flowmeter setting only while the circuit's demand and 180-second pump confirmation are both active. Thermal output is estimated using the assumed 9°C water temperature drop.</div>`;
+  }
   _demandTimeline(rooms, hours=24) {
     const end=Date.now(), start=end-hours*3600000, width=720;
     const rows=rooms.map(room=>{
@@ -517,6 +556,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
         </div>
         <div class="section"><div class="section-title">Weekly room-demand heatmap ${this._info("Weekly room-demand heatmap","Each cell represents one hour of the day. Darker green means more minutes with a recorded heating-demand cycle during that hour. It uses stored demand-cycle start/end times; missing history is not interpreted as zero demand.")}</div><div class="section-content"><div class="subtle">Demand minutes by room, day and hour. Select a cell to inspect its time and duration.</div>${this._demandHeatmap(entries)}</div></div>
+        <div class="section"><div class="section-title">UFH circuit flow</div><div class="subtle">Live circuit status and configured flow values, grouped by manifold.</div><div class="section-content">${this._ufhCircuitFlow(attrs.ufh_hydraulics)}</div></div>
         <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recent room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="2" aria-pressed="false">2 hours</button><button data-hours="4" aria-pressed="true">4 hours</button><button data-hours="24" aria-pressed="false">24 hours</button></div><div class="demand-timeline">${this._demandTimeline(entries,4)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value. Select a cycle to inspect its timing and duration.</div></div>
         <div class="section"><div class="section-title">Forecasts</div>
           <div class="subtle">Explainable short-term projections · confidence reflects sample coverage and trend consistency.</div>

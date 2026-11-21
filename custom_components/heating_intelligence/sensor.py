@@ -189,23 +189,24 @@ class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
     """Modulation-estimated boiler energy allocated to a room by period."""
 
     _attr_should_poll = False
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = "kWh"
     _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_icon = "mdi:heat-wave"
 
     PERIODS = {
-        "daily": ("Daily", SensorStateClass.TOTAL, "boiler_modulation_daily_room_energy_kwh"),
-        "weekly": ("Weekly", SensorStateClass.TOTAL, "boiler_modulation_weekly_room_energy_kwh"),
-        "monthly": ("Monthly", SensorStateClass.TOTAL, "boiler_modulation_monthly_room_energy_kwh"),
-        "total": ("Total", SensorStateClass.TOTAL_INCREASING, "boiler_modulation_room_energy_kwh"),
+        "daily": ("Estimated Modulation Thermal Energy Today", SensorStateClass.TOTAL, "boiler_modulation_daily_room_energy_kwh"),
+        "weekly": ("Estimated Modulation Thermal Energy This Week", SensorStateClass.TOTAL, "boiler_modulation_weekly_room_energy_kwh"),
+        "monthly": ("Estimated Modulation Thermal Energy This Month", SensorStateClass.TOTAL, "boiler_modulation_monthly_room_energy_kwh"),
+        "total": ("Estimated Modulation Thermal Energy Total", SensorStateClass.TOTAL_INCREASING, "boiler_modulation_room_energy_kwh"),
     }
 
     def __init__(self, coordinator, room_id: str, room_name: str, period: str) -> None:
         super().__init__(coordinator)
         label, state_class, metric = self.PERIODS[period]
         self.room_id = room_id
+        self.room_name = room_name
         self.metric = metric
-        self._attr_name = f"{room_name} Modulation Estimated Heat {label}"
+        self._attr_name = f"{room_name} {label}"
         self._attr_unique_id = f"{DOMAIN}_{room_id}_modulation_estimated_heat_{period}"
         self._attr_state_class = state_class
 
@@ -214,6 +215,14 @@ class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
         return self.coordinator.data.get("boiler_energy_experiment", {}).get(
             self.metric, {}
         ).get(self.room_id, 0.0)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "estimate": True,
+            "method": "Boiler heat output estimated from burner modulation, then allocated to active UFH circuits by configured flow and split among served rooms.",
+            "source": "boiler_modulation",
+        }
 
 
 class RoomBoilerExperimentEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):

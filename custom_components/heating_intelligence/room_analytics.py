@@ -1,8 +1,7 @@
 """Persistent room-level heating demand analytics.
 
-Demand sensors in this integration use availability semantics: any present state
-(including "on", "off", or "unknown") means demand; "unavailable" or a missing
-entity means no demand.
+Binary demand sensors use their actual boolean state: "on" means demand;
+"off", "unknown", "unavailable", and a missing entity mean no demand.
 """
 from __future__ import annotations
 
@@ -15,8 +14,8 @@ MAX_CYCLE_RECORDS = 5000
 
 
 def demand_is_active(state: str | None) -> bool:
-    """Return whether the configured demand entity is available."""
-    return state is not None and state != "unavailable"
+    """Return whether the configured binary demand sensor is actively on."""
+    return state == "on"
 
 
 def _parse_datetime(value: str | None) -> datetime | None:

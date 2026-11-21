@@ -1,3 +1,9 @@
+## v0.15.19 — room settings menu and editable heating demand
+
+- Group room floor, heating-demand, air-quality, area, ACH and window-contact settings under a single **Edit rooms** menu.
+- Add the ability to change or clear a room's heating-demand entity after creation.
+- Give the UFH circuit configuration menu a clear **Configure UFH circuits** label.
+
 ## v0.15.18 — room power registration and floor-based Home layout
 
 - Fix room heating power sensor device association so the per-room power entity registers correctly.

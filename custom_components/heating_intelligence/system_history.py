@@ -37,8 +37,8 @@ def record_system_sample(history: dict, now: datetime, snapshot: dict) -> list[d
         "modulation": _finite(snapshot.get("modulation")),
         "modulation_output_kw": _finite(snapshot.get("modulation_output_kw")),
         "modulation_calibrated_output_kw": _finite(snapshot.get("modulation_calibrated_output_kw")),
-        "circuits": {str(k): {"name": str(v.get("name", k)), "active": bool(v.get("flow_active")), "flow_l_min": _finite(v.get("active_configured_flow_l_min")), "thermal_power_w": _finite(v.get("estimated_thermal_power_w")), "pump_id": v.get("pump_id")} for k, v in (snapshot.get("circuits") or {}).items()},
-        "rooms": {str(k): {"name": str(v.get("name", k)), "temperature_c": _finite(v.get("temperature")), "thermal_power_w": _finite(v.get("estimated_thermal_power_w")), "demand": bool(v.get("demand"))} for k, v in (snapshot.get("rooms") or {}).items()},
+        "circuits": {str(k): {"name": str(v.get("name", k)), "active": bool(v.get("flow_active")), "flow_l_min": _finite(v.get("active_configured_flow_l_min")), "thermal_power_w": _finite(v.get("estimated_thermal_power_w")), "pump_id": v.get("pump_id"), "demand_floor": v.get("demand_floor", "unassigned"), "served_rooms": list(v.get("served_rooms") or v.get("demand_rooms") or [])} for k, v in (snapshot.get("circuits") or {}).items()},
+        "rooms": {str(k): {"name": str(v.get("name", k)), "floor": v.get("floor", "unassigned"), "temperature_c": _finite(v.get("temperature")), "thermal_power_w": _finite(v.get("estimated_thermal_power_w")), "demand": bool(v.get("demand"))} for k, v in (snapshot.get("rooms") or {}).items()},
     }
     samples.append(sample)
     cutoff = now - timedelta(days=RETENTION_DAYS)

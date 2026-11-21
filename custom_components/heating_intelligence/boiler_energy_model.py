@@ -127,6 +127,11 @@ def update_boiler_energy_model(
         value = max(0.0, float(current))
         state[key] = value
         if previous is None:
+            if key == "last_heating_gas_m3":
+                # Establish a clean modulation baseline at the first valid
+                # cumulative gas reading; pre-baseline runtime has no matching
+                # gas interval and must not influence calibration.
+                state["modulation_energy_since_meter_kwh"] = 0.0
             return 0.0, False
         if value < float(previous):
             state["meter_reset_count"] = int(state.get("meter_reset_count", 0)) + 1

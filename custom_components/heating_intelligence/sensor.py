@@ -16,6 +16,7 @@ from .const import (
     CONF_ELECTRICITY_BOILER_ENTITY,
     CONF_AC_POWER_ENTITY, CONF_AC_ENERGY_ENTITY,
     CONF_ATTIC_TEMPERATURE_ENTITY, CONF_ATTIC_HUMIDITY_ENTITY, CONF_WEATHER_ENTITY,
+    CONF_HEATING_GAS_ENTITY, CONF_DHW_GAS_ENTITY,
 )
 from .coordinator import HeatingIntelligenceCoordinator
 from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
@@ -25,6 +26,14 @@ from .insights import build_heating_insights
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [HeatingOverviewSensor(coordinator)]
+    if entry.options.get(CONF_HEATING_GAS_ENTITY):
+        entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
+            "heating_input_energy_kwh", "dhw_input_energy_kwh",
+            "boiler_generated_heat_kwh", "boiler_allocated_heat_kwh",
+            "boiler_unallocated_heat_kwh"))
+    if entry.options.get(CONF_HEATING_GAS_ENTITY):
+        for room in entry.options.get(CONF_ROOMS, []):
+            entities.append(RoomBoilerExperimentEnergySensor(coordinator, room["id"], room["name"]))
     if entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY):
         entities.append(AtticTemperatureSensor(coordinator))
         entities.extend(AtticThermalMetricSensor(coordinator, metric) for metric in (
@@ -108,6 +117,60 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             "heat_loss_u_value_daily", "heat_loss_u_value_7d", "heat_loss_u_value_30d"))
     async_add_entities(entities)
 
+
+
+class BoilerExperimentSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Gas-calibrated experimental boiler energy totals."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+
+    LABELS = {
+        "heating_input_energy_kwh": "Experimental Heating Gas Input",
+        "dhw_input_energy_kwh": "Experimental DHW Gas Input",
+        "boiler_generated_heat_kwh": "Experimental Boiler Generated Heat",
+        "boiler_allocated_heat_kwh": "Experimental Boiler Heat Allocated",
+        "boiler_unallocated_heat_kwh": "Experimental Boiler Heat Unallocated",
+    }
+
+    def __init__(self, coordinator, metric: str) -> None:
+        super().__init__(coordinator)
+        self.metric = metric
+        self._attr_name = self.LABELS[metric]
+        self._attr_unique_id = f"{DOMAIN}_{metric}"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric)
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("boiler_energy_experiment", {})
+
+
+class RoomBoilerExperimentEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Experimental gas-calibrated boiler heat allocated to a room."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator, room_id: str, room_name: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self._attr_name = f"{room_name} Experimental Boiler Heat"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_boiler_experiment_energy"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("boiler_energy_experiment", {}).get(
+            "boiler_room_energy_kwh", {}
+        ).get(self.room_id, 0.0)
 
 class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     """Master sensor used by the Lovelace overview card."""

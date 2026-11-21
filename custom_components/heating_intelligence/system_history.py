@@ -33,6 +33,7 @@ def record_system_sample(history: dict, now: datetime, snapshot: dict) -> list[d
         "outdoor_c": _finite(snapshot.get("outdoor_c")),
         "attic_c": _finite(snapshot.get("attic_c")),
         "burner": snapshot.get("burner"),
+        "burner_on": (1.0 if str(snapshot.get("burner")).lower() in ("on", "true", "1", "heating") else 0.0) if snapshot.get("burner") is not None else None,
         "modulation": _finite(snapshot.get("modulation")),
         "circuits": {str(k): {"name": str(v.get("name", k)), "active": bool(v.get("flow_active")), "flow_l_min": _finite(v.get("active_configured_flow_l_min")), "thermal_power_w": _finite(v.get("estimated_thermal_power_w")), "pump_id": v.get("pump_id")} for k, v in (snapshot.get("circuits") or {}).items()},
         "rooms": {str(k): {"name": str(v.get("name", k)), "temperature_c": _finite(v.get("temperature")), "thermal_power_w": _finite(v.get("estimated_thermal_power_w")), "demand": bool(v.get("demand"))} for k, v in (snapshot.get("rooms") or {}).items()},

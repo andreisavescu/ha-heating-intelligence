@@ -281,6 +281,7 @@ class RoomThermalPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, room_id: str, room_name: str) -> None:
         super().__init__(coordinator)
         self.room_id = room_id
+        self.room_name = room_name
         self._attr_name = f"{room_name} Estimated UFH Heating Power"
         self._attr_unique_id = f"{DOMAIN}_{room_id}_estimated_thermal_power_w"
 

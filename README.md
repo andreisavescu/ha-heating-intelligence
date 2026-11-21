@@ -1,3 +1,8 @@
+## v0.15.14 — place UFH flow in Demand view
+
+- Route the UFH circuit flow section to the Demand tab alongside the demand timeline.
+- Keep the weekly room-demand heatmap in the Analysis view.
+
 ## v0.15.13 — UFH hydraulic flow display
 
 - Add a UFH circuit flow section to the Demand tab, grouped by downstairs and upstairs manifold.

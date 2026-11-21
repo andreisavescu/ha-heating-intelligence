@@ -47,3 +47,21 @@ def test_inactive_or_unassigned_circuit_does_not_accumulate():
         history, circuits, rooms, 60, datetime(2026, 11, 21, tzinfo=timezone.utc)
     )
     assert result["living"]["thermal_energy_total_kwh"] == 0
+
+def test_sensorless_served_room_receives_energy_independently_of_demand_trigger():
+    history = {}
+    rooms = {"bathroom": {}, "bedroom": {}}
+    circuits = {
+        "bathroom_loop": {
+            "flow_active": True,
+            "estimated_thermal_power_w": 627.9,
+            "demand_rooms": ["bedroom"],
+            "served_rooms": ["bathroom"],
+        }
+    }
+    result = update_room_thermal_energy(
+        history, circuits, rooms, 3600,
+        datetime(2026, 11, 21, 12, tzinfo=timezone.utc),
+    )
+    assert result["bathroom"]["thermal_energy_total_kwh"] == 0.6279
+    assert result["bedroom"]["thermal_energy_total_kwh"] == 0

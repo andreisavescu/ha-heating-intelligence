@@ -395,6 +395,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 "pump_id": pump_id,
                 "demand_scope": demand_scope,
                 "demand_rooms": demand_rooms[:4],
+                "served_rooms": list(user_input.get("served_rooms") or []),
                 "demand_logic": "or",
             }
             updated = dict(self.config_entry.options)
@@ -428,6 +429,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                     "floor_any": "Any configured room on this floor (OR)",
                 }),
             vol.Optional("demand_rooms", default=existing.get("demand_rooms", [])):
+                selector.SelectSelector(selector.SelectSelectorConfig(options=[
+                    {"value": room_id, "label": label} for room_id, label in room_options.items()
+                ], multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)),
+            vol.Optional("served_rooms", default=existing.get("served_rooms", existing.get("demand_rooms", []))):
                 selector.SelectSelector(selector.SelectSelectorConfig(options=[
                     {"value": room_id, "label": label} for room_id, label in room_options.items()
                 ], multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)),

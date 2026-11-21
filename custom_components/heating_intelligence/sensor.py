@@ -279,6 +279,7 @@ class RoomThermalEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
         super().__init__(coordinator)
         self.room_id = room_id
+        self.room_name = room_name
         self.metric = metric
         label, state_class = ROOM_THERMAL_ENERGY_METRICS[metric]
         self._attr_name = f"{room_name} {label}"

@@ -31,8 +31,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
             "boiler_generated_heat_kwh", "boiler_allocated_heat_kwh",
             "boiler_unallocated_heat_kwh"))
-    for room in entry.options.get(CONF_ROOMS, []):
-        entities.append(RoomBoilerExperimentEnergySensor(coordinator, room["id"], room["name"]))
+    if entry.options.get(CONF_HEATING_GAS_ENTITY):
+        for room in entry.options.get(CONF_ROOMS, []):
+            entities.append(RoomBoilerExperimentEnergySensor(coordinator, room["id"], room["name"]))
     if entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY):
         entities.append(AtticTemperatureSensor(coordinator))
         entities.extend(AtticThermalMetricSensor(coordinator, metric) for metric in (

@@ -22,7 +22,9 @@
           "edit_room": "Change a room's floor",
           "room_area": "Configure room areas, ACH and window contacts",
           "room_air_quality": "Configure room air quality",
-          "house_assessment": "House assessment"
+          "house_assessment": "House assessment",
+          "edit_rooms": "Edit rooms",
+          "ufh_circuits": "Configure UFH circuits"
         }
       },
       "global_settings": {
@@ -167,10 +169,31 @@
           "internal_gains": "Internal heat gains from equipment/appliances",
           "staircase_layout": "Staircase between floors"
         }
+      },
+      "edit_rooms": {
+        "title": "Edit rooms",
+        "description": "Choose which room settings you want to edit.",
+        "menu_options": {
+          "edit_room": "Change a room's floor",
+          "edit_room_demand": "Change a room's heating demand",
+          "room_air_quality": "Configure room air quality",
+          "room_area": "Configure room area, ACH and window contact"
+        }
+      },
+      "edit_room_demand": {
+        "title": "Select room",
+        "description": "Choose the room whose heating-demand entity you want to change."
+      },
+      "edit_room_demand_config": {
+        "title": "Room heating demand",
+        "description": "Select the heating-demand entity for {room_name}. Leave it empty to remove the room's demand sensor.",
+        "data": {
+          "demand_entity": "Room heating-demand entity"
+        }
       }
     },
     "abort": {
-      "no_rooms": "There are no rooms to remove."
+      "no_rooms": "There are no rooms configured."
     }
   }
 }

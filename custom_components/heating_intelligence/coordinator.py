@@ -86,7 +86,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         self._store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_pump_history")
         self._history: dict = {"pumps": {}, "sync_mismatch_count": 0, "last_sync_result": "unknown"}
         self._calibration_dataset_samples: list[dict] = []
-        self.ufh_flow_rates: dict[str, float] = {}\n        self.ufh_circuit_state: dict[str, dict] = {}
+        self.ufh_flow_rates: dict[str, float] = {}
+        self.ufh_circuit_state: dict[str, dict] = {}
         self._historical_validation_task = None
         self._recorder_history_attempted = False
         super().__init__(

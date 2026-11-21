@@ -88,7 +88,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["house_assessment", "add_room", "edit_room", "room_air_quality", "room_area", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
+            menu_options=["house_assessment", "add_room", "edit_rooms", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
         )
 
     async def async_step_house_assessment(self, user_input=None):
@@ -445,6 +445,18 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 ], multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)),
         })
 
+    async def async_step_edit_rooms(self, user_input=None):
+        """Group all per-room editing actions in one submenu."""
+        return self.async_show_menu(
+            step_id="edit_rooms",
+            menu_options=[
+                "edit_room",
+                "edit_room_demand",
+                "room_air_quality",
+                "room_area",
+            ],
+        )
+
     async def async_step_add_room(self, user_input=None):
         if user_input is not None:
             self._new_room_input = dict(user_input)
@@ -706,6 +718,62 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="edit_room_floor",
             data_schema=schema,
+            description_placeholders={"room_name": room[CONF_NAME]},
+        )
+
+    async def async_step_edit_room_demand(self, user_input=None):
+        """Select a room whose heating-demand entity should be changed."""
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        if not rooms:
+            return self.async_abort(reason="no_rooms")
+        if user_input is not None:
+            self._demand_room_id = user_input["room"]
+            return await self.async_step_edit_room_demand_config()
+
+        return self.async_show_form(
+            step_id="edit_room_demand",
+            data_schema=vol.Schema({
+                vol.Required("room"): vol.In({
+                    room["id"]: room[CONF_NAME] for room in rooms
+                }),
+            }),
+        )
+
+    async def async_step_edit_room_demand_config(self, user_input=None):
+        """Set or clear the selected room's heating-demand entity."""
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        room = next(
+            (item for item in rooms if item["id"] == self._demand_room_id),
+            None,
+        )
+        if room is None:
+            return self.async_abort(reason="no_rooms")
+
+        if user_input is not None:
+            entity_id = user_input.get(CONF_DEMAND_ENTITY)
+            updated_rooms = []
+            for item in rooms:
+                if item["id"] == self._demand_room_id:
+                    item = dict(item)
+                    if entity_id:
+                        item[CONF_DEMAND_ENTITY] = entity_id
+                    else:
+                        item.pop(CONF_DEMAND_ENTITY, None)
+                updated_rooms.append(item)
+            data = dict(self.config_entry.options)
+            data[CONF_ROOMS] = updated_rooms
+            return self.async_create_entry(title="", data=data)
+
+        current_entity = room.get(CONF_DEMAND_ENTITY)
+        entity_field = (
+            vol.Optional(CONF_DEMAND_ENTITY, default=current_entity)
+            if current_entity else vol.Optional(CONF_DEMAND_ENTITY)
+        )
+        return self.async_show_form(
+            step_id="edit_room_demand_config",
+            data_schema=vol.Schema({
+                entity_field: selector.EntitySelector(),
+            }),
             description_placeholders={"room_name": room[CONF_NAME]},
         )
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import datetime, timedelta
 import math
-SAMPLE_INTERVAL_SECONDS = 60
+SAMPLE_INTERVAL_SECONDS = 300
 RETENTION_DAYS = 30
 MAX_SAMPLES = RETENTION_DAYS * 24 * 60
 def _finite(value):

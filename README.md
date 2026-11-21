@@ -375,6 +375,15 @@ Historical AC power is normalized from W, kW, MW and mW before the passive-fit A
 - High-resolution event timestamps remain separate from the 30-minute thermal identification dataset; no synthetic 10-second rows are generated.
 
 
+## v0.15.11 — Generic UFH circuit configuration
+
+- Configure each of the 16 circuits independently with a user-defined name, pipe length and floor.
+- Bind the circuit to the manifold pump for its selected floor, preventing accidental cross-floor pump assignment.
+- Select up to four room heating-demand sources per circuit; any selected demand being ON activates the demand condition (OR).
+- Retain a floor-wide demand option for sensorless circuits such as bathrooms; any configured room on that floor can request the circuit.
+- Keep the persistent per-circuit flowmeter number entity as the adjustable flow input, and label it with the configured circuit name while preserving its unique ID and restored value.
+- Keep the 180-second pump confirmation and assumed 9°C water temperature drop unchanged.
+
 ## v0.15.10 — Floor-wide demand for sensorless UFH circuits
 
 - Allow a UFH circuit to be configured without a dedicated room or temperature sensor.

@@ -45,14 +45,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "humidity"))
         if room.get("co2_entity"):
             entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "co2_ppm"))
-        entities.extend(
-            RoomAnalyticsSensor(coordinator, room["id"], room["name"], metric)
-            for metric in ROOM_ANALYTICS_METRICS
-        )
-        thermal_metrics = [
-            metric for metric in ROOM_THERMAL_METRICS
-            if metric != "window_open_demand_seconds_today" or room.get("window_entity")
-        ]
+        if room.get("demand_entity"):
+            entities.extend(
+                RoomAnalyticsSensor(coordinator, room["id"], room["name"], metric)
+                for metric in ROOM_ANALYTICS_METRICS
+            )
+        thermal_metrics = []
+        if room.get("temperature_entity"):
+            thermal_metrics.extend(
+                metric for metric in ROOM_THERMAL_METRICS
+                if metric != "window_open_demand_seconds_today"
+            )
+        if room.get("temperature_entity") and room.get("demand_entity") and room.get("window_entity"):
+            thermal_metrics.append("window_open_demand_seconds_today")
         entities.extend(
             RoomThermalAnalyticsSensor(coordinator, room["id"], room["name"], metric)
             for metric in thermal_metrics

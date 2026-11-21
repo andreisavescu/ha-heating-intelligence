@@ -18,7 +18,7 @@ def test_room_energy_accumulates_and_splits_shared_circuit_without_double_counti
         datetime(2026, 11, 21, 12, tzinfo=timezone.utc),
     )
     assert result["living"]["thermal_energy_today_kwh"] == 0.31395
-    assert result["kitchen"]["thermal_energy_today_kwh"] == 0.314
+    assert result["kitchen"]["thermal_energy_today_kwh"] == 0.31395
     assert round(sum(v["thermal_energy_total_kwh"] for v in result.values()), 3) == 0.628
 
 

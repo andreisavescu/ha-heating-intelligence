@@ -1,3 +1,11 @@
+## v0.16.1 — responsive three-layer heat-flow visualisation
+
+- Simplify the Sankey diagram to three layers: combined boiler output, downstairs/upstairs manifolds, and served rooms.
+- Connect each manifold directly to its served rooms; remove the intermediate UFH circuit layer.
+- Scale flow widths according to estimated thermal power at each branch.
+- Make the diagram responsive on mobile screens without forced horizontal scrolling.
+- Preserve the 0.16.0 heat-flow and System trends functionality.
+
 ## v0.16.0 — Sankey heat-flow visualisation
 
 - Replace the basic system overview with a proportional Sankey-style heat-flow diagram.
@@ -117,7 +125,7 @@
 
 A read-only Home Assistant custom integration for analysing underfloor-heating behaviour. It does not control thermostats, pumps, boilers, or HVAC equipment.
 
-## Current scope (0.16.0 development)
+## Current scope (0.16.1 development)
 
 - Editable multi-step house profile for envelope construction, insulation, glazing/orientation/shading, heating plant, thermal mass, ventilation, occupancy and internal gains. Profile completeness is reported separately from measured thermal performance; no U-values or EPC rating are inferred from insulation thickness alone.
 - Optional per-room humidity and CO2 sensor configuration, native live Home Assistant sensors, combined room-level interpretation and whole-house/floor coverage, averages, highest-CO2 room and humidity exception summaries. Room setup also accepts optional measured ACH values from ventilation/CO2-decay experiments; existing rooms can add or change ACH and window contacts in the room-area settings flow.

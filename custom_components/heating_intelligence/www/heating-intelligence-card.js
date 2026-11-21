@@ -267,6 +267,17 @@ class HeatingIntelligenceCard extends HTMLElement {
         .simple-stat{padding:9px 10px;border:1px solid var(--divider-color);border-radius:10px;background:var(--secondary-background-color)}
         .simple-stat span{display:block;color:var(--secondary-text-color);font-size:.7rem;margin-bottom:4px}
         .simple-stat strong{font-size:1.12rem;font-weight:750}
+        .simple-home-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-items:start}
+        .simple-home-columns .simple-section{min-width:0;padding:8px 8px}
+        .simple-home-columns .simple-heading{font-size:.76rem}
+        .simple-home-columns .simple-room-main{align-items:flex-start}
+        .simple-home-columns .simple-room-main strong{font-size:.76rem}
+        .simple-home-columns .simple-temp{font-size:.76rem}
+        .simple-home-columns .simple-room-meta{gap:4px;font-size:.65rem}
+        .simple-home-columns .simple-pump{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 5px;align-items:start}
+        .simple-home-columns .simple-pump strong{font-size:.72rem}
+        .simple-home-columns .simple-pump .simple-state{font-size:.68rem}
+        .simple-home-columns .simple-pump .simple-temp{grid-column:2;font-size:.72rem}
         .simple-section{border:1px solid var(--divider-color);border-radius:10px;padding:8px 10px}
         .simple-heading{font-size:.8rem;font-weight:750;margin-bottom:5px}
         .simple-room{padding:7px 0;border-top:1px solid var(--divider-color)}
@@ -342,6 +353,7 @@ class HeatingIntelligenceCard extends HTMLElement {
             <div class="simple-stat"><span>Pumps running</span><strong>${attrs.running_pumps ?? pumps.filter(p=>p.running).length} / ${pumps.length}</strong></div>
             <div class="simple-stat"><span>Water inlet</span><strong>${this._fmt(attrs.water_temperature)}</strong></div>
           </div>
+          <div class="simple-home-columns">
           <div class="simple-section">
             <div class="simple-heading">Rooms</div>
             ${entries.length ? entries.map((room) => `<div class="simple-room">
@@ -360,6 +372,7 @@ class HeatingIntelligenceCard extends HTMLElement {
               <span class="simple-state ${pump.running ? "is-heating" : ""}">${pump.running ? "Running" : "Stopped"}</span>
               <span class="simple-temp">${this._fmt(pump.power, "W", 0)}</span>
             </div>`).join("") : '<p class="simple-muted">No pumps configured.</p>'}
+          </div>
           </div>
           ${insights.some(item => item.severity === "warning") ? `<div class="simple-section">
             <div class="simple-heading">Needs attention</div>

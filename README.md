@@ -1,3 +1,9 @@
+## v0.15.18 — room power registration and floor-based Home layout
+
+- Fix room heating power sensor device association so the per-room power entity registers correctly.
+- Organize the Home view into separate Downstairs rooms and Upstairs rooms sections, in that order.
+- Show Downstairs and Upstairs heating pumps side by side beneath the room sections.
+
 ## v0.15.17 — compact home overview layout
 
 - Display the Rooms and Heating pumps panels side by side in a two-column layout, matching the two-column summary above.

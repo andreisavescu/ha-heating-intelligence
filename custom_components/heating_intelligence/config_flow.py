@@ -353,6 +353,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             {},
         )
         room_options = {item["id"]: item[CONF_NAME] for item in rooms}
+        demand_room_options = {
+            item["id"]: item[CONF_NAME] for item in rooms
+            if item.get(CONF_DEMAND_ENTITY)
+        }
         pump_options = {item["id"]: item["name"] for item in pumps}
         floor_options = {"ground_floor": "Downstairs", "upstairs": "Upstairs"}
 
@@ -365,7 +369,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             if len(demand_rooms) > 4:
                 return self.async_show_form(
                     step_id="ufh_circuit_details",
-                    data_schema=self._ufh_circuit_schema(existing, room_options, floor_options),
+                    data_schema=self._ufh_circuit_schema(existing, demand_room_options, floor_options, room_options),
                     errors={"demand_rooms": "max_four_demands"},
                     description_placeholders={
                         "circuit": f"{self._ufh_circuit_number:02d}",
@@ -415,7 +419,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         )
 
     @staticmethod
-    def _ufh_circuit_schema(existing, room_options, floor_options):
+    def _ufh_circuit_schema(existing, demand_room_options, floor_options, room_options):
         """Build a circuit form shared by initial display and validation errors."""
         default_floor = existing.get("floor", "ground_floor")
         return vol.Schema({
@@ -428,9 +432,12 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                     "selected_rooms": "Selected heating demands (up to 4, OR)",
                     "floor_any": "Any configured room on this floor (OR)",
                 }),
-            vol.Optional("demand_rooms", default=existing.get("demand_rooms", [])):
+            vol.Optional("demand_rooms", default=[
+                room_id for room_id in existing.get("demand_rooms", [])
+                if room_id in demand_room_options
+            ]):
                 selector.SelectSelector(selector.SelectSelectorConfig(options=[
-                    {"value": room_id, "label": label} for room_id, label in room_options.items()
+                    {"value": room_id, "label": label} for room_id, label in demand_room_options.items()
                 ], multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)),
             vol.Optional("served_rooms", default=existing.get("served_rooms", existing.get("demand_rooms", []))):
                 selector.SelectSelector(selector.SelectSelectorConfig(options=[

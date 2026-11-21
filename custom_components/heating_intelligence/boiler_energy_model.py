@@ -103,21 +103,21 @@ def update_boiler_energy_model(
         state["modulation_energy_since_meter_kwh"] = (
             float(state.get("modulation_energy_since_meter_kwh", 0.0)) + modulation_energy
         )
-        daily_generated = state.setdefault("daily_modulation_generated_heat_kwh", {})
-        daily_generated[today] = float(daily_generated.get(today, 0.0)) + modulation_energy
         room_weights: dict[str, float] = {}
         for circuit in circuits.values():
             if not circuit.get("flow_active"):
                 continue
             flow = max(0.0, float(circuit.get("active_configured_flow_l_min") or circuit.get("configured_flow_l_min") or 0.0))
             served = circuit.get("served_rooms") or circuit.get("demand_rooms") or []
-            eligible = [rid for rid in served if rid in rooms and rooms[rid].get("demand") is True]
+            eligible = [rid for rid in served if rid in rooms]
             if flow <= 0 or not eligible:
                 continue
             for rid in eligible:
                 room_weights[rid] = room_weights.get(rid, 0.0) + flow / len(eligible)
         total_weight = sum(room_weights.values())
         if total_weight > 0:
+            daily_generated = state.setdefault("daily_modulation_generated_heat_kwh", {})
+            daily_generated[today] = float(daily_generated.get(today, 0.0)) + modulation_energy
             daily_rooms = state.setdefault("daily_modulation_room_energy_kwh", {}).setdefault(today, {})
             for rid, weight in room_weights.items():
                 daily_rooms[rid] = float(daily_rooms.get(rid, 0.0)) + modulation_energy * weight / total_weight

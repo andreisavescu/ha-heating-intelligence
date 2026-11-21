@@ -382,7 +382,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             if pump_id not in pump_options:
                 return self.async_show_form(
                     step_id="ufh_circuit_details",
-                    data_schema=self._ufh_circuit_schema(existing, room_options, floor_options),
+                    data_schema=self._ufh_circuit_schema(existing, demand_room_options, floor_options, room_options),
                     errors={"floor": "missing_floor_pump"},
                     description_placeholders={
                         "circuit": f"{self._ufh_circuit_number:02d}",
@@ -411,7 +411,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="ufh_circuit_details",
-            data_schema=self._ufh_circuit_schema(existing, room_options, floor_options),
+            data_schema=self._ufh_circuit_schema(existing, demand_room_options, floor_options, room_options),
             description_placeholders={
                 "circuit": f"{self._ufh_circuit_number:02d}",
                 "flow_input": f"number.ufh_circuit_{self._ufh_circuit_number:02d}_flow",

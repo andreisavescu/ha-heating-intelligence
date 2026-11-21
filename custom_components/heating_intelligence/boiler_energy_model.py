@@ -67,6 +67,7 @@ def update_boiler_energy_model(
         "calibration_factor": 1.0,
         "last_meter_interval_modulation_kwh": 0.0,
         "daily_modulation_room_energy_kwh": {},
+        "modulation_room_energy_kwh": {},
         "daily_modulation_generated_heat_kwh": {},
     })
     # Backfill defaults when restoring history written by an earlier version.
@@ -78,6 +79,7 @@ def update_boiler_energy_model(
         "calibration_factor": 1.0,
         "last_meter_interval_modulation_kwh": 0.0,
         "daily_modulation_room_energy_kwh": {},
+        "modulation_room_energy_kwh": {},
         "daily_modulation_generated_heat_kwh": {},
     }.items():
         state.setdefault(key, default)
@@ -119,8 +121,11 @@ def update_boiler_energy_model(
             daily_generated = state.setdefault("daily_modulation_generated_heat_kwh", {})
             daily_generated[today] = float(daily_generated.get(today, 0.0)) + modulation_energy
             daily_rooms = state.setdefault("daily_modulation_room_energy_kwh", {}).setdefault(today, {})
+            lifetime_rooms = state.setdefault("modulation_room_energy_kwh", {})
             for rid, weight in room_weights.items():
-                daily_rooms[rid] = float(daily_rooms.get(rid, 0.0)) + modulation_energy * weight / total_weight
+                allocated = modulation_energy * weight / total_weight
+                daily_rooms[rid] = float(daily_rooms.get(rid, 0.0)) + allocated
+                lifetime_rooms[rid] = float(lifetime_rooms.get(rid, 0.0)) + allocated
 
     if burner_on is True and interval > 0:
         burner_seconds[today] = float(burner_seconds.get(today, 0.0)) + interval
@@ -240,6 +245,29 @@ def update_boiler_energy_model(
             except (TypeError, ValueError):
                 del mapping[day]
 
+    # Calendar-period totals are derived from the retained daily ledger.
+    daily_modulation_rooms = state.get("daily_modulation_room_energy_kwh", {})
+    week_start = now.date().fromordinal(now.date().toordinal() - now.date().weekday())
+    month_start = now.date().replace(day=1)
+    weekly_modulation_rooms: dict[str, float] = {}
+    monthly_modulation_rooms: dict[str, float] = {}
+    today_modulation_rooms = daily_modulation_rooms.get(today, {})
+    for day, allocations in daily_modulation_rooms.items():
+        try:
+            date = datetime.fromisoformat(day).date()
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(allocations, dict):
+            continue
+        if date >= week_start:
+            for rid, value in allocations.items():
+                if isinstance(value, (int, float)):
+                    weekly_modulation_rooms[rid] = weekly_modulation_rooms.get(rid, 0.0) + float(value)
+        if date >= month_start:
+            for rid, value in allocations.items():
+                if isinstance(value, (int, float)):
+                    monthly_modulation_rooms[rid] = monthly_modulation_rooms.get(rid, 0.0) + float(value)
+
     last_seconds = float(state.get("last_meter_interval_seconds") or 0.0)
     avg_power = {
         rid: (value * 1000.0 / (last_seconds / 3600.0)) if last_seconds > 0 else 0.0
@@ -284,6 +312,13 @@ def update_boiler_energy_model(
         "boiler_modulation_estimated_output_kw": round(output_kw, 3) if output_kw is not None else None,
         "boiler_modulation_calibrated_output_kw": round(calibrated_output_kw, 3) if calibrated_output_kw is not None else None,
         "boiler_modulation_estimated_energy_kwh": round(float(state["modulation_estimated_energy_kwh"]), 4),
+        "boiler_modulation_room_energy_kwh": {k: round(float(v), 6) for k, v in state.get("modulation_room_energy_kwh", {}).items()},
+        "boiler_modulation_daily_room_energy_kwh": {
+            k: round(float(v), 6) for k, v in today_modulation_rooms.items()
+            if isinstance(v, (int, float))
+        },
+        "boiler_modulation_weekly_room_energy_kwh": {k: round(float(v), 6) for k, v in weekly_modulation_rooms.items()},
+        "boiler_modulation_monthly_room_energy_kwh": {k: round(float(v), 6) for k, v in monthly_modulation_rooms.items()},
         "boiler_daily_modulation_generated_heat_kwh": state.get("daily_modulation_generated_heat_kwh", {}),
         "boiler_daily_modulation_room_energy_kwh": state.get("daily_modulation_room_energy_kwh", {}),
         "boiler_last_meter_interval_modulation_energy_kwh": round(float(state["last_meter_interval_modulation_kwh"]), 4),

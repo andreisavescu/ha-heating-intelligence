@@ -38,6 +38,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         for room in entry.options.get(CONF_ROOMS, []):
             entities.append(RoomBoilerExperimentEnergySensor(coordinator, room["id"], room["name"]))
+    # Modulation-derived energy is independent of gas-meter availability.
+    for room in entry.options.get(CONF_ROOMS, []):
+        entities.extend(ModulationRoomEnergySensor(coordinator, room["id"], room["name"], period)
+            for period in ("daily", "weekly", "monthly", "total"))
     if entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY):
         entities.append(AtticTemperatureSensor(coordinator))
         entities.extend(AtticThermalMetricSensor(coordinator, metric) for metric in (
@@ -178,6 +182,38 @@ class BoilerExperimentDiagnosticSensor(HouseDeviceMixin, CoordinatorEntity, Sens
     @property
     def native_value(self):
         return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric)
+
+
+
+class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Modulation-estimated boiler energy allocated to a room by period."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+
+    PERIODS = {
+        "daily": ("Daily", SensorStateClass.TOTAL, "boiler_modulation_daily_room_energy_kwh"),
+        "weekly": ("Weekly", SensorStateClass.TOTAL, "boiler_modulation_weekly_room_energy_kwh"),
+        "monthly": ("Monthly", SensorStateClass.TOTAL, "boiler_modulation_monthly_room_energy_kwh"),
+        "total": ("Total", SensorStateClass.TOTAL_INCREASING, "boiler_modulation_room_energy_kwh"),
+    }
+
+    def __init__(self, coordinator, room_id: str, room_name: str, period: str) -> None:
+        super().__init__(coordinator)
+        label, state_class, metric = self.PERIODS[period]
+        self.room_id = room_id
+        self.metric = metric
+        self._attr_name = f"{room_name} Modulation Estimated Heat {label}"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_modulation_estimated_heat_{period}"
+        self._attr_state_class = state_class
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("boiler_energy_experiment", {}).get(
+            self.metric, {}
+        ).get(self.room_id, 0.0)
 
 
 class RoomBoilerExperimentEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):

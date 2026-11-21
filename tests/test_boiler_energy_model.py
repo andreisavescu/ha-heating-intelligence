@@ -149,3 +149,46 @@ def test_daily_modulation_energy_is_allocated_across_active_ufh_rooms():
     assert abs(daily["bedroom"] - 3.0 * 10.0 / 60.0 / 4.0) < 1e-8
     assert abs(result["boiler_daily_modulation_generated_heat_kwh"]["2026-11-21"] - 10.0 / 60.0) < 1e-8
     assert abs(sum(daily.values()) - result["boiler_daily_modulation_generated_heat_kwh"]["2026-11-21"]) < 1e-8
+
+
+def test_modulation_room_energy_exposes_daily_weekly_monthly_and_lifetime_totals():
+    from datetime import datetime, timezone
+
+    history = {}
+    circuits = {"c": {"flow_active": True, "active_configured_flow_l_min": 2.0, "served_rooms": ["room"]}}
+    rooms = {"room": {"demand": False}}
+    first = MODEL.update_boiler_energy_model(
+        history, None, None, True, 40, circuits, rooms, 60,
+        now=datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc),
+    )
+    second = MODEL.update_boiler_energy_model(
+        history, None, None, True, 40, circuits, rooms, 60,
+        now=datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc),
+    )
+
+    # 10 kW × one minute per day, all assigned to this room.
+    per_day = 10.0 / 60.0
+    assert abs(first["boiler_modulation_daily_room_energy_kwh"]["room"] - per_day) < 1e-6
+    assert abs(second["boiler_modulation_daily_room_energy_kwh"]["room"] - per_day) < 1e-6
+    assert abs(second["boiler_modulation_weekly_room_energy_kwh"]["room"] - 2 * per_day) < 1e-6
+    assert abs(second["boiler_modulation_monthly_room_energy_kwh"]["room"] - 2 * per_day) < 1e-6
+    assert abs(second["boiler_modulation_room_energy_kwh"]["room"] - 2 * per_day) < 1e-6
+
+
+def test_modulation_room_period_totals_roll_over_at_calendar_boundaries():
+    from datetime import datetime, timezone
+
+    history = {}
+    circuits = {"c": {"flow_active": True, "active_configured_flow_l_min": 1.0, "served_rooms": ["room"]}}
+    rooms = {"room": {}}
+    MODEL.update_boiler_energy_model(
+        history, None, None, True, 40, circuits, rooms, 60,
+        now=datetime(2026, 11, 30, 23, 59, tzinfo=timezone.utc),
+    )
+    result = MODEL.update_boiler_energy_model(
+        history, None, None, True, 40, circuits, rooms, 60,
+        now=datetime(2026, 12, 1, 0, 0, tzinfo=timezone.utc),
+    )
+    assert result["boiler_modulation_daily_room_energy_kwh"]["room"] > 0
+    assert result["boiler_modulation_monthly_room_energy_kwh"]["room"] == result["boiler_modulation_daily_room_energy_kwh"]["room"]
+    assert result["boiler_modulation_room_energy_kwh"]["room"] > result["boiler_modulation_daily_room_energy_kwh"]["room"]

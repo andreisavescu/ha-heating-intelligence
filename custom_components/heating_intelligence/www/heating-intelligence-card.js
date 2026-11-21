@@ -231,10 +231,28 @@ class HeatingIntelligenceCard extends HTMLElement {
   _modulationHeatFlowSankey(experiment, hydraulics, rooms) {
     const outputW = Number(experiment?.boiler_modulation_estimated_output_kw || 0) * 1000;
     if (!(outputW > 0)) return '<div class="chart-empty">Waiting for a valid burner-on modulation reading.</div>';
-    const active = Object.entries(hydraulics?.circuits || {}).filter(([,c]) => c.flow_active && Number(c.active_configured_flow_l_min || c.configured_flow_l_min || 0) > 0 && (c.served_rooms || c.demand_rooms || []).some(id => rooms?.[id]?.demand === true));
-    const totalFlow = active.reduce((sum,[,c]) => sum + Number(c.active_configured_flow_l_min || c.configured_flow_l_min || 0), 0);
-    if (!(totalFlow > 0)) return '<div class="chart-empty">Modulation output is available, but no active room circuit can receive an allocation.</div>';
-    const circuits = Object.fromEntries(active.map(([id,c]) => [id, {...c, estimated_thermal_power_w: outputW * Number(c.active_configured_flow_l_min || c.configured_flow_l_min || 0) / totalFlow}]));
+
+    // Match the hydraulic Sankey's active-circuit selection. Room demand flags
+    // can be stale or false while a circuit is still flowing; requiring them
+    // here silently removed valid manifold/room paths from the modulation view.
+    const active = Object.entries(hydraulics?.circuits || {}).filter(([, c]) =>
+      c.flow_active &&
+      Number(c.estimated_thermal_power_w) > 0 &&
+      Number(c.active_configured_flow_l_min || c.configured_flow_l_min || 0) > 0 &&
+      (c.served_rooms || []).some(id => rooms?.[id])
+    );
+    const totalFlow = active.reduce((sum, [, c]) =>
+      sum + Number(c.active_configured_flow_l_min || c.configured_flow_l_min || 0), 0);
+    if (!(totalFlow > 0)) return '<div class="chart-empty">Modulation output is available, but no active UFH circuit with a configured flow and served room can receive an allocation.</div>';
+
+    // Allocate the live boiler modulation output by configured active circuit
+    // flow. _heatFlowSankey then groups those circuit shares by manifold and
+    // splits each circuit among its served rooms, preserving the hydraulic
+    // diagram's routing while making all links sum to the modulation total.
+    const circuits = Object.fromEntries(active.map(([id, c]) => {
+      const flow = Number(c.active_configured_flow_l_min || c.configured_flow_l_min || 0);
+      return [id, {...c, estimated_thermal_power_w: outputW * flow / totalFlow}];
+    }));
     return this._heatFlowSankey({circuits}, rooms, "modulation");
   }
   _boilerHeatFlowSankey(experiment, rooms) {

@@ -27,6 +27,7 @@ from .validated_learning import build_validated_learning_state, validated_learni
 from .thermal_storage import build_thermal_storage_response_analysis
 from .ufh_hydraulics import build_ufh_hydraulic_snapshot
 from .thermal_energy import update_room_thermal_energy
+from .system_history import record_system_sample
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
@@ -993,6 +994,26 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             now_local,
         )
         result["predictions"]["validation"] = result["advanced_heating"]["forecast_validation"]
+        burner_entity = self.entry.options.get(CONF_BOILER_BURNER_ENTITY)
+        modulation_entity = self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)
+        burner_state = self.hass.states.get(burner_entity) if burner_entity else None
+        modulation_state = self.hass.states.get(modulation_entity) if modulation_entity else None
+        record_system_sample(self._history, now_local, {
+            "thermal_power_w": result.get("ufh_hydraulics", {}).get("active_estimated_thermal_power_w"),
+            "pump_power_w": sum(float(p.get("power") or 0.0) for p in result.get("pumps", {}).values()),
+            "boiler_power_w": result.get("efficiency", {}).get("boiler_power_w"),
+            "active_flow_l_min": sum(float(v.get("active_configured_flow_l_min") or 0.0) for v in result.get("ufh_hydraulics", {}).get("circuits", {}).values()),
+            "water_supply_c": result.get("water_temperature"),
+            "water_return_c": result.get("water_return_temperature"),
+            "indoor_average_c": sum(indoor_values) / len(indoor_values) if indoor_values else None,
+            "outdoor_c": (result.get("weather", {}).get("outdoor_temperature") or {}).get("value"),
+            "attic_c": result.get("attic_thermal", {}).get("attic_temperature"),
+            "burner": burner_state.state if burner_state else None,
+            "modulation": _as_float(modulation_state.state) if modulation_state else None,
+            "circuits": result.get("ufh_hydraulics", {}).get("circuits", {}),
+            "rooms": result.get("rooms", {}),
+        })
+        result["system_history"] = self._history.get("system_samples", [])
         await self._store.async_save(self._history)
         self._schedule_historical_validation(now)
         return result

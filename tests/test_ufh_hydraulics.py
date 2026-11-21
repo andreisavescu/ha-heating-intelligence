@@ -15,11 +15,12 @@ def snapshot(demand_state, power, state, now):
     return UFH.build_ufh_hydraulic_snapshot(circuits, rooms, pumps, {"living_1": 1.0}, state, now)["circuits"]["living_1"]
 
 
-def test_flow_waits_full_three_minutes_above_seven_watts():
+def test_pump_timer_runs_independently_of_delayed_demand_relay():
     now = datetime(2026, 11, 21, tzinfo=timezone.utc)
     state = {}
-    assert snapshot("on", 8.0, state, now)["flow_active"] is False
-    assert snapshot("on", 8.0, state, now + timedelta(seconds=179))["flow_active"] is False
+    # Pump starts first; thermostat demand relay comes online only after 180 s.
+    assert snapshot("unavailable", 8.0, state, now)["flow_active"] is False
+    assert snapshot("unavailable", 8.0, state, now + timedelta(seconds=179))["flow_active"] is False
     result = snapshot("on", 8.0, state, now + timedelta(seconds=180))
     assert result["flow_active"] is True
     assert result["active_configured_flow_l_min"] == 1.0
@@ -35,14 +36,14 @@ def test_flow_stops_immediately_when_demand_becomes_unavailable():
     assert result["active_configured_flow_l_min"] == 0.0
 
 
-def test_flow_timer_resets_when_pump_power_drops_to_seven_or_below():
+def test_pump_timer_resets_when_power_drops_to_seven_or_below():
     now = datetime(2026, 11, 21, tzinfo=timezone.utc)
     state = {}
     snapshot("on", 8.0, state, now)
     snapshot("on", 7.0, state, now + timedelta(seconds=120))
     result = snapshot("on", 8.0, state, now + timedelta(seconds=180))
     assert result["flow_active"] is False
-    assert result["flow_pending_seconds"] == 0
+    assert result["pump_above_threshold_seconds"] == 0
 
 
 def test_thermal_power_uses_assumed_nine_degree_drop():
@@ -60,12 +61,15 @@ def test_or_and_demand_logic_preserves_unknowns():
     assert UFH.evaluate_activation([True, None], "and") is None
 
 
-def test_active_flow_stops_on_demand_end_even_if_pump_power_has_changed():
+def test_active_flow_stops_on_demand_end_or_pump_stop():
     now = datetime(2026, 11, 21, tzinfo=timezone.utc)
     state = {}
     snapshot("on", 8.0, state, now)
     snapshot("on", 8.0, state, now + timedelta(seconds=180))
-    still_active = snapshot("on", 0.0, state, now + timedelta(seconds=190))
+    still_active = snapshot("on", 8.0, state, now + timedelta(seconds=190))
     assert still_active["flow_active"] is True
-    stopped = snapshot("off", 0.0, state, now + timedelta(seconds=200))
+    stopped = snapshot("off", 8.0, state, now + timedelta(seconds=200))
     assert stopped["flow_active"] is False
+    snapshot("on", 8.0, state, now + timedelta(seconds=210))
+    pump_stopped = snapshot("on", 0.0, state, now + timedelta(seconds=211))
+    assert pump_stopped["flow_active"] is False

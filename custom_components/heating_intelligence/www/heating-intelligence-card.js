@@ -191,7 +191,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     }
     const floorNodes=floors.map(f=>{
       const roomsForFloor=Object.entries(allocations[f.id]).map(([id,power])=>({id,name:roomMap[id]?.name||id,power,floor:f.id}));
-      return {...f,rooms:roomsForFloor,power:roomsForFloor.reduce((n,r)=>n+r.power,0)};
+      const power=circuits.filter(([,c])=>c.demand_floor===f.id).reduce((n,[,c])=>n+(Number(c.estimated_thermal_power_w)||0),0);\n      return {...f,name:f.label,rooms:roomsForFloor,power};
     }).filter(f=>f.power>0);
     if(!floorNodes.length)return '<div class="chart-empty">No active room allocations are available for the running circuits.</div>';
     const roomNodes=floorNodes.flatMap(f=>f.rooms).sort((a,b)=>a.floor.localeCompare(b.floor)||a.name.localeCompare(b.name));
@@ -203,7 +203,7 @@ class HeatingIntelligenceCard extends HTMLElement {
       const ys=f.rooms.map(r=>r.y);
       f.y=ys.reduce((a,b)=>a+b,0)/ys.length;
     });
-    const boiler={x:8,y:floorNodes.reduce((n,f)=>n+f.y,0)/floorNodes.length,name:"Boiler / heat source",power:total};
+    const boiler={x:8,y:floorNodes.reduce((n,f)=>n+f.y,0)/floorNodes.length,name:"Boiler",power:total};
     const width=value=>Math.max(.8,value/total*34);
     const curve=(a,b)=>{const x1=a.x+12,x2=b.x,mid=(x1+x2)/2;return `M ${x1} ${a.y} C ${mid} ${a.y}, ${mid} ${b.y}, ${x2} ${b.y}`;};
     const links=[
@@ -211,7 +211,7 @@ class HeatingIntelligenceCard extends HTMLElement {
       ...floorNodes.flatMap(f=>f.rooms.map(r=>({a:f,b:r,value:r.power})))
     ];
     const linkSvg=links.map(l=>`<path d="${curve(l.a,l.b)}" fill="none" stroke="var(--hi-green,#2eaa83)" stroke-opacity=".58" stroke-width="${width(l.value).toFixed(2)}"><title>${this._esc(l.a.name||"Boiler")} → ${this._esc(l.b.name)}: ${l.value.toFixed(0)} W estimated</title></path>`).join("");
-    const node=(n,kind,labelX=n.x+17)=>`<g><rect x="${n.x}" y="${(n.y-8).toFixed(1)}" width="12" height="16" rx="4" class="heat-flow-node ${kind}"/><text x="${labelX}" y="${(n.y-2).toFixed(1)}" class="heat-flow-label">${this._esc(n.name)}</text><text x="${labelX}" y="${(n.y+12).toFixed(1)}" class="heat-flow-value">${n.power.toFixed(0)} W</text></g>`;
+    const node=(n,kind,labelX=n.x+17)=>`<g><rect x="${n.x}" y="${(n.y-8).toFixed(1)}" width="12" height="16" rx="4" class="heat-flow-node ${kind}"/><text x="${labelX}" y="${(n.y-2).toFixed(1)}" class="heat-flow-label" textLength="${kind==="room"?90:undefined}" lengthAdjust="spacingAndGlyphs">${this._esc(n.name)}</text><text x="${labelX}" y="${(n.y+12).toFixed(1)}" class="heat-flow-value">${n.power.toFixed(0)} W</text></g>`;
     const columns='<text x="8" y="18" class="heat-flow-column">HEAT SOURCE</text><text x="122" y="18" text-anchor="middle" class="heat-flow-column">MANIFOLDS</text><text x="245" y="18" class="heat-flow-column">ROOMS</text>';
     const roomSvg=roomNodes.map(r=>node(r,"room")).join("");
     return `<div class="heat-flow-summary"><div><span>Estimated active UFH output</span><strong>${(total/1000).toFixed(2)} kW</strong></div><div><span>Downstairs</span><strong>${(allocations.ground_floor?Object.values(allocations.ground_floor).reduce((a,b)=>a+b,0)/1000:0).toFixed(2)} kW</strong></div><div><span>Upstairs</span><strong>${(allocations.upstairs?Object.values(allocations.upstairs).reduce((a,b)=>a+b,0)/1000:0).toFixed(2)} kW</strong></div></div><div class="heat-flow-scroll"><svg viewBox="0 0 360 ${height+30}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Three-layer Sankey diagram showing estimated heat from the boiler to downstairs and upstairs manifolds, then to served rooms">${columns}${linkSvg}${node(boiler,"boiler")}${floorNodes.map(f=>node(f,"manifold")).join("")}${roomSvg}</svg></div><div class="subtle">Link widths represent estimated thermal power. Room allocations are derived from manually configured circuit flow and an assumed 9°C water temperature drop, divided equally among each circuit's served rooms. The boiler total is the sum of the two manifold allocations; it is not a direct measurement of boiler heat output or room heat delivery.</div>`;

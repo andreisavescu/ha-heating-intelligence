@@ -1,3 +1,21 @@
+## v0.17.4 — Room modulation energy registration and Sankey tab placement
+
+- Fix per-room modulation-estimated energy sensors so they register with the correct room device metadata.
+- Present daily, weekly, monthly and lifetime modulation energy sensors consistently with the existing room thermal-energy entities.
+- Expose the estimate method and source in sensor attributes; keep the entities visible alongside the other room sensors.
+- Keep both Power Sankey diagrams and both Daily Energy Sankey diagrams in the System tab, not Analysis.
+- Preserve the existing hydraulic and modulation allocation calculations and all older energy entities.
+- No heating, pump or boiler control behavior changes.
+
+## Upgrade notes
+
+- The four modulation energy sensors are created for every configured room.
+- Existing sensors are retained; no entity cleanup or history deletion is performed in this release.
+
+## Testing
+
+- CI passed on PR #61, including unit tests, integration compilation and Lovelace JavaScript syntax validation.
+
 ## v0.16.1 — responsive three-layer heat-flow visualisation
 
 - Simplify the Sankey diagram to three layers: combined boiler output, downstairs/upstairs manifolds, and served rooms.

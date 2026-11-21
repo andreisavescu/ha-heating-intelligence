@@ -46,7 +46,7 @@ def update_room_thermal_energy(
         power_w = float(circuit.get("estimated_thermal_power_w") or 0.0)
         if power_w <= 0:
             continue
-        targets = [room_id for room_id in circuit.get("demand_rooms", []) if room_id in rooms]
+        targets = [room_id for room_id in circuit.get("served_rooms") or circuit.get("demand_rooms", []) if room_id in rooms]
         if not targets:
             continue
         share_kwh = power_w * interval / 3_600_000.0 / len(targets)

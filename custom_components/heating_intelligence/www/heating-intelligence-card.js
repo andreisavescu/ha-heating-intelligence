@@ -200,7 +200,7 @@ class HeatingIntelligenceCard extends HTMLElement {
       }).join("");
       return `<div class="demand-row"><div class="demand-room"><strong>${this._esc(room.name)}</strong><span class="demand-status ${room.demand?"active":""}">${room.demand?"Requesting":"Idle"}</span></div><svg viewBox="0 0 ${width} 26" preserveAspectRatio="none" role="img" aria-label="Demand timeline for ${this._esc(room.name)}"><line x1="0" y1="13" x2="${width}" y2="13" class="demand-track"/>${bars}</svg></div>`;
     }).join("");
-    const ticks=hours===2?["−2h","−1h 30m","−1h","−30m","Now"]:hours===4?["−4h","−3h","−2h","−1h","Now"]:["−24h","−18h","−12h","−6h","Now"];
+    const ticks=hours===2?["−2h","−1h 30m","−1h","−30m","Now"]:hours===4?["−4h","−3h","−2h","−1h","Now"]:hours===12?["−12h","−9h","−6h","−3h","Now"]:["−24h","−18h","−12h","−6h","Now"];
     return `<div class="demand-axis">${ticks.map(t=>`<span>${t}</span>`).join("")}</div>${rows||'<div class="chart-empty">No rooms configured.</div>'}`;
   }
   _energyChart(days) {

@@ -312,3 +312,38 @@ def test_gas_reconciled_heating_season_totals_survive_daily_ledger_cleanup():
     assert "2026-09-01" not in experiment["daily_room_energy_kwh"]
     assert experiment["heating_season_room_energy_kwh"]["2026-09-01/2027-05-01"]["r"] > 0
     assert result["boiler_heating_season_allocated_heat_kwh"] > 0
+
+
+def test_room_allocation_modulation_ramps_up_by_at_most_ten_percentage_points():
+    history = {}
+    circuits = {"c": {"flow_active": True, "active_configured_flow_l_min": 1.0, "served_rooms": ["room"]}}
+    rooms = {"room": {}}
+    values = []
+    for percent in (30, 60, 60, 60):
+        result = MODEL.update_boiler_energy_model(history, None, None, True, percent, circuits, rooms, 10)
+        values.append(result["boiler_modulation_room_allocation_percent"])
+    assert values == [10.0, 20.0, 30.0, 40.0]
+    assert result["boiler_modulation_raw_calibrated_output_kw"] == 15.0
+    assert result["boiler_modulation_calibrated_output_kw"] == 10.0
+
+
+def test_room_allocation_modulation_drops_immediately_without_downward_limit():
+    history = {}
+    circuits = {"c": {"flow_active": True, "active_configured_flow_l_min": 1.0, "served_rooms": ["room"]}}
+    rooms = {"room": {}}
+    for percent in (30, 40, 50):
+        result = MODEL.update_boiler_energy_model(history, None, None, True, percent, circuits, rooms, 10)
+    assert result["boiler_modulation_room_allocation_percent"] == 30.0
+    result = MODEL.update_boiler_energy_model(history, None, None, True, 0, circuits, rooms, 10)
+    assert result["boiler_modulation_room_allocation_percent"] == 0.0
+    assert result["boiler_modulation_calibrated_output_kw"] == 0.0
+
+
+def test_room_allocation_modulation_ramp_state_survives_history_restore():
+    history = {}
+    circuits = {"c": {"flow_active": True, "active_configured_flow_l_min": 1.0, "served_rooms": ["room"]}}
+    rooms = {"room": {}}
+    MODEL.update_boiler_energy_model(history, None, None, True, 30, circuits, rooms, 10)
+    restored = {"boiler_energy_experiment": dict(history["boiler_energy_experiment"])}
+    result = MODEL.update_boiler_energy_model(restored, None, None, True, 60, circuits, rooms, 10)
+    assert result["boiler_modulation_room_allocation_percent"] == 20.0

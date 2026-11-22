@@ -50,6 +50,10 @@ CALCULATION_DETAILS = {
     "shortest_cycle_seconds_week": ("Shortest recorded heating cycle duration in the current week.", "min(completed cycle durations) ÷ 60", "Reported in minutes."),
     "longest_cycle_seconds_week": ("Longest recorded heating cycle duration in the current week.", "max(completed cycle durations) ÷ 60", "Reported in minutes."),
     "active_cycle_seconds": ("Elapsed duration of the currently active room-demand cycle.", "current time − active cycle start time, in minutes", "Only present while demand is active."),
+    "window_open_demand_seconds_today": ("Room demand duration while the configured window is open today.", "Σ elapsed seconds where demand is on AND window is open ÷ 3600", "Requires known demand and window states; reported in hours."),
+    "pump_energy": ("Accumulated electrical energy consumed by this pump.", "Σ(power (W) × elapsed seconds ÷ 3,600,000)", "Integrated from sampled pump power; sampling gaps and the integration's elapsed-time cap affect the estimate."),
+    "pump_runtime": ("Accumulated time the pump is classified as running.", "Σ elapsed seconds while pump running ÷ 3600", "Based on the pump power running threshold and coordinator observations."),
+    "pump_cycles": ("Count of observed pump off-to-on transitions.", "count(pump state changes from off to on)", "Cycles are observed by the integration and may miss transitions during Home Assistant downtime."),
     "temperature_change_1h": ("Latest room temperature minus the latest retained sample at least one hour old.", "T(latest) − T(sample at or before now − 1 h)", "Sparse temperature samples; may be unavailable until a qualifying sample exists."),
     "temperature_change_6h": ("Latest room temperature minus the latest retained sample at least six hours old.", "T(latest) − T(sample at or before now − 6 h)", "Sparse temperature samples."),
     "temperature_change_24h": ("Latest room temperature minus the latest retained sample at least 24 hours old.", "T(latest) − T(sample at or before now − 24 h)", "Sparse temperature samples."),
@@ -800,6 +804,10 @@ class PumpEnergySensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("energy")
 
     @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_energy")
+
+    @property
     def available(self):
         return super().available and self.native_value is not None
 
@@ -824,6 +832,10 @@ class PumpCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     def native_value(self):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("cycle_count", 0)
 
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_cycles")
+
 
 class PumpRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Accumulated pump runtime in hours."""
@@ -845,6 +857,10 @@ class PumpRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     def native_value(self):
         seconds = self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("total_runtime_seconds", 0)
         return round(seconds / 3600, 2)
+
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_runtime")
 
 
 class PumpSynchronizationSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -889,6 +905,10 @@ class PumpDailyEnergySensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     def native_value(self):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("daily_energy_kwh", 0)
 
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_energy")
+
 
 class PumpDailyRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Pump runtime accumulated since local midnight."""
@@ -911,6 +931,10 @@ class PumpDailyRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
         seconds = self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("daily_runtime_seconds", 0)
         return round(seconds / 3600, 3)
 
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_runtime")
+
 
 class PumpDailyCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Pump cycles started since local midnight."""
@@ -930,6 +954,10 @@ class PumpDailyCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity
     @property
     def native_value(self):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("daily_cycle_count", 0)
+
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_cycles")
 
 
 class RoomAirQualitySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):

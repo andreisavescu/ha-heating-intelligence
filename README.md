@@ -1,3 +1,10 @@
+## v0.17.6 — Card entity tap-through fix
+
+- Fix entity lookup in the Lovelace card by normalizing friendly names and entity IDs, including diacritics and punctuation, instead of relying on exact friendly-name matches.
+- Extend native Home Assistant more-info/history tap-through to entity-backed values in room lists, pump metrics, and room demand-cycle and thermal analytics sections.
+- Keep values without a matching entity display-only; preserve keyboard activation for linked values.
+- No boiler, pump, or heating-control behavior changes.
+
 ## v0.17.5 — Calculation formulas and entity tap-through
 
 - Add `calculation_description`, `calculation_formula`, and `calculation_assumptions` attributes to calculated Home Assistant entities across boiler, modulation, UFH, room analytics, attic heat-flow, efficiency, and pump metrics. Directly measured/source entities are not assigned invented formulas.

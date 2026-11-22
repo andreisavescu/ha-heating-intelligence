@@ -1,3 +1,10 @@
+## v0.18.1 — Calibrated room power in the Home view
+
+- Replace the legacy 9°C hydraulic per-room watt figures in the Home room tiles with live burner-modulation output allocated using the same active configured UFH flow weights and served-room split as the modulation Sankey.
+- Prefer the gas-calibrated modulation output; use the raw modulation estimate only while a calibration value is not yet available.
+- Show an em dash when no valid burner output or eligible active UFH flow is available rather than displaying a legacy estimate.
+- Keep room demand status and temperature display unchanged.
+
 ## v0.18.0 — Gas-reconciled boiler energy and heating-season reporting
 
 - Retire the assumed 9°C hydraulic calculation as the primary boiler/room power model; retain its historical estimates as clearly labelled legacy diagnostics.

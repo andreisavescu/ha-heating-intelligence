@@ -224,3 +224,44 @@ def test_boiler_modulation_energy_total_only_counts_intervals_with_active_room_f
     MODEL.update_boiler_energy_model(history, None, None, True, 40, inactive, rooms, 60)
     result = MODEL.update_boiler_energy_model(history, None, None, True, 40, active, rooms, 60)
     assert abs(result["boiler_modulation_energy_total_kwh"] - 10.0 / 60.0) < 1e-4
+
+
+def test_modulation_room_interval_diagnostics_explain_allocation():
+    history = {}
+    circuits = {
+        "shared": {
+            "flow_active": True,
+            "active_configured_flow_l_min": 2.0,
+            "served_rooms": ["bathroom", "hall"],
+        }
+    }
+    rooms = {"bathroom": {}, "hall": {}}
+    result = MODEL.update_boiler_energy_model(
+        history, None, None, True, 40, circuits, rooms, 60
+    )
+    assert result["boiler_modulation_interval_burner_on"] is True
+    assert result["boiler_modulation_interval_percent"] == 40
+    assert result["boiler_modulation_interval_output_kw"] == 10.0
+    assert result["boiler_modulation_interval_seconds"] == 60.0
+    diagnostics = result["boiler_modulation_room_interval_diagnostics"]
+    assert diagnostics["bathroom"]["flow_active"] is True
+    assert diagnostics["bathroom"]["allocation_weight_l_min"] == 1.0
+    assert diagnostics["bathroom"]["allocation_share"] == 0.5
+    assert abs(diagnostics["bathroom"]["interval_energy_kwh"] - (10 / 60 / 2)) < 1e-7
+    assert diagnostics["bathroom"]["exposure_kw_seconds"] == 600.0
+
+
+def test_modulation_room_interval_diagnostics_show_inactive_circuit():
+    history = {}
+    circuits = {
+        "shared": {
+            "flow_active": False,
+            "configured_flow_l_min": 2.0,
+            "served_rooms": ["bathroom"],
+        }
+    }
+    result = MODEL.update_boiler_energy_model(
+        history, None, None, True, 40, circuits, {"bathroom": {}}, 60
+    )
+    assert result["boiler_modulation_room_interval_diagnostics"] == {}
+    assert result["boiler_modulation_interval_output_kw"] == 10.0

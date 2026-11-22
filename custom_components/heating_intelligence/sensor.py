@@ -23,6 +23,70 @@ from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
 from .insights import build_heating_insights
 
 
+# Human-readable calculation metadata surfaced in Home Assistant entity details.
+CALCULATION_DETAILS = {
+    "heating_input_energy_kwh": ("Cumulative heating-gas meter delta converted to kWh and summed.", "Σ(max(0, current meter − previous meter) × unit conversion)", "Configured heating gas meter; gas conversion factor when the source unit is m³."),
+    "dhw_input_energy_kwh": ("Cumulative DHW-gas meter delta converted to kWh and summed.", "Σ(max(0, current DHW meter − previous DHW meter) × unit conversion)", "Configured DHW gas meter; DHW is kept separate from space-heating allocation."),
+    "boiler_generated_heat_kwh": ("Heating gas input multiplied by the configured boiler-efficiency assumption.", "heating gas input (kWh) × boiler efficiency assumption", "Default boiler efficiency assumption is 0.90; DHW is excluded."),
+    "boiler_allocated_heat_kwh": ("Gas-derived useful heat allocated to rooms by burner-on exposure.", "interval useful heat × room exposure ÷ total room exposure", "Room exposure accumulates configured circuit flow × modulation-derived output × burner-on seconds."),
+    "boiler_unallocated_heat_kwh": ("Gas-derived useful heat that has no confirmed room exposure.", "max(0, useful heat − allocated heat)", "Only confirmed active UFH room exposure is eligible."),
+    "boiler_modulation_estimated_output_kw": ("Estimated live boiler output from burner modulation.", "if burner is on: max(3.2 kW, 25 kW × modulation % ÷ 100); otherwise 0 kW", "25 kW rated output and 3.2 kW minimum firing output assumptions; not a heat-meter reading."),
+    "boiler_modulation_calibrated_output_kw": ("Modulation-estimated output multiplied by the cumulative gas-derived calibration factor.", "modulation-estimated output (kW) × calibration factor", "Calibration factor = cumulative gas-derived useful heat ÷ cumulative modulation-estimated energy; approximate if DHW overlaps."),
+    "boiler_calibration_factor": ("Cumulative ratio between gas-derived useful heat and modulation-estimated energy.", "Σ gas-derived useful heat (kWh) ÷ Σ modulation-estimated energy (kWh)", "Diagnostic calibration only; not applied to the separate modulation room-energy estimates."),
+    "boiler_modulation_room_energy_kwh": ("Modulation-estimated boiler energy apportioned to this room by its share of active configured UFH circuit flow.", "interval modulation energy × room flow weight ÷ sum of all eligible room flow weights", "Only circuits with confirmed active flow and configured flow contribute; shared circuits split their flow equally among served rooms; calibration factor is not applied."),
+    "boiler_modulation_energy_today_kwh": ("Integrated modulation-estimated boiler output during eligible active-flow intervals today.", "Σ(estimated boiler output (kW) × interval seconds ÷ 3600)", "Burner must be on and at least one configured UFH circuit must have confirmed active flow."),
+    "boiler_modulation_energy_week_kwh": ("Sum of daily modulation-estimated energy from the current calendar week.", "Σ daily modulation-estimated energy (kWh), Monday–today", "Uses retained daily ledger."),
+    "boiler_modulation_energy_month_kwh": ("Sum of daily modulation-estimated energy from the current calendar month.", "Σ daily modulation-estimated energy (kWh), month start–today", "Uses retained daily ledger."),
+    "boiler_modulation_energy_total_kwh": ("Lifetime sum of eligible modulation-estimated energy.", "Σ(estimated boiler output (kW) × interval seconds ÷ 3600)", "Lifetime accumulator; only intervals with active configured UFH flow are counted."),
+    "estimated_thermal_power_w": ("Configured active circuit thermal output divided equally among served rooms.", "flow (L/min) ÷ 60 × 1 kg/L × 4186 J/(kg·K) × 9°C ÷ number of served rooms", "Manual configured flow; water density 1 kg/L, heat capacity 4186 J/(kg·K), assumed water ΔT 9°C."),
+    "thermal_energy_today_kwh": ("Accumulated estimated circuit heat allocated equally among served rooms today.", "Σ(circuit power (W) × elapsed seconds ÷ 3,600,000 ÷ served-room count)", "Only confirmed active circuits contribute; interval is capped at 90 seconds."),
+    "thermal_energy_week_kwh": ("Accumulated estimated circuit heat allocated equally among served rooms this ISO week.", "Σ(circuit power (W) × elapsed seconds ÷ 3,600,000 ÷ served-room count)", "Resets at ISO week boundary; only confirmed active circuits contribute."),
+    "thermal_energy_month_kwh": ("Accumulated estimated circuit heat allocated equally among served rooms this calendar month.", "Σ(circuit power (W) × elapsed seconds ÷ 3,600,000 ÷ served-room count)", "Resets at calendar month boundary; only confirmed active circuits contribute."),
+    "thermal_energy_total_kwh": ("Lifetime accumulated estimated circuit heat allocated equally among served rooms.", "Σ(circuit power (W) × elapsed seconds ÷ 3,600,000 ÷ served-room count)", "Only confirmed active circuits contribute; estimated, not measured."),
+    "demand_seconds_today": ("Room demand duration accumulated during the local calendar day.", "Σ elapsed seconds while configured room demand is on ÷ 3600", "Reported in hours; source demand entity state."),
+    "demand_seconds_week": ("Room demand duration accumulated during the current calendar week.", "Σ elapsed seconds while configured room demand is on ÷ 3600", "Reported in hours; resets at week boundary."),
+    "demand_seconds_month": ("Room demand duration accumulated during the current calendar month.", "Σ elapsed seconds while configured room demand is on ÷ 3600", "Reported in hours; resets at month boundary."),
+    "average_cycle_seconds_week": ("Mean duration of recorded heating cycles in the current week.", "Σ completed cycle duration ÷ number of completed cycles ÷ 60", "Reported in minutes; based on observed demand transitions."),
+    "shortest_cycle_seconds_week": ("Shortest recorded heating cycle duration in the current week.", "min(completed cycle durations) ÷ 60", "Reported in minutes."),
+    "longest_cycle_seconds_week": ("Longest recorded heating cycle duration in the current week.", "max(completed cycle durations) ÷ 60", "Reported in minutes."),
+    "active_cycle_seconds": ("Elapsed duration of the currently active room-demand cycle.", "current time − active cycle start time, in minutes", "Only present while demand is active."),
+    "window_open_demand_seconds_today": ("Room demand duration while the configured window is open today.", "Σ elapsed seconds where demand is on AND window is open ÷ 3600", "Requires known demand and window states; reported in hours."),
+    "pump_energy": ("Accumulated electrical energy consumed by this pump.", "Σ(power (W) × elapsed seconds ÷ 3,600,000)", "Integrated from sampled pump power; sampling gaps and the integration's elapsed-time cap affect the estimate."),
+    "pump_runtime": ("Accumulated time the pump is classified as running.", "Σ elapsed seconds while pump running ÷ 3600", "Based on the pump power running threshold and coordinator observations."),
+    "pump_cycles": ("Count of observed pump off-to-on transitions.", "count(pump state changes from off to on)", "Cycles are observed by the integration and may miss transitions during Home Assistant downtime."),
+    "temperature_change_1h": ("Latest room temperature minus the latest retained sample at least one hour old.", "T(latest) − T(sample at or before now − 1 h)", "Sparse temperature samples; may be unavailable until a qualifying sample exists."),
+    "temperature_change_6h": ("Latest room temperature minus the latest retained sample at least six hours old.", "T(latest) − T(sample at or before now − 6 h)", "Sparse temperature samples."),
+    "temperature_change_24h": ("Latest room temperature minus the latest retained sample at least 24 hours old.", "T(latest) − T(sample at or before now − 24 h)", "Sparse temperature samples."),
+    "heating_response_minutes": ("Average recent time from demand start to a 0.5°C rise above the preceding sample.", "mean(time to baseline temperature + 0.5°C) over up to 20 recent cycles", "Requires sampled demand cycles and sufficient temperature observations."),
+    "cooling_rate_c_per_hour": ("Positive temperature drop over the most recent continuous no-demand, closed-window period of at least 30 minutes.", "(T(start) − T(end)) ÷ elapsed hours", "Observed trend, not a physical heat-loss coefficient."),
+    "heat_retention_hours_per_degree": ("Inverse of the observed positive cooling rate.", "1 ÷ cooling rate (°C/h)", "Observed indicator; unavailable when cooling rate is zero or unknown."),
+    "attic_to_outdoor_delta_c": ("Attic temperature minus outdoor temperature.", "T(attic) − T(outdoor)", "Uses measured temperature inputs."),
+    "upstairs_to_attic_delta_c": ("Average upstairs temperature minus attic temperature.", "T(upstairs average) − T(attic)", "Uses measured temperature inputs."),
+    "estimated_roof_heat_flow_w": ("Estimated conductive heat flow through the roof.", "roof U-value (W/m²K) × roof area (m²) × (T(attic) − T(outdoor))", "Requires explicitly configured roof U-value and area; positive is outward."),
+    "estimated_ceiling_heat_flow_w": ("Estimated conductive heat flow through the upstairs ceiling.", "ceiling U-value (W/m²K) × ceiling area (m²) × (T(upstairs) − T(attic))", "Requires explicitly configured ceiling U-value and area; positive is toward attic."),
+    "heating_degree_days": ("Daily heating degree days relative to an 18°C base temperature.", "max(0, 18°C − daily mean outdoor temperature)", "Uses the daily mean outdoor temperature."),
+    "gas_kwh_per_degree_day": ("Daily gas energy divided by heating degree days.", "gas energy today (kWh) ÷ heating degree days today (°C·d)", "Unavailable when heating degree days are zero or missing."),
+    "estimated_ac_delivered_heat_today_kwh": ("Estimated AC heat delivered from electrical energy and assumed heating COP.", "AC electricity today (kWh) × configured AC heating COP", "COP is an assumption, not measured thermal output."),
+    "estimated_delivered_heat_today_kwh": ("Estimated useful heat from boiler gas plus estimated AC heat.", "gas energy today × boiler efficiency + AC electricity today × AC heating COP", "Default assumptions: boiler efficiency 0.90 and AC COP 3.0."),
+    "heat_loss_coefficient_w_k": ("Previous completed day's estimated delivered heat divided by indoor–outdoor degree-hours.", "delivered heat (kWh) × 1000 ÷ degree-hours (K·h)", "Requires at least 24 degree-hours; includes configured boiler efficiency and AC COP assumptions."),
+    "heat_loss_u_value_daily": ("Previous completed day's heat-loss coefficient divided by envelope area.", "heat-loss coefficient (W/K) ÷ envelope area (m²)", "Uses configured envelope area; daily result finalises after 02:00."),
+    "heat_loss_u_value_7d": ("Aggregated delivered heat divided by aggregated degree-hours and envelope area over valid completed days.", "Σ delivered heat (kWh) × 1000 ÷ Σ degree-hours ÷ envelope area (m²)", "Requires at least 5 valid completed days and 120 degree-hours."),
+    "heat_loss_u_value_30d": ("Aggregated delivered heat divided by aggregated degree-hours and envelope area over valid completed days.", "Σ delivered heat (kWh) × 1000 ÷ Σ degree-hours ÷ envelope area (m²)", "Requires at least 20 valid completed days and 400 degree-hours."),
+}
+
+
+def _calculation_attributes(metric: str) -> dict:
+    details = CALCULATION_DETAILS.get(metric)
+    if not details:
+        return {}
+    description, formula, assumptions = details
+    return {
+        "calculation_description": description,
+        "calculation_formula": formula,
+        "calculation_assumptions": assumptions,
+    }
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [HeatingOverviewSensor(coordinator)]
@@ -159,7 +223,8 @@ class BoilerExperimentSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data.get("boiler_energy_experiment", {})
+        data = self.coordinator.data.get("boiler_energy_experiment", {})
+        return {**data, **_calculation_attributes(self.metric)}
 
 
 class BoilerExperimentDiagnosticSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -186,6 +251,9 @@ class BoilerExperimentDiagnosticSensor(HouseDeviceMixin, CoordinatorEntity, Sens
     def native_value(self):
         return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric)
 
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes(self.metric)
 
 
 class BoilerModulationEnergySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -222,6 +290,7 @@ class BoilerModulationEnergySensor(HouseDeviceMixin, CoordinatorEntity, SensorEn
             "method": "Boiler output estimated from burner modulation and integrated over time; allocated total includes only intervals with active, configured UFH room flow.",
             "source": "boiler_modulation",
             "calibration_applied": False,
+            **_calculation_attributes(self.metric),
         }
 
 
@@ -258,10 +327,22 @@ class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
 
     @property
     def extra_state_attributes(self):
+        experiment = self.coordinator.data.get("boiler_energy_experiment", {})
+        interval = experiment.get("boiler_modulation_room_interval_diagnostics", {}).get(self.room_id, {})
         return {
             "estimate": True,
             "method": "Boiler heat output estimated from burner modulation, then allocated to active UFH circuits by configured flow and split among served rooms.",
             "source": "boiler_modulation",
+            **_calculation_attributes("boiler_modulation_room_energy_kwh"),
+            "last_interval_burner_on": experiment.get("boiler_modulation_interval_burner_on"),
+            "last_interval_modulation_percent": experiment.get("boiler_modulation_interval_percent"),
+            "last_interval_boiler_output_kw": experiment.get("boiler_modulation_interval_output_kw"),
+            "last_interval_duration_seconds": experiment.get("boiler_modulation_interval_seconds"),
+            "last_interval_room_flow_active": interval.get("flow_active", False),
+            "last_interval_allocation_weight_l_min": interval.get("allocation_weight_l_min", 0.0),
+            "last_interval_allocation_share": interval.get("allocation_share", 0.0),
+            "last_interval_allocated_energy_kwh": interval.get("interval_energy_kwh", 0.0),
+            "last_interval_exposure_kw_seconds": interval.get("exposure_kw_seconds", 0.0),
         }
 
 
@@ -285,6 +366,14 @@ class RoomBoilerExperimentEnergySensor(RoomDeviceMixin, CoordinatorEntity, Senso
         return self.coordinator.data.get("boiler_energy_experiment", {}).get(
             "boiler_room_energy_kwh", {}
         ).get(self.room_id, 0.0)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "calculation_description": "Gas-derived useful boiler heat allocated to rooms using their accumulated burner-on exposure.",
+            "calculation_formula": "Σ(interval useful heat × room exposure ÷ total room exposure)",
+            "calculation_assumptions": "Heating gas only; DHW excluded. Exposure is configured circuit flow × modulation-derived output × burner-on seconds.",
+        }
 
 class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     """Master sensor used by the Lovelace overview card."""
@@ -419,7 +508,7 @@ class AtticThermalMetricSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data.get("attic_thermal", {})
+        return {**self.coordinator.data.get("attic_thermal", {}), **_calculation_attributes(self.metric)}
 
 
 class WaterTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -472,7 +561,7 @@ class RoomThermalPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        return {"estimate": True, "method": "Active configured circuit thermal power is split equally among served rooms; circuit power uses configured flow and an assumed 9°C water delta.", "assumed_water_delta_t_c": 9.0}
+        return {"estimate": True, "method": "Active configured circuit thermal power is split equally among served rooms; circuit power uses configured flow and an assumed 9°C water delta.", "assumed_water_delta_t_c": 9.0, **_calculation_attributes("estimated_thermal_power_w")}
 
 
 class RoomThermalEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -504,6 +593,7 @@ class RoomThermalEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
             "estimate": True,
             "method": "Configured circuit flow × assumed 9°C water delta; active circuit energy is split equally among its assigned demand rooms.",
             "assumed_water_delta_t_c": 9.0,
+            **_calculation_attributes(self.metric),
         }
 
 
@@ -578,6 +668,7 @@ class RoomAnalyticsSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
             "active_cycle_seconds": room.get("active_cycle_seconds", 0),
             "source_entity": room.get("demand_entity"),
             "source_state": room.get("demand_state"),
+            **_calculation_attributes(self.metric),
         }
 
 
@@ -617,6 +708,10 @@ class RoomThermalAnalyticsSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
         room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
         value = room.get(self.metric)
         return round(value / self.divisor, 2) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes(self.metric)
 
 
 EFFICIENCY_METRICS = {
@@ -665,6 +760,10 @@ class EfficiencySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     def native_value(self):
         return self.coordinator.data.get("efficiency", {}).get(self.metric)
 
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes(self.metric)
+
 class PumpPowerSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "W"
     _attr_should_poll = False
@@ -705,6 +804,10 @@ class PumpEnergySensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("energy")
 
     @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_energy")
+
+    @property
     def available(self):
         return super().available and self.native_value is not None
 
@@ -729,6 +832,10 @@ class PumpCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     def native_value(self):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("cycle_count", 0)
 
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_cycles")
+
 
 class PumpRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Accumulated pump runtime in hours."""
@@ -750,6 +857,10 @@ class PumpRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     def native_value(self):
         seconds = self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("total_runtime_seconds", 0)
         return round(seconds / 3600, 2)
+
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_runtime")
 
 
 class PumpSynchronizationSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -794,6 +905,10 @@ class PumpDailyEnergySensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     def native_value(self):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("daily_energy_kwh", 0)
 
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_energy")
+
 
 class PumpDailyRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Pump runtime accumulated since local midnight."""
@@ -816,6 +931,10 @@ class PumpDailyRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
         seconds = self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("daily_runtime_seconds", 0)
         return round(seconds / 3600, 3)
 
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_runtime")
+
 
 class PumpDailyCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     """Pump cycles started since local midnight."""
@@ -835,6 +954,10 @@ class PumpDailyCycleCountSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity
     @property
     def native_value(self):
         return self.coordinator.data.get("pumps", {}).get(self.pump_id, {}).get("daily_cycle_count", 0)
+
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes("pump_cycles")
 
 
 class RoomAirQualitySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):

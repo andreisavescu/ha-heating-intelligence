@@ -359,6 +359,7 @@ class RoomBoilerExperimentEnergySensor(RoomDeviceMixin, CoordinatorEntity, Senso
     def __init__(self, coordinator, room_id: str, room_name: str) -> None:
         super().__init__(coordinator)
         self.room_id = room_id
+        self.room_name = room_name
         self._attr_name = f"{room_name} Experimental Boiler Heat"
         self._attr_unique_id = f"{DOMAIN}_{room_id}_boiler_experiment_energy"
 

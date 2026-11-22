@@ -1041,10 +1041,26 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             room_id: round(float(room.get("thermal_energy_today_kwh") or 0.0), 6)
             for room_id, room in result.get("rooms", {}).items()
         }
-        modulation_room_energy = {
-            str(room_id): round(float(value or 0.0), 6)
-            for room_id, value in result["boiler_energy_experiment"].get("boiler_daily_modulation_room_energy_kwh", {}).get(day_key, {}).items()
-        }
+        # Restored history may contain legacy/malformed nested room values.
+        # Keep valid numeric allocations, but never let one bad historical value
+        # abort the entire coordinator refresh or silently count a mapping as energy.
+        raw_modulation_room_energy = (
+            result["boiler_energy_experiment"]
+            .get("boiler_daily_modulation_room_energy_kwh", {})
+            .get(day_key, {})
+        )
+        modulation_room_energy = {}
+        if isinstance(raw_modulation_room_energy, dict):
+            for room_id, value in raw_modulation_room_energy.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    modulation_room_energy[str(room_id)] = round(float(value), 6)
+                elif value is not None:
+                    _LOGGER.warning(
+                        "Ignoring non-numeric modulation room energy for %s on %s (%s)",
+                        room_id,
+                        day_key,
+                        type(value).__name__,
+                    )
         modulation_total_energy = float(
             result["boiler_energy_experiment"].get("boiler_daily_modulation_generated_heat_kwh", {}).get(day_key, 0.0)
         )

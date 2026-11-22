@@ -246,8 +246,8 @@ def update_boiler_energy_model(
     interval_seconds = sum(max(0.0, float(v)) for v in burner_seconds.values())
     interval_modulation_energy = float(state.get("modulation_energy_since_meter_kwh", 0.0))
     if heating_delta > 0:
-        # Learn a stable cumulative calibration ratio instead of reacting to
-        # each coarse (and variably sized) meter increment independently.
+        # Keep cumulative references as diagnostics only; the active factor
+        # is updated from complete daily ratios with the 66/34 smoothing rule.
         if interval_modulation_energy > 0:
             state["calibration_reference_heat_kwh"] = (
                 float(state.get("calibration_reference_heat_kwh", 0.0)) + useful_heat
@@ -256,11 +256,6 @@ def update_boiler_energy_model(
                 float(state.get("calibration_reference_modulation_kwh", 0.0))
                 + interval_modulation_energy
             )
-            reference_modulation = float(state["calibration_reference_modulation_kwh"])
-            if reference_modulation > 0:
-                state["calibration_factor"] = (
-                    float(state["calibration_reference_heat_kwh"]) / reference_modulation
-                )
         state["last_meter_interval_modulation_kwh"] = interval_modulation_energy
         state["modulation_energy_since_meter_kwh"] = 0.0
 

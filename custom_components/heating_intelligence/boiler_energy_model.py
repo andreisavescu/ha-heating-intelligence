@@ -116,7 +116,7 @@ def update_boiler_energy_model(
     # Calibrate once per completed day. The resulting factor applies to today's output.
     previous_day = (now.date() - timedelta(days=1)).isoformat()
     daily_gas = state.setdefault("daily_generated_heat_kwh", {})
-    daily_modulation = state.setdefault("daily_modulation_estimated_energy_kwh", state.get("daily_modulation_generated_heat_kwh", {}))
+    daily_modulation = state.setdefault("daily_modulation_estimated_energy_kwh", dict(state.get("daily_modulation_generated_heat_kwh", {})))
     last_calibrated_day = state.get("last_daily_calibration_day")
     if previous_day != last_calibrated_day:
         gas_yesterday = max(0.0, float(daily_gas.get(previous_day, 0.0) or 0.0))

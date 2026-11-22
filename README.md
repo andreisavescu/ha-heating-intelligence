@@ -1,3 +1,18 @@
+## v0.18.0 — Gas-reconciled boiler energy and heating-season reporting
+
+- Retire the assumed 9°C hydraulic calculation as the primary boiler/room power model; retain its historical estimates as clearly labelled legacy diagnostics.
+- Use burner modulation as the live boiler output signal: 25 kW × modulation percentage, with a 3.2 kW minimum while firing, multiplied by the daily smoothed calibration factor.
+- Learn calibration from the previous complete day's gas-reconciled useful heat divided by its raw modulation estimate. Stage the new factor for the following day using 66% of the previous factor + 34% of the observed daily factor.
+- Expose the previous, observed daily and smoothed calibration factors in the model diagnostics.
+- Keep heating-gas-derived useful energy authoritative for room allocation and reconciliation. Calibrated modulation output and active configured UFH circuit-flow weights determine the room exposure shares; DHW is excluded.
+- Add gas-reconciled room-energy Sankeys for daily, weekly, monthly and heating-season periods.
+- Define the heating season as 1 September through 1 May. Persist seasonal room, allocated and unallocated energy totals separately from the 30-day daily ledger.
+- No boiler, pump, thermostat or heating-control behavior changes.
+
+## Testing
+
+- CI passed on PR #67: unit tests, integration compilation and Lovelace JavaScript syntax validation.
+
 ## v0.17.6 — Card entity tap-through fix
 
 - Fix entity lookup in the Lovelace card by normalizing friendly names and entity IDs, including diacritics and punctuation, instead of relying on exact friendly-name matches.

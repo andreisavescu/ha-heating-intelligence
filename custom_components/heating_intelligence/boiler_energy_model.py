@@ -1,13 +1,23 @@
 """Experimental gas-calibrated boiler heat allocation (v0.17.1)."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 DEFAULT_GAS_KWH_PER_M3 = 10.55
 DEFAULT_BOILER_EFFICIENCY = 0.90
 DEFAULT_BOILER_RATED_OUTPUT_KW = 25.0
 DEFAULT_BOILER_MIN_OUTPUT_KW = 3.2
+CALIBRATION_OLD_WEIGHT = 0.66
+CALIBRATION_DAILY_WEIGHT = 0.34
+
+
+def _heating_season_key(day: date) -> str:
+    """Return the September 1–May 1 heating-season label containing day."""
+    start_year = day.year if day.month >= 9 else day.year - 1
+    return f"{start_year}-09-01/{start_year + 1}-05-01"
+
+
 
 
 def _modulation_output_kw(modulation_percent: float | None) -> float | None:
@@ -103,10 +113,26 @@ def update_boiler_energy_model(
     room_energy = state.setdefault("room_energy_kwh", {})
     daily_rooms = state.setdefault("daily_room_energy_kwh", {})
 
+    # A factor calculated from a completed day is staged for the following
+    # calendar day, never applied retroactively to the day being measured.
+    pending_effective_date = state.get("pending_calibration_effective_date")
+    if pending_effective_date and pending_effective_date <= today:
+        state["calibration_factor"] = float(state.get("pending_calibration_factor", state.get("calibration_factor", 1.0)))
+        state["calibration_factor_old"] = float(state.get("pending_calibration_factor_old", state.get("calibration_factor", 1.0)))
+        state["calibration_factor_observed_daily"] = state.get("pending_calibration_factor_observed")
+        state["pending_calibration_factor"] = None
+        state["pending_calibration_effective_date"] = None
+    calibration = max(0.0, float(state.get("calibration_factor", 1.0)))
     output_kw = _modulation_output_kw(modulation_percent) if burner_on is True else 0.0
+    calibrated_output_kw = output_kw * calibration if output_kw is not None else None
     modulation_energy = (
         output_kw * interval / 3600.0
         if burner_on is True and output_kw is not None and interval > 0
+        else 0.0
+    )
+    calibrated_modulation_energy = (
+        calibrated_output_kw * interval / 3600.0
+        if burner_on is True and calibrated_output_kw is not None and interval > 0
         else 0.0
     )
     # Capture the exact inputs used by modulation allocation on every update.
@@ -123,7 +149,7 @@ def update_boiler_energy_model(
             room_weights[rid] = room_weights.get(rid, 0.0) + flow / len(eligible)
     total_weight = sum(room_weights.values())
     interval_room_allocations = {
-        rid: modulation_energy * weight / total_weight
+        rid: calibrated_modulation_energy * weight / total_weight
         for rid, weight in room_weights.items()
     } if total_weight > 0 and modulation_energy > 0 else {}
     state["last_modulation_room_diagnostics"] = {
@@ -132,7 +158,7 @@ def update_boiler_energy_model(
             "allocation_weight_l_min": round(weight, 6),
             "allocation_share": round(weight / total_weight, 6) if total_weight > 0 else 0.0,
             "interval_energy_kwh": round(interval_room_allocations.get(rid, 0.0), 8),
-            "exposure_kw_seconds": round(weight * (output_kw or 0.0) * interval, 4),
+            "exposure_kw_seconds": round(weight * (calibrated_output_kw or 0.0) * interval, 4),
         }
         for rid, weight in room_weights.items()
     }
@@ -140,6 +166,7 @@ def update_boiler_energy_model(
     state["last_modulation_interval_burner_on"] = burner_on
     state["last_modulation_interval_percent"] = modulation_percent
     state["last_modulation_interval_output_kw"] = output_kw
+    state["last_modulation_interval_calibrated_output_kw"] = calibrated_output_kw
     if modulation_energy > 0:
         state["modulation_estimated_energy_kwh"] = (
             float(state.get("modulation_estimated_energy_kwh", 0.0)) + modulation_energy
@@ -147,14 +174,16 @@ def update_boiler_energy_model(
         state["modulation_energy_since_meter_kwh"] = (
             float(state.get("modulation_energy_since_meter_kwh", 0.0)) + modulation_energy
         )
+        daily_raw = state.setdefault("daily_modulation_estimated_energy_kwh", {})
+        daily_raw[today] = float(daily_raw.get(today, 0.0)) + modulation_energy
         if total_weight > 0:
             daily_generated = state.setdefault("daily_modulation_generated_heat_kwh", {})
-            daily_generated[today] = float(daily_generated.get(today, 0.0)) + modulation_energy
-            state["modulation_generated_heat_kwh"] = float(state.get("modulation_generated_heat_kwh", 0.0)) + modulation_energy
+            daily_generated[today] = float(daily_generated.get(today, 0.0)) + calibrated_modulation_energy
+            state["modulation_generated_heat_kwh"] = float(state.get("modulation_generated_heat_kwh", 0.0)) + calibrated_modulation_energy
             daily_rooms = state.setdefault("daily_modulation_room_energy_kwh", {}).setdefault(today, {})
             lifetime_rooms = state.setdefault("modulation_room_energy_kwh", {})
             for rid, weight in room_weights.items():
-                allocated = modulation_energy * weight / total_weight
+                allocated = calibrated_modulation_energy * weight / total_weight
                 daily_rooms[rid] = float(daily_rooms.get(rid, 0.0)) + allocated
                 lifetime_rooms[rid] = float(lifetime_rooms.get(rid, 0.0)) + allocated
 
@@ -162,7 +191,7 @@ def update_boiler_energy_model(
         burner_seconds[today] = float(burner_seconds.get(today, 0.0)) + interval
         # Modulation-derived output is the exposure weight. If modulation is
         # temporarily unavailable, retain the previous neutral weighting.
-        output_weight = output_kw if output_kw is not None else DEFAULT_BOILER_RATED_OUTPUT_KW
+        output_weight = calibrated_output_kw if calibrated_output_kw is not None else DEFAULT_BOILER_RATED_OUTPUT_KW * calibration
         room_weights: dict[str, float] = {}
         for circuit in circuits.values():
             if not circuit.get("flow_active"):
@@ -211,8 +240,8 @@ def update_boiler_energy_model(
     interval_seconds = sum(max(0.0, float(v)) for v in burner_seconds.values())
     interval_modulation_energy = float(state.get("modulation_energy_since_meter_kwh", 0.0))
     if heating_delta > 0:
-        # Learn a stable cumulative calibration ratio instead of reacting to
-        # each coarse (and variably sized) meter increment independently.
+        # Keep cumulative references as diagnostics only; the active factor
+        # is updated from complete daily ratios with the 66/34 smoothing rule.
         if interval_modulation_energy > 0:
             state["calibration_reference_heat_kwh"] = (
                 float(state.get("calibration_reference_heat_kwh", 0.0)) + useful_heat
@@ -221,11 +250,6 @@ def update_boiler_energy_model(
                 float(state.get("calibration_reference_modulation_kwh", 0.0))
                 + interval_modulation_energy
             )
-            reference_modulation = float(state["calibration_reference_modulation_kwh"])
-            if reference_modulation > 0:
-                state["calibration_factor"] = (
-                    float(state["calibration_reference_heat_kwh"]) / reference_modulation
-                )
         state["last_meter_interval_modulation_kwh"] = interval_modulation_energy
         state["modulation_energy_since_meter_kwh"] = 0.0
 
@@ -236,6 +260,8 @@ def update_boiler_energy_model(
                 date_heat[day] = useful_heat * max(0.0, float(seconds)) / total_burner_seconds
         else:
             date_heat[today] = useful_heat
+        season_rooms = state.setdefault("heating_season_room_energy_kwh", {})
+        season_totals = state.setdefault("heating_season_energy_kwh", {})
         for day, day_heat in date_heat.items():
             day_exposure = exposures.get(day, {})
             total_exposure = sum(max(0.0, float(v)) for v in day_exposure.values())
@@ -248,12 +274,20 @@ def update_boiler_energy_model(
                         continue
                     room_energy[rid] = float(room_energy.get(rid, 0.0)) + amount
                     daily[rid] = float(daily.get(rid, 0.0)) + amount
+                    season = _heating_season_key(datetime.fromisoformat(day).date())
+                    season_room = season_rooms.setdefault(season, {})
+                    season_room[rid] = float(season_room.get(rid, 0.0)) + amount
                     interval_allocations[rid] = interval_allocations.get(rid, 0.0) + amount
                     day_allocated += amount
             day_unallocated = max(0.0, day_heat - day_allocated)
             state.setdefault("daily_generated_heat_kwh", {})[day] = float(state["daily_generated_heat_kwh"].get(day, 0.0)) + day_heat
             state.setdefault("daily_allocated_heat_kwh", {})[day] = float(state["daily_allocated_heat_kwh"].get(day, 0.0)) + day_allocated
             state.setdefault("daily_unallocated_heat_kwh", {})[day] = float(state["daily_unallocated_heat_kwh"].get(day, 0.0)) + day_unallocated
+            season = _heating_season_key(datetime.fromisoformat(day).date())
+            season_record = season_totals.setdefault(season, {"generated": 0.0, "allocated": 0.0, "unallocated": 0.0})
+            season_record["generated"] = float(season_record.get("generated", 0.0)) + day_heat
+            season_record["allocated"] = float(season_record.get("allocated", 0.0)) + day_allocated
+            season_record["unallocated"] = float(season_record.get("unallocated", 0.0)) + day_unallocated
             interval_allocated += day_allocated
             interval_unallocated += day_unallocated
         state["allocated_heat_kwh"] = float(state.get("allocated_heat_kwh", 0.0)) + interval_allocated
@@ -266,6 +300,25 @@ def update_boiler_energy_model(
         state["last_meter_interval_useful_heat_kwh"] = useful_heat
         state["last_meter_interval_seconds"] = interval_seconds
         state["last_room_interval_allocations_kwh"] = interval_allocations
+
+    # Reconcile yesterday only after this update has processed any newly
+    # arrived cumulative gas-meter delta. Stage the smoothed factor for tomorrow.
+    previous_day = (now.date() - timedelta(days=1)).isoformat()
+    daily_gas = state.setdefault("daily_generated_heat_kwh", {})
+    daily_modulation = state.setdefault("daily_modulation_estimated_energy_kwh", {})
+    if previous_day != state.get("last_daily_calibration_day"):
+        gas_yesterday = max(0.0, float(daily_gas.get(previous_day, 0.0) or 0.0))
+        modulation_yesterday = max(0.0, float(daily_modulation.get(previous_day, 0.0) or 0.0))
+        if gas_yesterday > 0 and modulation_yesterday > 0:
+            old_factor = max(0.0, float(state.get("calibration_factor", 1.0)))
+            observed = gas_yesterday / modulation_yesterday
+            state["calibration_factor_old"] = old_factor
+            state["calibration_factor_observed_daily"] = observed
+            state["pending_calibration_factor_old"] = old_factor
+            state["pending_calibration_factor_observed"] = observed
+            state["pending_calibration_factor"] = 0.66 * old_factor + 0.34 * observed
+            state["pending_calibration_effective_date"] = (now.date() + timedelta(days=1)).isoformat()
+            state["last_daily_calibration_day"] = previous_day
 
     for key in ("daily_room_energy_kwh", "daily_generated_heat_kwh", "daily_allocated_heat_kwh", "daily_unallocated_heat_kwh", "daily_modulation_room_energy_kwh", "daily_modulation_generated_heat_kwh"):
         mapping = state.setdefault(key, {})
@@ -311,6 +364,24 @@ def update_boiler_energy_model(
                 if isinstance(value, (int, float)):
                     monthly_modulation_rooms[rid] = monthly_modulation_rooms.get(rid, 0.0) + float(value)
 
+    # Gas-reconciled room-energy views for rolling periods and the full heating season.
+    daily_gas_rooms = state.get("daily_room_energy_kwh", {})
+    weekly_gas_rooms: dict[str, float] = {}
+    monthly_gas_rooms: dict[str, float] = {}
+    for day, allocations in daily_gas_rooms.items():
+        try:
+            day_date = datetime.fromisoformat(day).date()
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(allocations, dict):
+            continue
+        if day_date >= week_start:
+            for rid, value in allocations.items():
+                weekly_gas_rooms[rid] = weekly_gas_rooms.get(rid, 0.0) + float(value or 0.0)
+        if day_date >= month_start:
+            for rid, value in allocations.items():
+                monthly_gas_rooms[rid] = monthly_gas_rooms.get(rid, 0.0) + float(value or 0.0)
+
     last_seconds = float(state.get("last_meter_interval_seconds") or 0.0)
     avg_power = {
         rid: (value * 1000.0 / (last_seconds / 3600.0)) if last_seconds > 0 else 0.0
@@ -320,6 +391,9 @@ def update_boiler_energy_model(
     latest_input = float(state.get("last_meter_interval_input_kwh") or 0.0)
     calibration = max(0.0, float(state.get("calibration_factor", 1.0)))
     calibrated_output_kw = output_kw * calibration if output_kw is not None else None
+    current_season = _heating_season_key(now.date())
+    season_room_totals = state.get("heating_season_room_energy_kwh", {}).get(current_season, {})
+    season_total = state.get("heating_season_energy_kwh", {}).get(current_season, {})
     return {
         "heating_input_energy_kwh": round(state["heating_input_kwh"], 4),
         "dhw_input_energy_kwh": round(state["dhw_input_kwh"], 4),
@@ -332,6 +406,8 @@ def update_boiler_energy_model(
         "boiler_room_interval_average_power_w": {k: round(v, 2) for k, v in avg_power.items()},
         "boiler_room_energy_kwh": {k: round(float(v), 6) for k, v in room_energy.items()},
         "boiler_daily_room_energy_kwh": daily_rooms,
+        "boiler_weekly_room_energy_kwh": {k: round(v, 6) for k, v in weekly_gas_rooms.items()},
+        "boiler_monthly_room_energy_kwh": {k: round(v, 6) for k, v in monthly_gas_rooms.items()},
         "boiler_daily_generated_heat_kwh": state.get("daily_generated_heat_kwh", {}),
         "boiler_daily_allocated_heat_kwh": state.get("daily_allocated_heat_kwh", {}),
         "boiler_daily_unallocated_heat_kwh": state.get("daily_unallocated_heat_kwh", {}),
@@ -365,6 +441,7 @@ def update_boiler_energy_model(
         "boiler_modulation_interval_burner_on": state.get("last_modulation_interval_burner_on"),
         "boiler_modulation_interval_percent": state.get("last_modulation_interval_percent"),
         "boiler_modulation_interval_output_kw": state.get("last_modulation_interval_output_kw"),
+        "boiler_modulation_interval_calibrated_output_kw": state.get("last_modulation_interval_calibrated_output_kw"),
         "boiler_modulation_daily_room_energy_kwh": {
             k: round(float(v), 6) for k, v in today_modulation_rooms.items()
             if isinstance(v, (int, float))
@@ -375,6 +452,20 @@ def update_boiler_energy_model(
         "boiler_daily_modulation_room_energy_kwh": state.get("daily_modulation_room_energy_kwh", {}),
         "boiler_last_meter_interval_modulation_energy_kwh": round(float(state["last_meter_interval_modulation_kwh"]), 4),
         "boiler_calibration_factor": round(calibration, 5),
+        "boiler_calibration_factor_old": round(float(state.get("calibration_factor_old", calibration)), 5),
+        "boiler_calibration_factor_observed_daily": (
+            round(float(state["calibration_factor_observed_daily"]), 5)
+            if state.get("calibration_factor_observed_daily") is not None else None
+        ),
+        "boiler_calibration_factor_smoothed": round(calibration, 5),
+        "boiler_calibration_last_completed_day": state.get("last_daily_calibration_day"),
+        "boiler_heating_season": current_season,
+        "boiler_heating_season_room_energy_kwh": {
+            k: round(float(v), 6) for k, v in season_room_totals.items()
+        },
+        "boiler_heating_season_generated_heat_kwh": round(float(season_total.get("generated", 0.0)), 4),
+        "boiler_heating_season_allocated_heat_kwh": round(float(season_total.get("allocated", 0.0)), 4),
+        "boiler_heating_season_unallocated_heat_kwh": round(float(season_total.get("unallocated", 0.0)), 4),
         "boiler_calibration_reference_heat_kwh": round(float(state["calibration_reference_heat_kwh"]), 4),
         "boiler_calibration_reference_modulation_kwh": round(float(state["calibration_reference_modulation_kwh"]), 4),
         "boiler_modulation_calibration_status": (

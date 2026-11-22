@@ -192,3 +192,35 @@ def test_modulation_room_period_totals_roll_over_at_calendar_boundaries():
     assert result["boiler_modulation_daily_room_energy_kwh"]["room"] > 0
     assert result["boiler_modulation_monthly_room_energy_kwh"]["room"] == result["boiler_modulation_daily_room_energy_kwh"]["room"]
     assert result["boiler_modulation_room_energy_kwh"]["room"] > result["boiler_modulation_daily_room_energy_kwh"]["room"]
+
+
+def test_boiler_modulation_energy_exposes_daily_weekly_monthly_and_lifetime_totals():
+    from datetime import datetime, timezone
+
+    history = {}
+    circuits = {"c": {"flow_active": True, "active_configured_flow_l_min": 1.0, "served_rooms": ["room"]}}
+    rooms = {"room": {"demand": False}}
+    first = MODEL.update_boiler_energy_model(
+        history, None, None, True, 40, circuits, rooms, 60,
+        now=datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc),
+    )
+    second = MODEL.update_boiler_energy_model(
+        history, None, None, True, 40, circuits, rooms, 60,
+        now=datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc),
+    )
+    per_day = 10.0 / 60.0
+    assert abs(first["boiler_modulation_energy_today_kwh"] - per_day) < 1e-6
+    assert abs(second["boiler_modulation_energy_today_kwh"] - per_day) < 1e-6
+    assert abs(second["boiler_modulation_energy_week_kwh"] - 2 * per_day) < 1e-6
+    assert abs(second["boiler_modulation_energy_month_kwh"] - 2 * per_day) < 1e-6
+    assert abs(second["boiler_modulation_energy_total_kwh"] - 2 * per_day) < 1e-6
+
+
+def test_boiler_modulation_energy_total_only_counts_intervals_with_active_room_flow():
+    history = {}
+    active = {"c": {"flow_active": True, "configured_flow_l_min": 1.0, "served_rooms": ["room"]}}
+    inactive = {"c": {"flow_active": False, "configured_flow_l_min": 1.0, "served_rooms": ["room"]}}
+    rooms = {"room": {}}
+    MODEL.update_boiler_energy_model(history, None, None, True, 40, inactive, rooms, 60)
+    result = MODEL.update_boiler_energy_model(history, None, None, True, 40, active, rooms, 60)
+    assert abs(result["boiler_modulation_energy_total_kwh"] - 10.0 / 60.0) < 1e-6

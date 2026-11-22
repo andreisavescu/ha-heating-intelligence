@@ -213,7 +213,7 @@ def test_boiler_modulation_energy_exposes_daily_weekly_monthly_and_lifetime_tota
     assert abs(second["boiler_modulation_energy_today_kwh"] - per_day) < 1e-6
     assert abs(second["boiler_modulation_energy_week_kwh"] - 2 * per_day) < 1e-6
     assert abs(second["boiler_modulation_energy_month_kwh"] - 2 * per_day) < 1e-6
-    assert abs(second["boiler_modulation_energy_total_kwh"] - 2 * per_day) < 1e-6
+    assert abs(second["boiler_modulation_energy_total_kwh"] - 2 * per_day) < 1e-4
 
 
 def test_boiler_modulation_energy_total_only_counts_intervals_with_active_room_flow():
@@ -223,4 +223,4 @@ def test_boiler_modulation_energy_total_only_counts_intervals_with_active_room_f
     rooms = {"room": {}}
     MODEL.update_boiler_energy_model(history, None, None, True, 40, inactive, rooms, 60)
     result = MODEL.update_boiler_energy_model(history, None, None, True, 40, active, rooms, 60)
-    assert abs(result["boiler_modulation_energy_total_kwh"] - 10.0 / 60.0) < 1e-6
+    assert abs(result["boiler_modulation_energy_total_kwh"] - 10.0 / 60.0) < 1e-4

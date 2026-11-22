@@ -423,7 +423,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         <span class="simple-state ${room.demand ? "is-heating" : ""}">${room.demand ? "Heating requested" : "No heat demand"}</span>
         ${room.window_entity && room.window_state_known && room.window_open ? '<span class="simple-alert">Window open</span>' : ""}
         ${room.window_entity && !room.window_state_known ? '<span class="simple-muted">Window unavailable</span>' : ""}
-        <span class="simple-muted">Heat ${hasModulationAllocation ? this._fmt(roomModulationPowerW[room.id] || 0, "W", 0) : "—"}</span>
+        <span class="simple-muted">Heat ${this._entityValue(room.name + " Estimated Modulation Heating Power", hasModulationAllocation ? this._fmt(roomModulationPowerW[room.id] || 0, "W", 0) : "—")}</span>
       </div>
     </div>`).join("") : '<p class="simple-muted">No rooms configured.</p>';
     const thermalRanking = entries.filter((r) => r.heat_retention_hours_per_degree != null)

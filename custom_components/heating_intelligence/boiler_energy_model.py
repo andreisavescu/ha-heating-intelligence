@@ -46,10 +46,11 @@ def update_boiler_energy_model(
     boiler_efficiency: float = DEFAULT_BOILER_EFFICIENCY,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Estimate output from modulation, then calibrate it against heating gas.
+    """Estimate output from modulation alone, then calibrate it against heating gas.
 
-    Modulation initially maps linearly to the 25 kW rated output, with a
-    3.2 kW minimum firing output while modulation is above zero. Actual
+    Modulation is the sole live output signal; burner binary state is ignored
+    because it can lag modulation transitions. Modulation initially maps
+    linearly to the 25 kW rated output, with a 3.2 kW minimum while above zero. Actual
     heating-gas counter deltas provide interval energy references. The
     cumulative ratio of gas-derived useful heat to modulation-estimated heat
     becomes the calibration factor. Room allocation continues to reconcile
@@ -123,16 +124,18 @@ def update_boiler_energy_model(
         state["pending_calibration_factor"] = None
         state["pending_calibration_effective_date"] = None
     calibration = max(0.0, float(state.get("calibration_factor", 1.0)))
-    output_kw = _modulation_output_kw(modulation_percent) if burner_on is True else 0.0
+    # Modulation is the sole live firing/output signal. Burner status is deliberately
+    # excluded because its state transition can lag modulation by ~30 seconds.
+    output_kw = _modulation_output_kw(modulation_percent)
     calibrated_output_kw = output_kw * calibration if output_kw is not None else None
     modulation_energy = (
         output_kw * interval / 3600.0
-        if burner_on is True and output_kw is not None and interval > 0
+        if output_kw is not None and output_kw > 0 and interval > 0
         else 0.0
     )
     calibrated_modulation_energy = (
         calibrated_output_kw * interval / 3600.0
-        if burner_on is True and calibrated_output_kw is not None and interval > 0
+        if calibrated_output_kw is not None and calibrated_output_kw > 0 and interval > 0
         else 0.0
     )
     # Capture the exact inputs used by modulation allocation on every update.
@@ -187,11 +190,11 @@ def update_boiler_energy_model(
                 daily_rooms[rid] = float(daily_rooms.get(rid, 0.0)) + allocated
                 lifetime_rooms[rid] = float(lifetime_rooms.get(rid, 0.0)) + allocated
 
-    if burner_on is True and interval > 0:
+    if output_kw is not None and output_kw > 0 and interval > 0:
+        # Track active modulation time rather than the delayed burner binary.
         burner_seconds[today] = float(burner_seconds.get(today, 0.0)) + interval
-        # Modulation-derived output is the exposure weight. If modulation is
-        # temporarily unavailable, retain the previous neutral weighting.
-        output_weight = calibrated_output_kw if calibrated_output_kw is not None else DEFAULT_BOILER_RATED_OUTPUT_KW * calibration
+        # Modulation-derived output is the exposure weight; no burner-state fallback.
+        output_weight = calibrated_output_kw
         room_weights: dict[str, float] = {}
         for circuit in circuits.values():
             if not circuit.get("flow_active"):

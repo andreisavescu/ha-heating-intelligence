@@ -61,6 +61,7 @@ def update_boiler_energy_model(
         "last_meter_interval_seconds": 0.0,
         "last_room_interval_allocations_kwh": {},
         "modulation_estimated_energy_kwh": 0.0,
+        "modulation_generated_heat_kwh": 0.0,
         "calibration_reference_heat_kwh": 0.0,
         "calibration_reference_modulation_kwh": 0.0,
         "modulation_energy_since_meter_kwh": 0.0,
@@ -120,6 +121,7 @@ def update_boiler_energy_model(
         if total_weight > 0:
             daily_generated = state.setdefault("daily_modulation_generated_heat_kwh", {})
             daily_generated[today] = float(daily_generated.get(today, 0.0)) + modulation_energy
+            state["modulation_generated_heat_kwh"] = float(state.get("modulation_generated_heat_kwh", 0.0)) + modulation_energy
             daily_rooms = state.setdefault("daily_modulation_room_energy_kwh", {}).setdefault(today, {})
             lifetime_rooms = state.setdefault("modulation_room_energy_kwh", {})
             for rid, weight in room_weights.items():
@@ -252,6 +254,18 @@ def update_boiler_energy_model(
     weekly_modulation_rooms: dict[str, float] = {}
     monthly_modulation_rooms: dict[str, float] = {}
     today_modulation_rooms = daily_modulation_rooms.get(today, {})
+    daily_generated_heat = state.get("daily_modulation_generated_heat_kwh", {})
+    weekly_generated_heat = 0.0
+    monthly_generated_heat = 0.0
+    for day, generated in daily_generated_heat.items():
+        try:
+            date = datetime.fromisoformat(day).date()
+        except (TypeError, ValueError):
+            continue
+        if date >= week_start:
+            weekly_generated_heat += max(0.0, float(generated or 0.0))
+        if date >= month_start:
+            monthly_generated_heat += max(0.0, float(generated or 0.0))
     for day, allocations in daily_modulation_rooms.items():
         try:
             date = datetime.fromisoformat(day).date()
@@ -312,6 +326,10 @@ def update_boiler_energy_model(
         "boiler_modulation_estimated_output_kw": round(output_kw, 3) if output_kw is not None else None,
         "boiler_modulation_calibrated_output_kw": round(calibrated_output_kw, 3) if calibrated_output_kw is not None else None,
         "boiler_modulation_estimated_energy_kwh": round(float(state["modulation_estimated_energy_kwh"]), 4),
+        "boiler_modulation_energy_today_kwh": round(float(daily_generated_heat.get(today, 0.0) or 0.0), 4),
+        "boiler_modulation_energy_week_kwh": round(weekly_generated_heat, 4),
+        "boiler_modulation_energy_month_kwh": round(monthly_generated_heat, 4),
+        "boiler_modulation_energy_total_kwh": round(float(state.get("modulation_generated_heat_kwh", 0.0)), 4),
         "boiler_modulation_room_energy_kwh": {k: round(float(v), 6) for k, v in state.get("modulation_room_energy_kwh", {}).items()},
         "boiler_modulation_daily_room_energy_kwh": {
             k: round(float(v), 6) for k, v in today_modulation_rooms.items()

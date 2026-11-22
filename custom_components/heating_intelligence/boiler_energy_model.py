@@ -356,6 +356,24 @@ def update_boiler_energy_model(
                 if isinstance(value, (int, float)):
                     monthly_modulation_rooms[rid] = monthly_modulation_rooms.get(rid, 0.0) + float(value)
 
+    # Gas-reconciled room-energy views for rolling periods and the full heating season.
+    daily_gas_rooms = state.get("daily_room_energy_kwh", {})
+    weekly_gas_rooms: dict[str, float] = {}
+    monthly_gas_rooms: dict[str, float] = {}
+    for day, allocations in daily_gas_rooms.items():
+        try:
+            day_date = datetime.fromisoformat(day).date()
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(allocations, dict):
+            continue
+        if day_date >= week_start:
+            for rid, value in allocations.items():
+                weekly_gas_rooms[rid] = weekly_gas_rooms.get(rid, 0.0) + float(value or 0.0)
+        if day_date >= month_start:
+            for rid, value in allocations.items():
+                monthly_gas_rooms[rid] = monthly_gas_rooms.get(rid, 0.0) + float(value or 0.0)
+
     last_seconds = float(state.get("last_meter_interval_seconds") or 0.0)
     avg_power = {
         rid: (value * 1000.0 / (last_seconds / 3600.0)) if last_seconds > 0 else 0.0
@@ -380,6 +398,8 @@ def update_boiler_energy_model(
         "boiler_room_interval_average_power_w": {k: round(v, 2) for k, v in avg_power.items()},
         "boiler_room_energy_kwh": {k: round(float(v), 6) for k, v in room_energy.items()},
         "boiler_daily_room_energy_kwh": daily_rooms,
+        "boiler_weekly_room_energy_kwh": {k: round(v, 6) for k, v in weekly_gas_rooms.items()},
+        "boiler_monthly_room_energy_kwh": {k: round(v, 6) for k, v in monthly_gas_rooms.items()},
         "boiler_daily_generated_heat_kwh": state.get("daily_generated_heat_kwh", {}),
         "boiler_daily_allocated_heat_kwh": state.get("daily_allocated_heat_kwh", {}),
         "boiler_daily_unallocated_heat_kwh": state.get("daily_unallocated_heat_kwh", {}),

@@ -15,6 +15,13 @@ class HeatingIntelligenceCard extends HTMLElement {
   _fmt(value, unit = "°C", digits = 1) {
     return value === null || value === undefined || value === "" ? "—" : `${Number(value).toFixed(digits)} ${unit}`;
   }
+  _entityValue(friendlyName, value) {
+    const entity = Object.entries(this._hass?.states || {}).find(([, state]) =>
+      state?.attributes?.friendly_name === friendlyName
+    );
+    if (!entity) return `<strong>${value}</strong>`;
+    return `<strong class="entity-value" role="button" tabindex="0" data-entity-id="${this._esc(entity[0])}" title="Open entity details">${value}</strong>`;
+  }
   _duration(seconds) {
     if (seconds === null || seconds === undefined) return "—";
     const mins = Math.round(Number(seconds) / 60);
@@ -375,17 +382,17 @@ class HeatingIntelligenceCard extends HTMLElement {
     const roomDetail = selected ? `
       <div class="detail-grid">
         <div class="metric"><span>Floor</span><strong>${this._esc(selected.floor_label || "Unassigned")}</strong></div>
-        <div class="metric"><span>Room temperature</span><strong>${this._fmt(selected.temperature)}</strong></div>
+        <div class="metric"><span>Room temperature</span>${this._entityValue(selected.name + " Temperature", this._fmt(selected.temperature))}</div>
         <div class="metric"><span>Measured air changes per hour</span><strong>${this._fmt(selected.air_changes_per_hour, "ACH", 2)}</strong><div class="subtle">User-entered room measurement; not a live reading.</div></div>
-        <div class="metric"><span>Relative humidity</span><strong>${selected.humidity_entity ? (selected.humidity == null ? "Unavailable" : this._fmt(selected.humidity, "%", 0) + " · " + (selected.humidity_status || "—")) : "Not configured"}</strong><div class="subtle">${selected.humidity_status === "low" ? "Air is dry; consider comfort and static/dryness." : selected.humidity_status === "high" ? "Humidity is elevated; monitor condensation and ventilation." : selected.humidity_status === "comfortable" ? "Within the configured indicative comfort band (30–60%)." : ""}</div></div>
-        <div class="metric"><span>CO₂ concentration</span><strong>${selected.co2_entity ? (selected.co2_ppm == null ? "Unavailable" : this._fmt(selected.co2_ppm, "ppm", 0) + " · " + (selected.co2_status || "—")) : "Not configured"}</strong><div class="subtle">${selected.co2_status === "good" ? "Good ventilation indicator." : selected.co2_status === "elevated" ? "Ventilation may be beneficial." : selected.co2_status === "high" ? "Ventilate the room." : selected.co2_status === "very_high" ? "High CO₂ reading; ventilate and check the sensor." : ""}</div></div>
+        <div class="metric"><span>Relative humidity</span>${selected.humidity_entity ? this._entityValue(selected.name + " Humidity", selected.humidity == null ? "Unavailable" : this._fmt(selected.humidity, "%", 0) + " · " + (selected.humidity_status || "—")) : "<strong>Not configured</strong>"}<div class="subtle">${selected.humidity_status === "low" ? "Air is dry; consider comfort and static/dryness." : selected.humidity_status === "high" ? "Humidity is elevated; monitor condensation and ventilation." : selected.humidity_status === "comfortable" ? "Within the configured indicative comfort band (30–60%)." : ""}</div></div>
+        <div class="metric"><span>CO₂ concentration</span>${selected.co2_entity ? this._entityValue(selected.name + " CO2", selected.co2_ppm == null ? "Unavailable" : this._fmt(selected.co2_ppm, "ppm", 0) + " · " + (selected.co2_status || "—")) : "<strong>Not configured</strong>"}<div class="subtle">${selected.co2_status === "good" ? "Good ventilation indicator." : selected.co2_status === "elevated" ? "Ventilation may be beneficial." : selected.co2_status === "high" ? "Ventilate the room." : selected.co2_status === "very_high" ? "High CO₂ reading; ventilate and check the sensor." : ""}</div></div>
         <div class="metric"><span>Indoor air assessment</span><strong class="${selected.air_quality_assessment?.status === "attention" ? "warning" : selected.air_quality_assessment?.status === "good" ? "active" : ""}">${this._esc(selected.air_quality_assessment?.status || "No readings")}</strong><div class="subtle">${this._esc(selected.air_quality_assessment?.recommendation || "Configure room CO2 and/or humidity sensors for live interpretation.")}</div></div>
         <div class="metric"><span>Heating demand</span><strong class="${selected.demand ? "active" : ""}">${selected.demand ? "Requested" : "Not requested"}</strong></div>
-        <div class="metric"><span>Estimated UFH heating power</span><strong>${this._fmt(selected.estimated_thermal_power_w, "W", 0)}</strong><div class="subtle">Instantaneous estimate allocated from active circuits.</div></div>
+        <div class="metric"><span>Estimated UFH heating power</span>${this._entityValue(selected.name + " Estimated UFH Heating Power", this._fmt(selected.estimated_thermal_power_w, "W", 0))}<div class="subtle">Instantaneous estimate allocated from active circuits.</div></div>
         <div class="metric"><span>Window</span><strong class="${selected.window_open ? "warning" : ""}">${selected.window_entity ? (selected.window_state_known ? (selected.window_open ? "Open" : "Closed") : "Unavailable") : "Not configured"}</strong></div>
-        <div class="metric"><span>Demand today</span><strong>${this._fmt((selected.demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>
-        <div class="metric"><span>Demand this week</span><strong>${this._fmt((selected.demand_seconds_week ?? 0) / 3600, "h", 2)}</strong></div>
-        <div class="metric"><span>Demand this month</span><strong>${this._fmt((selected.demand_seconds_month ?? 0) / 3600, "h", 2)}</strong></div>
+        <div class="metric"><span>Demand today</span>${this._entityValue(selected.name + " Heating Demand Today", this._fmt((selected.demand_seconds_today ?? 0) / 3600, "h", 2))}</div>
+        <div class="metric"><span>Demand this week</span>${this._entityValue(selected.name + " Heating Demand This Week", this._fmt((selected.demand_seconds_week ?? 0) / 3600, "h", 2))}</div>
+        <div class="metric"><span>Demand this month</span>${this._entityValue(selected.name + " Heating Demand This Month", this._fmt((selected.demand_seconds_month ?? 0) / 3600, "h", 2))}</div>
         <div class="metric"><span>Cycles today / week / month</span><strong>${selected.cycles_today ?? 0} / ${selected.cycles_week ?? 0} / ${selected.cycles_month ?? 0}</strong></div>
         <div class="metric"><span>Average cycle this week</span><strong>${selected.average_cycle_seconds_week == null ? "—" : this._duration(selected.average_cycle_seconds_week)}</strong></div>
         <div class="metric"><span>Shortest / longest cycle</span><strong>${selected.shortest_cycle_seconds_week == null ? "—" : this._duration(selected.shortest_cycle_seconds_week)} / ${selected.longest_cycle_seconds_week == null ? "—" : this._duration(selected.longest_cycle_seconds_week)}</strong></div>
@@ -785,6 +792,22 @@ class HeatingIntelligenceCard extends HTMLElement {
       disclosure.append(summary, content);
       section.replaceWith(disclosure);
       if (openSections.has(summary.textContent) || summary.textContent === "Forecasts" || summary.textContent === "Room details") disclosure.open = true;
+    });
+    const openEntity = (element) => {
+      const entityId = element.dataset.entityId;
+      if (!entityId || !this._hass?.states?.[entityId]) return;
+      this.dispatchEvent(new CustomEvent("hass-more-info", {
+        detail: { entityId }, bubbles: true, composed: true
+      }));
+    };
+    this.shadowRoot.querySelectorAll(".entity-value").forEach(element => {
+      element.addEventListener("click", () => openEntity(element));
+      element.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openEntity(element);
+        }
+      });
     });
     this.shadowRoot.querySelectorAll(".info-button").forEach(button=>button.addEventListener("click",()=>{const existing=button.nextElementSibling;if(existing?.classList.contains("info-popover")){existing.remove();button.setAttribute("aria-expanded","false");this._openInfoKey=null;return;}this.shadowRoot.querySelectorAll(".info-popover").forEach(p=>p.remove());this.shadowRoot.querySelectorAll(".info-button").forEach(b=>b.setAttribute("aria-expanded","false"));const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");this._openInfoKey=button.dataset.infoKey;}));
     if(this._openInfoKey){const button=[...this.shadowRoot.querySelectorAll(".info-button")].find(b=>b.dataset.infoKey===this._openInfoKey);if(button){const pop=document.createElement("div");pop.className="info-popover open";pop.textContent=button.dataset.info||"";button.insertAdjacentElement("afterend",pop);button.setAttribute("aria-expanded","true");}}

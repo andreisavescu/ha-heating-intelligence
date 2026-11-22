@@ -1,3 +1,10 @@
+## v0.17.5 — Calculation formulas and entity tap-through
+
+- Add `calculation_description`, `calculation_formula`, and `calculation_assumptions` attributes to calculated Home Assistant entities across boiler, modulation, UFH, room analytics, attic heat-flow, efficiency, and pump metrics. Directly measured/source entities are not assigned invented formulas.
+- Expose the latest boiler-modulation room-allocation interval diagnostics, including burner state, modulation, estimated output, interval duration, room allocation weights/shares, interval energy, and exposure.
+- Make entity-backed values in the card's Room Details section keyboard-accessible and open Home Assistant's standard more-info/history dialog when tapped. Values without a matching entity remain display-only.
+- No boiler, pump, or heating-control behavior changes.
+
 ## v0.17.4 — Room modulation energy registration and Sankey tab placement
 
 - Fix per-room modulation-estimated energy sensors so they register with the correct room device metadata.

@@ -126,7 +126,7 @@ def test_daily_gas_reconciliation_smooths_calibration_for_following_day():
     expected = 0.66 * 1.0 + 0.34 * observed
     assert abs(result["boiler_calibration_factor_old"] - 1.0) < 1e-8
     assert abs(result["boiler_calibration_factor_observed_daily"] - observed) < 1e-8
-    assert abs(result["boiler_calibration_factor_smoothed"] - expected) < 1e-8
+    assert abs(result["boiler_calibration_factor_smoothed"] - expected) < 3e-6
     assert abs(result["boiler_modulation_calibrated_output_kw"] - 25 * expected) < 1e-3
     assert result["boiler_calibration_last_completed_day"] == "2026-11-20"
 

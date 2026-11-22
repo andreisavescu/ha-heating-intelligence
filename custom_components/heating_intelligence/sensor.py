@@ -214,12 +214,12 @@ class BoilerExperimentSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        data = self.coordinator.data.get("boiler_energy_experiment", {})
-        return {**data, **_calculation_attributes(self.metric)}.get(self.metric)
+        return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric)
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data.get("boiler_energy_experiment", {})
+        data = self.coordinator.data.get("boiler_energy_experiment", {})
+        return {**data, **_calculation_attributes(self.metric)}
 
 
 class BoilerExperimentDiagnosticSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):

@@ -258,10 +258,21 @@ class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
 
     @property
     def extra_state_attributes(self):
+        experiment = self.coordinator.data.get("boiler_energy_experiment", {})
+        interval = experiment.get("boiler_modulation_room_interval_diagnostics", {}).get(self.room_id, {})
         return {
             "estimate": True,
             "method": "Boiler heat output estimated from burner modulation, then allocated to active UFH circuits by configured flow and split among served rooms.",
             "source": "boiler_modulation",
+            "last_interval_burner_on": experiment.get("boiler_modulation_interval_burner_on"),
+            "last_interval_modulation_percent": experiment.get("boiler_modulation_interval_percent"),
+            "last_interval_boiler_output_kw": experiment.get("boiler_modulation_interval_output_kw"),
+            "last_interval_duration_seconds": experiment.get("boiler_modulation_interval_seconds"),
+            "last_interval_room_flow_active": interval.get("flow_active", False),
+            "last_interval_allocation_weight_l_min": interval.get("allocation_weight_l_min", 0.0),
+            "last_interval_allocation_share": interval.get("allocation_share", 0.0),
+            "last_interval_allocated_energy_kwh": interval.get("interval_energy_kwh", 0.0),
+            "last_interval_exposure_kw_seconds": interval.get("exposure_kw_seconds", 0.0),
         }
 
 

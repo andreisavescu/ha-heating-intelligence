@@ -140,10 +140,7 @@ def update_boiler_energy_model(
     if modulation_percent is None:
         allocation_modulation_percent = None
     elif previous_allocation_percent is None:
-        allocation_modulation_percent = min(
-            max(0.0, float(modulation_percent)),
-            MAX_UPWARD_MODULATION_STEP_PERCENT,
-        )
+        allocation_modulation_percent = max(0.0, min(100.0, float(modulation_percent)))
     else:
         requested_percent = max(0.0, min(100.0, float(modulation_percent)))
         allocation_modulation_percent = min(

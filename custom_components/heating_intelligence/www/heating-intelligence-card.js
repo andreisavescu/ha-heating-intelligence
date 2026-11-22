@@ -15,12 +15,24 @@ class HeatingIntelligenceCard extends HTMLElement {
   _fmt(value, unit = "°C", digits = 1) {
     return value === null || value === undefined || value === "" ? "—" : `${Number(value).toFixed(digits)} ${unit}`;
   }
-  _entityValue(friendlyName, value) {
-    const entity = Object.entries(this._hass?.states || {}).find(([, state]) =>
-      state?.attributes?.friendly_name === friendlyName
-    );
+  _normalizeEntityName(value) {
+    return String(value ?? "").normalize("NFKD").replace(/[\\u0300-\\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  }
+  _entityValue(friendlyName, value, aliases = []) {
+    const states = this._hass?.states || {};
+    const candidates = [friendlyName, ...aliases].map(name => this._normalizeEntityName(name)).filter(Boolean);
+    const entries = Object.entries(states);
+    let entity = entries.find(([, state]) => candidates.includes(this._normalizeEntityName(state?.attributes?.friendly_name)));
+    if (!entity) {
+      entity = entries.find(([entityId, state]) => {
+        const idName = this._normalizeEntityName(entityId.split(".").slice(1).join(" "));
+        const friendly = this._normalizeEntityName(state?.attributes?.friendly_name);
+        return candidates.some(candidate => candidate === idName || candidate === friendly);
+      });
+    }
     if (!entity) return `<strong>${value}</strong>`;
-    return `<strong class="entity-value" role="button" tabindex="0" data-entity-id="${this._esc(entity[0])}" title="Open entity details">${value}</strong>`;
+    return `<strong class="entity-value" role="button" tabindex="0" data-entity-id="${this._esc(entity[0])}" title="Open entity details" aria-label="Open ${this._esc(entity[1]?.attributes?.friendly_name || entity[0])} details">${value}</strong>`;
   }
   _duration(seconds) {
     if (seconds === null || seconds === undefined) return "—";
@@ -344,12 +356,12 @@ class HeatingIntelligenceCard extends HTMLElement {
     const upstairsRooms = entries.filter((room) => room.floor === "upstairs");
     const unassignedRooms = entries.filter((room) => !["ground_floor", "upstairs"].includes(room.floor));
     const roomRenderer = (list) => list.length ? list.map((room) => `<div class="simple-room">
-      <div class="simple-room-main"><strong>${this._esc(room.name)}</strong><span class="simple-temp">${this._fmt(room.temperature)}</span></div>
+      <div class="simple-room-main"><strong>${this._esc(room.name)}</strong>${this._entityValue(room.name + " Temperature", this._fmt(room.temperature))}</div>
       <div class="simple-room-meta">
         <span class="simple-state ${room.demand ? "is-heating" : ""}">${room.demand ? "Heating requested" : "No heat demand"}</span>
         ${room.window_entity && room.window_state_known && room.window_open ? '<span class="simple-alert">Window open</span>' : ""}
         ${room.window_entity && !room.window_state_known ? '<span class="simple-muted">Window unavailable</span>' : ""}
-        <span class="simple-muted">Heat ${this._fmt(room.estimated_thermal_power_w, "W", 0)}</span>
+        <span class="simple-muted">Heat ${this._entityValue(room.name + " Estimated UFH Heating Power", this._fmt(room.estimated_thermal_power_w, "W", 0))}</span>
       </div>
     </div>`).join("") : '<p class="simple-muted">No rooms configured.</p>';
     const thermalRanking = entries.filter((r) => r.heat_retention_hours_per_degree != null)
@@ -360,15 +372,15 @@ class HeatingIntelligenceCard extends HTMLElement {
       <div class="pump">
         <div class="pump-head"><strong>${this._esc(p.name)}</strong><span class="${p.running ? "active" : ""}">${p.running ? "Running" : "Stopped"}</span></div>
         <div class="pump-values">
-          <div><span>Power</span><strong>${this._fmt(p.power, "W")}</strong></div>
-          <div><span>Energy total</span><strong>${this._fmt(p.energy, "kWh", 2)}</strong></div>
-          <div><span>Cycles</span><strong>${p.cycle_count ?? 0}</strong></div>
-          <div><span>Total runtime</span><strong>${this._fmt((p.total_runtime_seconds ?? 0) / 3600, "h", 2)}</strong></div>
+          <div><span>Power</span>${this._entityValue(p.name + " Pump Power", this._fmt(p.power, "W"))}</div>
+          <div><span>Energy total</span>${this._entityValue(p.name + " Pump Energy", this._fmt(p.energy, "kWh", 2))}</div>
+          <div><span>Cycles</span>${this._entityValue(p.name + " Pump Cycle Count", String(p.cycle_count ?? 0))}</div>
+          <div><span>Total runtime</span>${this._entityValue(p.name + " Pump Runtime", this._fmt((p.total_runtime_seconds ?? 0) / 3600, "h", 2))}</div>
           <div><span>Current cycle</span><strong>${p.running ? this._duration(p.current_cycle_seconds) : "—"}</strong></div>
           <div><span>Last cycle</span><strong>${this._duration(p.last_cycle_duration_seconds)}</strong></div>
-          <div><span>Energy today</span><strong>${this._fmt(p.daily_energy_kwh, "kWh", 3)}</strong></div>
-          <div><span>Runtime today</span><strong>${this._fmt((p.daily_runtime_seconds ?? 0) / 3600, "h", 2)}</strong></div>
-          <div><span>Cycles today</span><strong>${p.daily_cycle_count ?? 0}</strong></div>
+          <div><span>Energy today</span>${this._entityValue(p.name + " Pump Energy Today", this._fmt(p.daily_energy_kwh, "kWh", 3))}</div>
+          <div><span>Runtime today</span>${this._entityValue(p.name + " Pump Runtime Today", this._fmt((p.daily_runtime_seconds ?? 0) / 3600, "h", 2))}</div>
+          <div><span>Cycles today</span>${this._entityValue(p.name + " Pump Cycles Today", String(p.daily_cycle_count ?? 0))}</div>
         </div>
       </div>`).join("");
 
@@ -393,20 +405,20 @@ class HeatingIntelligenceCard extends HTMLElement {
         <div class="metric"><span>Demand today</span>${this._entityValue(selected.name + " Heating Demand Today", this._fmt((selected.demand_seconds_today ?? 0) / 3600, "h", 2))}</div>
         <div class="metric"><span>Demand this week</span>${this._entityValue(selected.name + " Heating Demand This Week", this._fmt((selected.demand_seconds_week ?? 0) / 3600, "h", 2))}</div>
         <div class="metric"><span>Demand this month</span>${this._entityValue(selected.name + " Heating Demand This Month", this._fmt((selected.demand_seconds_month ?? 0) / 3600, "h", 2))}</div>
-        <div class="metric"><span>Cycles today / week / month</span><strong>${selected.cycles_today ?? 0} / ${selected.cycles_week ?? 0} / ${selected.cycles_month ?? 0}</strong></div>
-        <div class="metric"><span>Average cycle this week</span><strong>${selected.average_cycle_seconds_week == null ? "—" : this._duration(selected.average_cycle_seconds_week)}</strong></div>
-        <div class="metric"><span>Shortest / longest cycle</span><strong>${selected.shortest_cycle_seconds_week == null ? "—" : this._duration(selected.shortest_cycle_seconds_week)} / ${selected.longest_cycle_seconds_week == null ? "—" : this._duration(selected.longest_cycle_seconds_week)}</strong></div>
-        <div class="metric"><span>Current cycle</span><strong>${selected.demand ? this._duration(selected.active_cycle_seconds) : "—"}</strong></div>
-        <div class="metric"><span>Total cycles observed</span><strong>${selected.total_cycles ?? 0}</strong></div>
-        <div class="metric"><span>Temperature change · 1h / 6h / 24h</span><strong>${this._fmt(selected.temperature_change_1h)} / ${this._fmt(selected.temperature_change_6h)} / ${this._fmt(selected.temperature_change_24h)}</strong></div>
-        <div class="metric"><span>Heating response · +0.5°C ${this._info("Heating response · +0.5°C", this._metricHelp("Heating response · +0.5°C"))}</span><strong>${selected.heating_response_minutes == null ? "—" : this._fmt(selected.heating_response_minutes, "min")}</strong></div>
-        <div class="metric"><span>Cooling rate · windows closed ${this._info("Cooling rate · windows closed", this._metricHelp("Cooling rate · windows closed"))}</span><strong>${this._fmt(selected.cooling_rate_c_per_hour, "°C/h", 2)}</strong></div>
-        <div class="metric"><span>Heat retention · per 1°C ${this._info("Heat retention · per 1°C", this._metricHelp("Heat retention · per 1°C"))}</span><strong>${this._fmt(selected.heat_retention_hours_per_degree, "h/°C", 1)}</strong></div>
+        <div class="metric"><span>Cycles today / week / month</span><strong>${this._entityValue(selected.name + " Heating Cycles Today", String(selected.cycles_today ?? 0))} / ${this._entityValue(selected.name + " Heating Cycles This Week", String(selected.cycles_week ?? 0))} / ${this._entityValue(selected.name + " Heating Cycles This Month", String(selected.cycles_month ?? 0))}</strong></div>
+        <div class="metric"><span>Average cycle this week</span>${this._entityValue(selected.name + " Average Heating Cycle This Week", selected.average_cycle_seconds_week == null ? "—" : this._duration(selected.average_cycle_seconds_week))}</div>
+        <div class="metric"><span>Shortest / longest cycle</span><strong>${this._entityValue(selected.name + " Shortest Heating Cycle This Week", selected.shortest_cycle_seconds_week == null ? "—" : this._duration(selected.shortest_cycle_seconds_week))} / ${this._entityValue(selected.name + " Longest Heating Cycle This Week", selected.longest_cycle_seconds_week == null ? "—" : this._duration(selected.longest_cycle_seconds_week))}</strong></div>
+        <div class="metric"><span>Current cycle</span>${this._entityValue(selected.name + " Current Heating Cycle Duration", selected.demand ? this._duration(selected.active_cycle_seconds) : "—")}</div>
+        <div class="metric"><span>Total cycles observed</span>${this._entityValue(selected.name + " Heating Cycles Total", String(selected.total_cycles ?? 0))}</div>
+        <div class="metric"><span>Temperature change · 1h / 6h / 24h</span><strong>${this._entityValue(selected.name + " Temperature Change 1h", this._fmt(selected.temperature_change_1h))} / ${this._entityValue(selected.name + " Temperature Change 6h", this._fmt(selected.temperature_change_6h))} / ${this._entityValue(selected.name + " Temperature Change 24h", this._fmt(selected.temperature_change_24h))}</strong></div>
+        <div class="metric"><span>Heating response · +0.5°C ${this._info("Heating response · +0.5°C", this._metricHelp("Heating response · +0.5°C"))}</span>${this._entityValue(selected.name + " Heating Response", selected.heating_response_minutes == null ? "—" : this._fmt(selected.heating_response_minutes, "min"))}</div>
+        <div class="metric"><span>Cooling rate · windows closed ${this._info("Cooling rate · windows closed", this._metricHelp("Cooling rate · windows closed"))}</span>${this._entityValue(selected.name + " Cooling Rate", this._fmt(selected.cooling_rate_c_per_hour, "°C/h", 2))}</div>
+        <div class="metric"><span>Heat retention · per 1°C ${this._info("Heat retention · per 1°C", this._metricHelp("Heat retention · per 1°C"))}</span>${this._entityValue(selected.name + " Heat Retention", this._fmt(selected.heat_retention_hours_per_degree, "h/°C", 1))}</div>
         <div class="metric"><span>Room floor area</span><strong>${this._fmt(selected.area_m2, "m²", 1)}</strong></div>
         <div class="metric"><span>Room efficiency score ${this._info("Room efficiency score", this._metricHelp("Room efficiency score"))}</span><strong class="${selected.score == null ? "" : selected.score >= 70 ? "active" : selected.score < 45 ? "warning" : ""}">${selected.score == null ? "Collecting data" : selected.score + " / 100"}</strong></div>
         <div class="metric"><span>Observed heat-loss indicator ${this._info("Observed heat-loss indicator", this._metricHelp("Observed heat-loss indicator"))}</span><strong>${this._fmt(selected.observed_heat_loss_c_per_hour, "°C/h", 2)}</strong></div>
         <div class="metric"><span>Temperature samples</span><strong>${selected.temperature_samples ?? selected.temperature_sample_count ?? 0}</strong></div>
-        <div class="metric"><span>Window open during demand today</span><strong>${this._fmt((selected.window_open_demand_seconds_today ?? 0) / 3600, "h", 2)}</strong></div>
+        <div class="metric"><span>Window open during demand today</span>${this._entityValue(selected.name + " Window Open During Demand Today", this._fmt((selected.window_open_demand_seconds_today ?? 0) / 3600, "h", 2))}</div>
       </div>${this._temperatureChart(selected, attrs.predictions?.rooms?.[selected.id], attrs.predictions?.comfort_target_c ?? 21)}<div class="subtle">Demand source: ${this._esc(selected.demand_state ?? "Unavailable")}. Any available state counts as demand; unavailable means no demand.</div>` :
       `<p class="subtle">No rooms configured yet.</p>`;
     const openSections = new Set(

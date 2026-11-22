@@ -122,6 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if room.get("temperature_entity"):
             entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
         entities.append(RoomThermalPowerSensor(coordinator, room["id"], room["name"]))
+        entities.append(RoomModulationPowerSensor(coordinator, room["id"], room["name"]))
         entities.extend(
             RoomThermalEnergySensor(coordinator, room["id"], room["name"], metric)
             for metric in ROOM_THERMAL_ENERGY_METRICS
@@ -536,6 +537,72 @@ ROOM_THERMAL_ENERGY_METRICS = {
     "thermal_energy_month_kwh": ("Estimated UFH Thermal Energy This Month", SensorStateClass.TOTAL),
     "thermal_energy_total_kwh": ("Estimated UFH Thermal Energy Total", SensorStateClass.TOTAL_INCREASING),
 }
+
+
+class RoomModulationPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Live room heat-power estimate allocated from calibrated boiler modulation."""
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "W"
+    _attr_icon = "mdi:heat-wave"
+
+    def __init__(self, coordinator, room_id: str, room_name: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.room_name = room_name
+        self._attr_name = f"{room_name} Estimated Modulation Heating Power"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_modulation_heating_power_w"
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data
+        experiment = data.get("boiler_energy_experiment", {})
+        circuits = data.get("ufh_hydraulics", {}).get("circuits", {})
+        rooms = data.get("rooms", {})
+        output_kw = experiment.get(
+            "boiler_modulation_calibrated_output_kw",
+            experiment.get("boiler_modulation_estimated_output_kw"),
+        )
+        if output_kw is None or self.room_id not in rooms:
+            return None
+        output_w = max(0.0, float(output_kw)) * 1000.0
+        eligible = []
+        for circuit in circuits.values():
+            flow = max(0.0, float(
+                circuit.get("active_configured_flow_l_min")
+                or circuit.get("configured_flow_l_min") or 0.0
+            ))
+            served = [
+                room_id for room_id in (circuit.get("served_rooms") or [])
+                if room_id in rooms
+            ]
+            if circuit.get("flow_active") and flow > 0 and served:
+                eligible.append((flow, served))
+        total_flow = sum(flow for flow, _ in eligible)
+        if output_w <= 0 or total_flow <= 0:
+            return 0.0
+        room_power = 0.0
+        for flow, served in eligible:
+            if self.room_id in served:
+                room_power += output_w * flow / total_flow / len(served)
+        return round(room_power, 1)
+
+    @property
+    def extra_state_attributes(self):
+        experiment = self.coordinator.data.get("boiler_energy_experiment", {})
+        return {
+            "estimate": True,
+            "method": "Gas-calibrated boiler output from modulation, allocated by active configured UFH flow and split equally among each circuit's served rooms.",
+            "source": "boiler_modulation",
+            "modulation_percent": experiment.get("boiler_modulation_percent"),
+            "boiler_output_kw": experiment.get("boiler_modulation_calibrated_output_kw")
+                if experiment.get("boiler_modulation_calibrated_output_kw") is not None
+                else experiment.get("boiler_modulation_estimated_output_kw"),
+            "calibration_factor": experiment.get("boiler_calibration_factor"),
+            **_calculation_attributes("boiler_modulation_calibrated_output_kw"),
+        }
 
 
 class RoomThermalPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):

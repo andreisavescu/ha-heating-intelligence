@@ -112,7 +112,9 @@ def test_daily_gas_reconciliation_smooths_calibration_for_following_day():
     from datetime import datetime, timezone
 
     history = {}
-    state = history.setdefault("boiler_energy_experiment", {})
+    MODEL.update_boiler_energy_model(history, 10.0, 2.0, False, 0, {}, {}, 0,
+        now=datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc))
+    state = history["boiler_energy_experiment"]
     state["calibration_factor"] = 1.0
     state["daily_generated_heat_kwh"] = {"2026-11-20": 0.9495}
     state["daily_modulation_estimated_energy_kwh"] = {"2026-11-20": 0.625}

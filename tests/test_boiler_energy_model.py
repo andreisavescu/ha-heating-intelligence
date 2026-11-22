@@ -108,18 +108,25 @@ def test_modulation_maps_to_25kw_with_minimum_firing_output():
     assert MODEL._modulation_output_kw(None) is None
 
 
-def test_gas_meter_calibrates_modulation_output_cumulatively():
+def test_daily_gas_reconciliation_smooths_calibration_for_following_day():
+    from datetime import datetime, timezone
+
     history = {}
-    circuits = {"c": {"flow_active": True, "configured_flow_l_min": 1.0, "served_rooms": ["r"]}}
-    rooms = {"r": {"demand": True}}
-    MODEL.update_boiler_energy_model(history, 10.0, 2.0, True, 100, circuits, rooms, 90)
-    result = MODEL.update_boiler_energy_model(history, 10.1, 2.0, True, 100, circuits, rooms, 90)
-    # The interval's raw modulation estimate is 25 kW × 90 s.
-    assert result["boiler_last_meter_interval_modulation_energy_kwh"] == 0.625
-    assert result["boiler_meter_interval_useful_heat_kwh"] == 0.9495
-    assert abs(result["boiler_calibration_factor"] - (0.9495 / 0.625)) < 1e-5
-    assert abs(result["boiler_modulation_calibrated_output_kw"] - 25 * (0.9495 / 0.625)) < 1e-3
-    assert result["boiler_modulation_calibration_status"] == "calibrated"
+    state = history.setdefault("boiler_energy_experiment", {})
+    state["calibration_factor"] = 1.0
+    state["daily_generated_heat_kwh"] = {"2026-11-20": 0.9495}
+    state["daily_modulation_estimated_energy_kwh"] = {"2026-11-20": 0.625}
+    result = MODEL.update_boiler_energy_model(
+        history, 10.1, 2.0, True, 100, {}, {}, 60,
+        now=datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc),
+    )
+    observed = 0.9495 / 0.625
+    expected = 0.66 * 1.0 + 0.34 * observed
+    assert abs(result["boiler_calibration_factor_old"] - 1.0) < 1e-8
+    assert abs(result["boiler_calibration_factor_observed_daily"] - observed) < 1e-8
+    assert abs(result["boiler_calibration_factor_smoothed"] - expected) < 1e-8
+    assert abs(result["boiler_modulation_calibrated_output_kw"] - 25 * expected) < 1e-3
+    assert result["boiler_calibration_last_completed_day"] == "2026-11-20"
 
 
 def test_modulation_estimate_is_available_between_gas_meter_updates():
@@ -265,3 +272,33 @@ def test_modulation_room_interval_diagnostics_show_inactive_circuit():
     )
     assert result["boiler_modulation_room_interval_diagnostics"] == {}
     assert result["boiler_modulation_interval_output_kw"] == 10.0
+
+
+
+def test_heating_season_runs_from_september_first_to_may_first():
+    from datetime import date
+
+    assert MODEL._heating_season_key(date(2026, 9, 1)) == "2026-09-01/2027-05-01"
+    assert MODEL._heating_season_key(date(2027, 4, 30)) == "2026-09-01/2027-05-01"
+    assert MODEL._heating_season_key(date(2027, 5, 1)) == "2026-09-01/2027-05-01"
+    assert MODEL._heating_season_key(date(2027, 9, 1)) == "2027-09-01/2028-05-01"
+
+
+def test_gas_reconciled_heating_season_totals_survive_daily_ledger_cleanup():
+    from datetime import datetime, timezone
+
+    history = {}
+    circuits = {"c": {"flow_active": True, "configured_flow_l_min": 1.0, "served_rooms": ["r"]}}
+    rooms = {"r": {"demand": True}}
+    MODEL.update_boiler_energy_model(
+        history, 1.0, 0.0, True, 100, circuits, rooms, 60,
+        now=datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    result = MODEL.update_boiler_energy_model(
+        history, 1.1, 0.0, False, 0, circuits, rooms, 60,
+        now=datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc),
+    )
+    experiment = history["boiler_energy_experiment"]
+    assert "2026-09-01" not in experiment["daily_room_energy_kwh"]
+    assert experiment["heating_season_room_energy_kwh"]["2026-09-01/2027-05-01"]["r"] > 0
+    assert result["boiler_heating_season_allocated_heat_kwh"] > 0

@@ -116,7 +116,7 @@ def update_boiler_energy_model(
     # Calibrate once per completed day. The resulting factor applies to today's output.
     previous_day = (now.date() - timedelta(days=1)).isoformat()
     daily_gas = state.setdefault("daily_generated_heat_kwh", {})
-    daily_modulation = state.setdefault("daily_modulation_generated_heat_kwh", {})
+    daily_modulation = state.setdefault("daily_modulation_estimated_energy_kwh", state.get("daily_modulation_generated_heat_kwh", {}))
     last_calibrated_day = state.get("last_daily_calibration_day")
     if previous_day != last_calibrated_day:
         gas_yesterday = max(0.0, float(daily_gas.get(previous_day, 0.0) or 0.0))
@@ -136,6 +136,11 @@ def update_boiler_energy_model(
         if burner_on is True and output_kw is not None and interval > 0
         else 0.0
     )
+    calibrated_modulation_energy = (
+        calibrated_output_kw * interval / 3600.0
+        if burner_on is True and calibrated_output_kw is not None and interval > 0
+        else 0.0
+    )
     # Capture the exact inputs used by modulation allocation on every update.
     room_weights: dict[str, float] = {}
     for circuit in circuits.values():
@@ -150,7 +155,7 @@ def update_boiler_energy_model(
             room_weights[rid] = room_weights.get(rid, 0.0) + flow / len(eligible)
     total_weight = sum(room_weights.values())
     interval_room_allocations = {
-        rid: modulation_energy * weight / total_weight
+        rid: calibrated_modulation_energy * weight / total_weight
         for rid, weight in room_weights.items()
     } if total_weight > 0 and modulation_energy > 0 else {}
     state["last_modulation_room_diagnostics"] = {
@@ -159,7 +164,7 @@ def update_boiler_energy_model(
             "allocation_weight_l_min": round(weight, 6),
             "allocation_share": round(weight / total_weight, 6) if total_weight > 0 else 0.0,
             "interval_energy_kwh": round(interval_room_allocations.get(rid, 0.0), 8),
-            "exposure_kw_seconds": round(weight * (output_kw or 0.0) * interval, 4),
+            "exposure_kw_seconds": round(weight * (calibrated_output_kw or 0.0) * interval, 4),
         }
         for rid, weight in room_weights.items()
     }
@@ -167,6 +172,7 @@ def update_boiler_energy_model(
     state["last_modulation_interval_burner_on"] = burner_on
     state["last_modulation_interval_percent"] = modulation_percent
     state["last_modulation_interval_output_kw"] = output_kw
+    state["last_modulation_interval_calibrated_output_kw"] = calibrated_output_kw
     if modulation_energy > 0:
         state["modulation_estimated_energy_kwh"] = (
             float(state.get("modulation_estimated_energy_kwh", 0.0)) + modulation_energy
@@ -174,14 +180,16 @@ def update_boiler_energy_model(
         state["modulation_energy_since_meter_kwh"] = (
             float(state.get("modulation_energy_since_meter_kwh", 0.0)) + modulation_energy
         )
+        daily_raw = state.setdefault("daily_modulation_estimated_energy_kwh", {})
+        daily_raw[today] = float(daily_raw.get(today, 0.0)) + modulation_energy
         if total_weight > 0:
             daily_generated = state.setdefault("daily_modulation_generated_heat_kwh", {})
-            daily_generated[today] = float(daily_generated.get(today, 0.0)) + modulation_energy
-            state["modulation_generated_heat_kwh"] = float(state.get("modulation_generated_heat_kwh", 0.0)) + modulation_energy
+            daily_generated[today] = float(daily_generated.get(today, 0.0)) + calibrated_modulation_energy
+            state["modulation_generated_heat_kwh"] = float(state.get("modulation_generated_heat_kwh", 0.0)) + calibrated_modulation_energy
             daily_rooms = state.setdefault("daily_modulation_room_energy_kwh", {}).setdefault(today, {})
             lifetime_rooms = state.setdefault("modulation_room_energy_kwh", {})
             for rid, weight in room_weights.items():
-                allocated = modulation_energy * weight / total_weight
+                allocated = calibrated_modulation_energy * weight / total_weight
                 daily_rooms[rid] = float(daily_rooms.get(rid, 0.0)) + allocated
                 lifetime_rooms[rid] = float(lifetime_rooms.get(rid, 0.0)) + allocated
 
@@ -405,6 +413,7 @@ def update_boiler_energy_model(
         "boiler_modulation_interval_burner_on": state.get("last_modulation_interval_burner_on"),
         "boiler_modulation_interval_percent": state.get("last_modulation_interval_percent"),
         "boiler_modulation_interval_output_kw": state.get("last_modulation_interval_output_kw"),
+        "boiler_modulation_interval_calibrated_output_kw": state.get("last_modulation_interval_calibrated_output_kw"),
         "boiler_modulation_daily_room_energy_kwh": {
             k: round(float(v), 6) for k, v in today_modulation_rooms.items()
             if isinstance(v, (int, float))

@@ -38,7 +38,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         for room in entry.options.get(CONF_ROOMS, []):
             entities.append(RoomBoilerExperimentEnergySensor(coordinator, room["id"], room["name"]))
-    # Modulation-derived energy is independent of gas-meter availability.
+    # Whole-boiler modulation-derived energy is independent of gas-meter availability.
+    entities.extend(BoilerModulationEnergySensor(coordinator, period)
+        for period in ("daily", "weekly", "monthly", "total"))
+    # Per-room modulation-derived energy is also independent of gas-meter availability.
     for room in entry.options.get(CONF_ROOMS, []):
         entities.extend(ModulationRoomEnergySensor(coordinator, room["id"], room["name"], period)
             for period in ("daily", "weekly", "monthly", "total"))
@@ -183,6 +186,43 @@ class BoilerExperimentDiagnosticSensor(HouseDeviceMixin, CoordinatorEntity, Sens
     def native_value(self):
         return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric)
 
+
+
+class BoilerModulationEnergySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Whole-boiler modulation-estimated thermal energy by calendar period."""
+
+    _attr_should_poll = False
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_icon = "mdi:heat-wave"
+
+    PERIODS = {
+        "daily": ("Today", SensorStateClass.TOTAL, "boiler_modulation_energy_today_kwh"),
+        "weekly": ("This Week", SensorStateClass.TOTAL, "boiler_modulation_energy_week_kwh"),
+        "monthly": ("This Month", SensorStateClass.TOTAL, "boiler_modulation_energy_month_kwh"),
+        "total": ("Total", SensorStateClass.TOTAL_INCREASING, "boiler_modulation_energy_total_kwh"),
+    }
+
+    def __init__(self, coordinator, period: str) -> None:
+        super().__init__(coordinator)
+        label, state_class, metric = self.PERIODS[period]
+        self.metric = metric
+        self._attr_name = f"Boiler Estimated Modulation Thermal Energy {label}"
+        self._attr_unique_id = f"{DOMAIN}_boiler_modulation_estimated_heat_{period}"
+        self._attr_state_class = state_class
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric, 0.0)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "estimate": True,
+            "method": "Boiler output estimated from burner modulation and integrated over time; allocated total includes only intervals with active, configured UFH room flow.",
+            "source": "boiler_modulation",
+            "calibration_applied": False,
+        }
 
 
 class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):

@@ -1,3 +1,10 @@
+## v0.18.3 — Use modulation as the sole live boiler-output signal
+
+- Remove the burner binary as a gate for live boiler output, modulation-estimated energy and room exposure; the binary can lag modulation transitions by approximately 30 seconds.
+- Treat modulation above 0% as active output and 0% as zero output, independent of burner state.
+- Use modulation-active intervals for room exposure and gas-reconciliation time weighting; do not substitute rated boiler output when modulation is unavailable.
+- Keep burner state available as a diagnostic only. No boiler, pump, thermostat or heating-control behavior changes.
+
 ## v0.18.2 — Fix gas-reconciled daily and heating-season Sankeys
 
 - Read daily gas-reconciled room energy from the latest ISO-date bucket returned by the energy model.

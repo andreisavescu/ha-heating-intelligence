@@ -417,6 +417,9 @@ class HeatingIntelligenceCard extends HTMLElement {
       <style>
         :host{display:block;color:var(--primary-text-color);--hi-blue:#3989d6;--hi-green:#249c70;--hi-amber:#d89127;--hi-red:#d45c52}
         ha-card{padding:14px;overflow:hidden}
+        .entity-value{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+        .entity-value:hover{color:var(--primary-color)}
+        .entity-value:focus-visible{outline:2px solid var(--primary-color);outline-offset:3px;border-radius:3px}
         .hero{position:relative;margin:-18px -18px 9px;padding:14px 16px 12px;background:linear-gradient(120deg,rgba(41,112,184,.22),rgba(36,156,112,.12));border-bottom:1px solid var(--divider-color)}
         .hero h2{font-size:1.28rem;font-weight:750;letter-spacing:-.02em;margin:0 0 5px}
         .hero p{margin:0;color:var(--secondary-text-color);font-size:.82rem}

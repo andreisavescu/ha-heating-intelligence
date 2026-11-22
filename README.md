@@ -4,6 +4,8 @@
 - Treat modulation above 0% as active output and 0% as zero output, independent of burner state.
 - Use modulation-active intervals for room exposure and gas-reconciliation time weighting; do not substitute rated boiler output when modulation is unavailable.
 - Keep burner state available as a diagnostic only. No boiler, pump, thermostat or heating-control behavior changes.
+- Add a per-room **Estimated Modulation Heating Power** sensor (W), allocated using the same active configured UFH flow weights and served-room split as the Home view and modulation Sankey.
+- Make each Home room's live **Heat** wattage tappable so it opens that room's new modulation-power entity in Home Assistant; retain the legacy UFH power entity unchanged.
 
 ## v0.18.2 — Fix gas-reconciled daily and heating-season Sankeys
 

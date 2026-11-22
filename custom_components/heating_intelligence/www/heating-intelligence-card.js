@@ -378,13 +378,43 @@ class HeatingIntelligenceCard extends HTMLElement {
     const downstairsRooms = entries.filter((room) => room.floor === "ground_floor");
     const upstairsRooms = entries.filter((room) => room.floor === "upstairs");
     const unassignedRooms = entries.filter((room) => !["ground_floor", "upstairs"].includes(room.floor));
+    // Match the live modulation Sankey: calibrated boiler output is allocated
+    // across active configured UFH flow, then each circuit share is split
+    // equally among its served rooms. Do not fall back to the legacy 9°C model.
+    const experiment = attrs.boiler_energy_experiment || {};
+    const circuits = attrs.ufh_hydraulics?.circuits || {};
+    const modulationOutputW = Number(
+      experiment.boiler_modulation_calibrated_output_kw ??
+      experiment.boiler_modulation_estimated_output_kw
+    ) * 1000;
+    const eligibleCircuits = Object.entries(circuits).filter(([, circuit]) =>
+      circuit.flow_active &&
+      Number(circuit.estimated_thermal_power_w) > 0 &&
+      Number(circuit.active_configured_flow_l_min || circuit.configured_flow_l_min || 0) > 0 &&
+      (circuit.served_rooms || []).some(id => rooms[id])
+    );
+    const totalEligibleFlow = eligibleCircuits.reduce((sum, [, circuit]) =>
+      sum + Number(circuit.active_configured_flow_l_min || circuit.configured_flow_l_min || 0), 0);
+    const roomModulationPowerW = {};
+    if (Number.isFinite(modulationOutputW) && modulationOutputW > 0 && totalEligibleFlow > 0) {
+      for (const [, circuit] of eligibleCircuits) {
+        const flow = Number(circuit.active_configured_flow_l_min || circuit.configured_flow_l_min || 0);
+        const served = (circuit.served_rooms || []).filter(id => rooms[id]);
+        if (!served.length) continue;
+        const circuitPower = modulationOutputW * flow / totalEligibleFlow;
+        for (const roomId of served) {
+          roomModulationPowerW[roomId] = (roomModulationPowerW[roomId] || 0) + circuitPower / served.length;
+        }
+      }
+    }
+    const hasModulationAllocation = Object.keys(roomModulationPowerW).length > 0;
     const roomRenderer = (list) => list.length ? list.map((room) => `<div class="simple-room">
       <div class="simple-room-main"><strong>${this._esc(room.name)}</strong>${this._entityValue(room.name + " Temperature", this._fmt(room.temperature))}</div>
       <div class="simple-room-meta">
         <span class="simple-state ${room.demand ? "is-heating" : ""}">${room.demand ? "Heating requested" : "No heat demand"}</span>
         ${room.window_entity && room.window_state_known && room.window_open ? '<span class="simple-alert">Window open</span>' : ""}
         ${room.window_entity && !room.window_state_known ? '<span class="simple-muted">Window unavailable</span>' : ""}
-        <span class="simple-muted">Heat ${this._entityValue(room.name + " Estimated UFH Heating Power", this._fmt(room.estimated_thermal_power_w, "W", 0))}</span>
+        <span class="simple-muted">Heat ${hasModulationAllocation ? this._fmt(roomModulationPowerW[room.id] || 0, "W", 0) : "—"}</span>
       </div>
     </div>`).join("") : '<p class="simple-muted">No rooms configured.</p>';
     const thermalRanking = entries.filter((r) => r.heat_retention_hours_per_degree != null)

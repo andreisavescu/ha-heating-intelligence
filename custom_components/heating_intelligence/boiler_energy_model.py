@@ -70,6 +70,11 @@ def update_boiler_energy_model(
         "daily_modulation_room_energy_kwh": {},
         "modulation_room_energy_kwh": {},
         "daily_modulation_generated_heat_kwh": {},
+        "last_modulation_room_diagnostics": {},
+        "last_modulation_interval_seconds": 0.0,
+        "last_modulation_interval_burner_on": None,
+        "last_modulation_interval_percent": None,
+        "last_modulation_interval_output_kw": None,
     })
     # Backfill defaults when restoring history written by an earlier version.
     for key, default in {
@@ -82,6 +87,11 @@ def update_boiler_energy_model(
         "daily_modulation_room_energy_kwh": {},
         "modulation_room_energy_kwh": {},
         "daily_modulation_generated_heat_kwh": {},
+        "last_modulation_room_diagnostics": {},
+        "last_modulation_interval_seconds": 0.0,
+        "last_modulation_interval_burner_on": None,
+        "last_modulation_interval_percent": None,
+        "last_modulation_interval_output_kw": None,
     }.items():
         state.setdefault(key, default)
 
@@ -99,6 +109,37 @@ def update_boiler_energy_model(
         if burner_on is True and output_kw is not None and interval > 0
         else 0.0
     )
+    # Capture the exact inputs used by modulation allocation on every update.
+    room_weights: dict[str, float] = {}
+    for circuit in circuits.values():
+        if not circuit.get("flow_active"):
+            continue
+        flow = max(0.0, float(circuit.get("active_configured_flow_l_min") or circuit.get("configured_flow_l_min") or 0.0))
+        served = circuit.get("served_rooms") or circuit.get("demand_rooms") or []
+        eligible = [rid for rid in served if rid in rooms]
+        if flow <= 0 or not eligible:
+            continue
+        for rid in eligible:
+            room_weights[rid] = room_weights.get(rid, 0.0) + flow / len(eligible)
+    total_weight = sum(room_weights.values())
+    interval_room_allocations = {
+        rid: modulation_energy * weight / total_weight
+        for rid, weight in room_weights.items()
+    } if total_weight > 0 and modulation_energy > 0 else {}
+    state["last_modulation_room_diagnostics"] = {
+        rid: {
+            "flow_active": weight > 0,
+            "allocation_weight_l_min": round(weight, 6),
+            "allocation_share": round(weight / total_weight, 6) if total_weight > 0 else 0.0,
+            "interval_energy_kwh": round(interval_room_allocations.get(rid, 0.0), 8),
+            "exposure_kw_seconds": round(weight * (output_kw or 0.0) * interval, 4),
+        }
+        for rid, weight in room_weights.items()
+    }
+    state["last_modulation_interval_seconds"] = interval
+    state["last_modulation_interval_burner_on"] = burner_on
+    state["last_modulation_interval_percent"] = modulation_percent
+    state["last_modulation_interval_output_kw"] = output_kw
     if modulation_energy > 0:
         state["modulation_estimated_energy_kwh"] = (
             float(state.get("modulation_estimated_energy_kwh", 0.0)) + modulation_energy
@@ -106,18 +147,6 @@ def update_boiler_energy_model(
         state["modulation_energy_since_meter_kwh"] = (
             float(state.get("modulation_energy_since_meter_kwh", 0.0)) + modulation_energy
         )
-        room_weights: dict[str, float] = {}
-        for circuit in circuits.values():
-            if not circuit.get("flow_active"):
-                continue
-            flow = max(0.0, float(circuit.get("active_configured_flow_l_min") or circuit.get("configured_flow_l_min") or 0.0))
-            served = circuit.get("served_rooms") or circuit.get("demand_rooms") or []
-            eligible = [rid for rid in served if rid in rooms]
-            if flow <= 0 or not eligible:
-                continue
-            for rid in eligible:
-                room_weights[rid] = room_weights.get(rid, 0.0) + flow / len(eligible)
-        total_weight = sum(room_weights.values())
         if total_weight > 0:
             daily_generated = state.setdefault("daily_modulation_generated_heat_kwh", {})
             daily_generated[today] = float(daily_generated.get(today, 0.0)) + modulation_energy
@@ -331,6 +360,11 @@ def update_boiler_energy_model(
         "boiler_modulation_energy_month_kwh": round(monthly_generated_heat, 4),
         "boiler_modulation_energy_total_kwh": round(float(state.get("modulation_generated_heat_kwh", 0.0)), 4),
         "boiler_modulation_room_energy_kwh": {k: round(float(v), 6) for k, v in state.get("modulation_room_energy_kwh", {}).items()},
+        "boiler_modulation_room_interval_diagnostics": state.get("last_modulation_room_diagnostics", {}),
+        "boiler_modulation_interval_seconds": round(float(state.get("last_modulation_interval_seconds", 0.0)), 2),
+        "boiler_modulation_interval_burner_on": state.get("last_modulation_interval_burner_on"),
+        "boiler_modulation_interval_percent": state.get("last_modulation_interval_percent"),
+        "boiler_modulation_interval_output_kw": state.get("last_modulation_interval_output_kw"),
         "boiler_modulation_daily_room_energy_kwh": {
             k: round(float(v), 6) for k, v in today_modulation_rooms.items()
             if isinstance(v, (int, float))

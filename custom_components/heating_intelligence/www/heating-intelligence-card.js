@@ -313,7 +313,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     // completed/current day rather than treating the date key as a room ID.
     if (period === "daily") {
       const dates = Object.keys(source)
-        .filter(key => /^\\d{4}-\\d{2}-\\d{2}$/.test(key) && source[key] && typeof source[key] === "object")
+        .filter(key => /^\d{4}-\d{2}-\d{2}$/.test(key) && source[key] && typeof source[key] === "object")
         .sort();
       energy = dates.length ? source[dates[dates.length - 1]] : source;
     }

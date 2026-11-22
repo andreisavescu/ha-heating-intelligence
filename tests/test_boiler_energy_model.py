@@ -118,9 +118,14 @@ def test_daily_gas_reconciliation_smooths_calibration_for_following_day():
     state["calibration_factor"] = 1.0
     state["daily_generated_heat_kwh"] = {"2026-11-20": 0.9495}
     state["daily_modulation_estimated_energy_kwh"] = {"2026-11-20": 0.625}
-    result = MODEL.update_boiler_energy_model(
-        history, 10.1, 2.0, True, 100, {}, {}, 60,
+    # The completed-day ratio is staged on Nov 21 and applied on Nov 22.
+    MODEL.update_boiler_energy_model(
+        history, 10.0, 2.0, False, 0, {}, {}, 0,
         now=datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc),
+    )
+    result = MODEL.update_boiler_energy_model(
+        history, 10.0, 2.0, True, 100, {}, {}, 60,
+        now=datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc),
     )
     observed = 0.9495 / 0.625
     expected = 0.66 * 1.0 + 0.34 * observed

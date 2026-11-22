@@ -36,14 +36,17 @@ def test_shared_circuit_splits_only_between_eligible_served_rooms():
     assert abs(result["boiler_room_allocations_kwh"]["b"] - 0.47475) < 1e-8
 
 
-def test_burner_off_overrun_does_not_add_room_exposure():
+def test_burner_binary_does_not_gate_modulation_energy_or_room_exposure():
     history = {}
     circuits = {"a": {"flow_active": True, "configured_flow_l_min": 1.0, "served_rooms": ["a"]}}
     rooms = {"a": {"demand": True}}
-    MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 100, circuits, rooms, 90)
-    result = MODEL.update_boiler_energy_model(history, 1.1, 0.0, False, 0, circuits, rooms, 90)
-    assert result["boiler_unallocated_heat_kwh"] > 0
-    assert result["boiler_room_energy_kwh"] == {}
+    first = MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 40, circuits, rooms, 90)
+    assert first["boiler_modulation_estimated_output_kw"] == 10.0
+    assert first["boiler_modulation_energy_total_kwh"] > 0
+    assert first["boiler_modulation_room_energy_kwh"]["a"] > 0
+    second = MODEL.update_boiler_energy_model(history, 1.1, 0.0, True, 0, circuits, rooms, 90)
+    assert second["boiler_modulation_estimated_output_kw"] == 0.0
+    assert second["boiler_modulation_energy_total_kwh"] == first["boiler_modulation_energy_total_kwh"]
 
 
 def test_dhw_meter_is_tracked_but_never_allocated_to_rooms():

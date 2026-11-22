@@ -8,6 +8,7 @@ DEFAULT_GAS_KWH_PER_M3 = 10.55
 DEFAULT_BOILER_EFFICIENCY = 0.90
 DEFAULT_BOILER_RATED_OUTPUT_KW = 25.0
 DEFAULT_BOILER_MIN_OUTPUT_KW = 3.2
+MAX_UPWARD_MODULATION_STEP_PERCENT = 10.0
 CALIBRATION_OLD_WEIGHT = 0.66
 CALIBRATION_DAILY_WEIGHT = 0.34
 
@@ -86,6 +87,8 @@ def update_boiler_energy_model(
         "last_modulation_interval_burner_on": None,
         "last_modulation_interval_percent": None,
         "last_modulation_interval_output_kw": None,
+        "last_room_allocation_modulation_percent": None,
+        "last_room_allocation_modulation_output_kw": None,
     })
     # Backfill defaults when restoring history written by an earlier version.
     for key, default in {
@@ -103,6 +106,8 @@ def update_boiler_energy_model(
         "last_modulation_interval_burner_on": None,
         "last_modulation_interval_percent": None,
         "last_modulation_interval_output_kw": None,
+        "last_room_allocation_modulation_percent": None,
+        "last_room_allocation_modulation_output_kw": None,
     }.items():
         state.setdefault(key, default)
 
@@ -128,14 +133,39 @@ def update_boiler_energy_model(
     # excluded because its state transition can lag modulation by ~30 seconds.
     output_kw = _modulation_output_kw(modulation_percent)
     calibrated_output_kw = output_kw * calibration if output_kw is not None else None
+
+    # Smooth only upward changes in the modulation value used for room allocation.
+    # Downward changes (including a drop to zero) are applied immediately.
+    previous_allocation_percent = state.get("last_room_allocation_modulation_percent")
+    if modulation_percent is None:
+        allocation_modulation_percent = None
+    elif previous_allocation_percent is None:
+        allocation_modulation_percent = min(
+            max(0.0, float(modulation_percent)),
+            MAX_UPWARD_MODULATION_STEP_PERCENT,
+        )
+    else:
+        requested_percent = max(0.0, min(100.0, float(modulation_percent)))
+        allocation_modulation_percent = min(
+            requested_percent,
+            max(0.0, float(previous_allocation_percent)) + MAX_UPWARD_MODULATION_STEP_PERCENT,
+        )
+    allocation_output_kw = _modulation_output_kw(allocation_modulation_percent)
+    calibrated_allocation_output_kw = (
+        allocation_output_kw * calibration if allocation_output_kw is not None else None
+    )
+    if modulation_percent is not None:
+        state["last_room_allocation_modulation_percent"] = allocation_modulation_percent
+    state["last_room_allocation_modulation_output_kw"] = allocation_output_kw
+
     modulation_energy = (
         output_kw * interval / 3600.0
         if output_kw is not None and output_kw > 0 and interval > 0
         else 0.0
     )
     calibrated_modulation_energy = (
-        calibrated_output_kw * interval / 3600.0
-        if calibrated_output_kw is not None and calibrated_output_kw > 0 and interval > 0
+        calibrated_allocation_output_kw * interval / 3600.0
+        if calibrated_allocation_output_kw is not None and calibrated_allocation_output_kw > 0 and interval > 0
         else 0.0
     )
     # Capture the exact inputs used by modulation allocation on every update.
@@ -170,6 +200,8 @@ def update_boiler_energy_model(
     state["last_modulation_interval_percent"] = modulation_percent
     state["last_modulation_interval_output_kw"] = output_kw
     state["last_modulation_interval_calibrated_output_kw"] = calibrated_output_kw
+    state["last_room_allocation_modulation_percent"] = allocation_modulation_percent
+    state["last_room_allocation_modulation_output_kw"] = allocation_output_kw
     if modulation_energy > 0:
         state["modulation_estimated_energy_kwh"] = (
             float(state.get("modulation_estimated_energy_kwh", 0.0)) + modulation_energy
@@ -432,7 +464,9 @@ def update_boiler_energy_model(
         "boiler_minimum_output_kw": DEFAULT_BOILER_MIN_OUTPUT_KW,
         "boiler_modulation_percent": round(float(modulation_percent), 2) if modulation_percent is not None else None,
         "boiler_modulation_estimated_output_kw": round(output_kw, 3) if output_kw is not None else None,
-        "boiler_modulation_calibrated_output_kw": round(calibrated_output_kw, 3) if calibrated_output_kw is not None else None,
+        "boiler_modulation_calibrated_output_kw": round(calibrated_allocation_output_kw, 3) if calibrated_allocation_output_kw is not None else None,
+        "boiler_modulation_raw_calibrated_output_kw": round(calibrated_output_kw, 3) if calibrated_output_kw is not None else None,
+        "boiler_modulation_room_allocation_percent": round(float(state.get("last_room_allocation_modulation_percent")), 3) if state.get("last_room_allocation_modulation_percent") is not None else None,
         "boiler_modulation_estimated_energy_kwh": round(float(state["modulation_estimated_energy_kwh"]), 4),
         "boiler_modulation_energy_today_kwh": round(float(daily_generated_heat.get(today, 0.0) or 0.0), 4),
         "boiler_modulation_energy_week_kwh": round(weekly_generated_heat, 4),
@@ -445,6 +479,7 @@ def update_boiler_energy_model(
         "boiler_modulation_interval_percent": state.get("last_modulation_interval_percent"),
         "boiler_modulation_interval_output_kw": state.get("last_modulation_interval_output_kw"),
         "boiler_modulation_interval_calibrated_output_kw": state.get("last_modulation_interval_calibrated_output_kw"),
+        "boiler_modulation_room_allocation_output_kw": round(float(state.get("last_room_allocation_modulation_output_kw")), 3) if state.get("last_room_allocation_modulation_output_kw") is not None else None,
         "boiler_modulation_daily_room_energy_kwh": {
             k: round(float(v), 6) for k, v in today_modulation_rooms.items()
             if isinstance(v, (int, float))

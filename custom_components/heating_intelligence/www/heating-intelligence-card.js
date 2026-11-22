@@ -236,7 +236,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     const columns='<text x="8" y="18" class="heat-flow-column">HEAT SOURCE</text><text x="122" y="18" text-anchor="middle" class="heat-flow-column">MANIFOLDS</text><text x="245" y="18" class="heat-flow-column">ROOMS</text>';
     const roomSvg=roomNodes.map(r=>node(r,"room")).join("");
     const scale=unit==="W"?1000:1;
-    return `<div class="heat-flow-summary"><div><span>${unit==="kWh"?"Daily boiler energy":model.includes("modulation")?"Modulation-estimated boiler output":"Estimated active UFH output"}</span><strong>${(total/scale).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div><div><span>Downstairs</span><strong>${(allocations.ground_floor?Object.values(allocations.ground_floor).reduce((a,b)=>a+b,0)/scale:0).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div><div><span>Upstairs</span><strong>${(allocations.upstairs?Object.values(allocations.upstairs).reduce((a,b)=>a+b,0)/scale:0).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div></div><div class="heat-flow-scroll"><svg viewBox="0 0 360 ${height+30}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Three-layer Sankey diagram showing estimated heat from the boiler to downstairs and upstairs manifolds, then to served rooms">${columns}${linkSvg}${node(boiler,"boiler")}${floorNodes.map(f=>node(f,"manifold")).join("")}${roomSvg}</svg></div><div class="subtle">${model==="boiler"?"Link widths show gas-meter-reconciled room allocations, averaged over burner-on exposure. This is a period average, not live boiler output.":model.includes("modulation")?"Boiler output is estimated from live modulation (25 kW rated output, 3.2 kW minimum while firing) and distributed across active circuits by configured flow, then among served rooms. It is an estimate, not a heat-meter reading.":"Link widths represent estimated thermal power. Room allocations are derived from manually configured circuit flow and an assumed 9°C water temperature drop, divided equally among each circuit served rooms. The boiler total is the sum of the two manifold allocations; it is not a direct measurement of boiler heat output or room heat delivery."}</div>`;;
+    return `<div class="heat-flow-summary"><div><span>${unit==="kWh"?({gas_daily:"Daily gas-reconciled room energy",gas_weekly:"Weekly gas-reconciled room energy",gas_monthly:"Monthly gas-reconciled room energy",gas_season:"Heating-season gas-reconciled room energy"}[model]||"Gas-reconciled room energy"):model.includes("modulation")?"Modulation-estimated boiler output":"Estimated active UFH output"}</span><strong>${(total/scale).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div><div><span>Downstairs</span><strong>${(allocations.ground_floor?Object.values(allocations.ground_floor).reduce((a,b)=>a+b,0)/scale:0).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div><div><span>Upstairs</span><strong>${(allocations.upstairs?Object.values(allocations.upstairs).reduce((a,b)=>a+b,0)/scale:0).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div></div><div class="heat-flow-scroll"><svg viewBox="0 0 360 ${height+30}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Three-layer Sankey diagram showing estimated heat from the boiler to downstairs and upstairs manifolds, then to served rooms">${columns}${linkSvg}${node(boiler,"boiler")}${floorNodes.map(f=>node(f,"manifold")).join("")}${roomSvg}</svg></div><div class="subtle">${model==="boiler"?"Link widths show gas-meter-reconciled room allocations, averaged over burner-on exposure. This is a period average, not live boiler output.":model.includes("modulation")?"Boiler output is estimated from live modulation (25 kW rated output, 3.2 kW minimum while firing) and distributed across active circuits by configured flow, then among served rooms. It is an estimate, not a heat-meter reading.":"Link widths represent estimated thermal power. Room allocations are derived from manually configured circuit flow and an assumed 9°C water temperature drop, divided equally among each circuit served rooms. The boiler total is the sum of the two manifold allocations; it is not a direct measurement of boiler heat output or room heat delivery."}</div>`;;
   }
   _systemFlowDiagram(hydraulics, rooms, pumps) {
     const circuits=Object.entries(hydraulics?.circuits||{});
@@ -307,9 +307,18 @@ class HeatingIntelligenceCard extends HTMLElement {
       monthly: "boiler_monthly_room_energy_kwh",
       season: "boiler_heating_season_room_energy_kwh"
     };
-    const energy = period === "season"
-      ? (experiment?.[fields.season]?.[experiment?.boiler_heating_season] || {})
-      : (experiment?.[fields[period]] || {});
+    const source = experiment?.[fields[period]] || {};
+    let energy = source;
+    // Daily gas allocations are persisted by ISO date; render the latest
+    // completed/current day rather than treating the date key as a room ID.
+    if (period === "daily") {
+      const dates = Object.keys(source)
+        .filter(key => /^\d{4}-\d{2}-\d{2}$/.test(key) && source[key] && typeof source[key] === "object")
+        .sort();
+      energy = dates.length ? source[dates[dates.length - 1]] : source;
+    }
+    // The model already exposes the current season's room totals as a flat
+    // room-ID map, unlike its internal persisted season-keyed history.
     const circuits = {};
     for (const [roomId, value] of Object.entries(energy)) {
       const room = rooms?.[roomId];

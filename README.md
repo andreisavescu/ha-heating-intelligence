@@ -1,3 +1,10 @@
+## v0.18.2 — Fix gas-reconciled daily and heating-season Sankeys
+
+- Read daily gas-reconciled room energy from the latest ISO-date bucket returned by the energy model.
+- Read heating-season room energy from the current-season flat room map exposed by the model, rather than looking up the season key twice.
+- Keep weekly and monthly room-energy handling unchanged.
+- Label Sankey summaries with the correct reporting period.
+
 ## v0.18.1 — Calibrated room power in the Home view
 
 - Replace the legacy 9°C hydraulic per-room watt figures in the Home room tiles with live burner-modulation output allocated using the same active configured UFH flow weights and served-room split as the modulation Sankey.

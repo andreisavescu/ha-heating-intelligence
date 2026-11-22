@@ -113,21 +113,15 @@ def update_boiler_energy_model(
     room_energy = state.setdefault("room_energy_kwh", {})
     daily_rooms = state.setdefault("daily_room_energy_kwh", {})
 
-    # Calibrate once per completed day. The resulting factor applies to today's output.
-    previous_day = (now.date() - timedelta(days=1)).isoformat()
-    daily_gas = state.setdefault("daily_generated_heat_kwh", {})
-    daily_modulation = state.setdefault("daily_modulation_estimated_energy_kwh", dict(state.get("daily_modulation_generated_heat_kwh", {})))
-    last_calibrated_day = state.get("last_daily_calibration_day")
-    if previous_day != last_calibrated_day:
-        gas_yesterday = max(0.0, float(daily_gas.get(previous_day, 0.0) or 0.0))
-        modulation_yesterday = max(0.0, float(daily_modulation.get(previous_day, 0.0) or 0.0))
-        if gas_yesterday > 0 and modulation_yesterday > 0:
-            old_factor = max(0.0, float(state.get("calibration_factor", 1.0)))
-            observed = gas_yesterday / modulation_yesterday
-            state["calibration_factor_old"] = old_factor
-            state["calibration_factor_observed_daily"] = observed
-            state["calibration_factor"] = 0.66 * old_factor + 0.34 * observed
-            state["last_daily_calibration_day"] = previous_day
+    # A factor calculated from a completed day is staged for the following
+    # calendar day, never applied retroactively to the day being measured.
+    pending_effective_date = state.get("pending_calibration_effective_date")
+    if pending_effective_date and pending_effective_date <= today:
+        state["calibration_factor"] = float(state.get("pending_calibration_factor", state.get("calibration_factor", 1.0)))
+        state["calibration_factor_old"] = float(state.get("pending_calibration_factor_old", state.get("calibration_factor", 1.0)))
+        state["calibration_factor_observed_daily"] = state.get("pending_calibration_factor_observed")
+        state["pending_calibration_factor"] = None
+        state["pending_calibration_effective_date"] = None
     calibration = max(0.0, float(state.get("calibration_factor", 1.0)))
     output_kw = _modulation_output_kw(modulation_percent) if burner_on is True else 0.0
     calibrated_output_kw = output_kw * calibration if output_kw is not None else None
@@ -306,6 +300,25 @@ def update_boiler_energy_model(
         state["last_meter_interval_useful_heat_kwh"] = useful_heat
         state["last_meter_interval_seconds"] = interval_seconds
         state["last_room_interval_allocations_kwh"] = interval_allocations
+
+    # Reconcile yesterday only after this update has processed any newly
+    # arrived cumulative gas-meter delta. Stage the smoothed factor for tomorrow.
+    previous_day = (now.date() - timedelta(days=1)).isoformat()
+    daily_gas = state.setdefault("daily_generated_heat_kwh", {})
+    daily_modulation = state.setdefault("daily_modulation_estimated_energy_kwh", {})
+    if previous_day != state.get("last_daily_calibration_day"):
+        gas_yesterday = max(0.0, float(daily_gas.get(previous_day, 0.0) or 0.0))
+        modulation_yesterday = max(0.0, float(daily_modulation.get(previous_day, 0.0) or 0.0))
+        if gas_yesterday > 0 and modulation_yesterday > 0:
+            old_factor = max(0.0, float(state.get("calibration_factor", 1.0)))
+            observed = gas_yesterday / modulation_yesterday
+            state["calibration_factor_old"] = old_factor
+            state["calibration_factor_observed_daily"] = observed
+            state["pending_calibration_factor_old"] = old_factor
+            state["pending_calibration_factor_observed"] = observed
+            state["pending_calibration_factor"] = 0.66 * old_factor + 0.34 * observed
+            state["pending_calibration_effective_date"] = (now.date() + timedelta(days=1)).isoformat()
+            state["last_daily_calibration_day"] = previous_day
 
     for key in ("daily_room_energy_kwh", "daily_generated_heat_kwh", "daily_allocated_heat_kwh", "daily_unallocated_heat_kwh", "daily_modulation_room_energy_kwh", "daily_modulation_generated_heat_kwh"):
         mapping = state.setdefault(key, {})

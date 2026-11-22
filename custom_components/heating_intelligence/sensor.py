@@ -214,7 +214,8 @@ class BoilerExperimentSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric)
+        data = self.coordinator.data.get("boiler_energy_experiment", {})
+        return {**data, **_calculation_attributes(self.metric)}.get(self.metric)
 
     @property
     def extra_state_attributes(self):
@@ -245,6 +246,9 @@ class BoilerExperimentDiagnosticSensor(HouseDeviceMixin, CoordinatorEntity, Sens
     def native_value(self):
         return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric)
 
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes(self.metric)
 
 
 class BoilerModulationEnergySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -281,6 +285,7 @@ class BoilerModulationEnergySensor(HouseDeviceMixin, CoordinatorEntity, SensorEn
             "method": "Boiler output estimated from burner modulation and integrated over time; allocated total includes only intervals with active, configured UFH room flow.",
             "source": "boiler_modulation",
             "calibration_applied": False,
+            **_calculation_attributes(self.metric),
         }
 
 
@@ -323,6 +328,7 @@ class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
             "estimate": True,
             "method": "Boiler heat output estimated from burner modulation, then allocated to active UFH circuits by configured flow and split among served rooms.",
             "source": "boiler_modulation",
+            **_calculation_attributes("boiler_modulation_energy_total_kwh"),
             "last_interval_burner_on": experiment.get("boiler_modulation_interval_burner_on"),
             "last_interval_modulation_percent": experiment.get("boiler_modulation_interval_percent"),
             "last_interval_boiler_output_kw": experiment.get("boiler_modulation_interval_output_kw"),
@@ -355,6 +361,14 @@ class RoomBoilerExperimentEnergySensor(RoomDeviceMixin, CoordinatorEntity, Senso
         return self.coordinator.data.get("boiler_energy_experiment", {}).get(
             "boiler_room_energy_kwh", {}
         ).get(self.room_id, 0.0)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "calculation_description": "Gas-derived useful boiler heat allocated to rooms using their accumulated burner-on exposure.",
+            "calculation_formula": "Σ(interval useful heat × room exposure ÷ total room exposure)",
+            "calculation_assumptions": "Heating gas only; DHW excluded. Exposure is configured circuit flow × modulation-derived output × burner-on seconds.",
+        }
 
 class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     """Master sensor used by the Lovelace overview card."""
@@ -489,7 +503,7 @@ class AtticThermalMetricSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data.get("attic_thermal", {})
+        return {**self.coordinator.data.get("attic_thermal", {}), **_calculation_attributes(self.metric)}
 
 
 class WaterTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -542,7 +556,7 @@ class RoomThermalPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        return {"estimate": True, "method": "Active configured circuit thermal power is split equally among served rooms; circuit power uses configured flow and an assumed 9°C water delta.", "assumed_water_delta_t_c": 9.0}
+        return {"estimate": True, "method": "Active configured circuit thermal power is split equally among served rooms; circuit power uses configured flow and an assumed 9°C water delta.", "assumed_water_delta_t_c": 9.0, **_calculation_attributes("estimated_thermal_power_w")}
 
 
 class RoomThermalEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -574,6 +588,7 @@ class RoomThermalEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
             "estimate": True,
             "method": "Configured circuit flow × assumed 9°C water delta; active circuit energy is split equally among its assigned demand rooms.",
             "assumed_water_delta_t_c": 9.0,
+            **_calculation_attributes(self.metric),
         }
 
 
@@ -648,6 +663,7 @@ class RoomAnalyticsSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
             "active_cycle_seconds": room.get("active_cycle_seconds", 0),
             "source_entity": room.get("demand_entity"),
             "source_state": room.get("demand_state"),
+            **_calculation_attributes(self.metric),
         }
 
 
@@ -687,6 +703,10 @@ class RoomThermalAnalyticsSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
         room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
         value = room.get(self.metric)
         return round(value / self.divisor, 2) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes(self.metric)
 
 
 EFFICIENCY_METRICS = {
@@ -734,6 +754,10 @@ class EfficiencySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("efficiency", {}).get(self.metric)
+
+    @property
+    def extra_state_attributes(self):
+        return _calculation_attributes(self.metric)
 
 class PumpPowerSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "W"

@@ -191,3 +191,19 @@ than silently attached to invented rooms.
 The next slice can connect these room slab nodes to room-air nodes and define
 the dynamic-state interface, still withholding simulation until physical
 parameters are available.
+
+
+### Room-air nodes and slab coupling (second implementation slice)
+
+The topology inventory now includes one room-air node alongside each room's
+effective UFH slab node. Room-air temperature is copied only from the
+configured room temperature observation. When a positive room volume is
+configured, an air-only sensible capacity is calculated using the documented
+air density and specific heat; it is explicitly not the effective room
+capacity, which also includes furnishings and building mass.
+
+Each room has a directed topology edge from its slab node to its air node.
+The edge conductance remains null and the edge is not passed to the RC solver.
+This records the intended physical relationship without inventing a
+room-to-slab heat-transfer coefficient. The slab temperature and capacity
+remain unknown, and missing room temperatures or volumes remain missing.

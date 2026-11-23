@@ -203,8 +203,9 @@ class HeatingIntelligenceCard extends HTMLElement {
     // Historical Sankeys carry recorded kWh allocations, not live flow state.
     // Do not apply the live-circuit gate to those period totals.
     const historical = unit === "kWh";
+    const modulationPower = model.includes("modulation");
     const circuits=Object.entries(hydraulics?.circuits||{}).filter(([,c])=>
-      historical
+      historical || modulationPower
         ? Number(c.estimated_thermal_power_w) > 0
         : c.flow_active && Number(c.active_configured_flow_l_min)>0
     );
@@ -222,7 +223,7 @@ class HeatingIntelligenceCard extends HTMLElement {
       if(!allocations[floor])continue;
       const served=(c.served_rooms||[]).filter(id=>roomMap[id]);
       if(!served.length)continue;
-      const circuitValue = historical
+      const circuitValue = historical || modulationPower
         ? Number(c.estimated_thermal_power_w) || 0
         : Number(c.active_configured_flow_l_min) || 0;
       const share=circuitValue/served.length;
@@ -231,7 +232,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     const floorNodes=floors.map(f=>{
       const roomsForFloor=Object.entries(allocations[f.id]).map(([id,power])=>({id,name:roomMap[id]?.name||id,power,floor:f.id}));
       const power=circuits.filter(([,c])=>c.demand_floor===f.id).reduce((n,[,c])=>
-        n+(historical ? Number(c.estimated_thermal_power_w)||0 : Number(c.active_configured_flow_l_min)||0),0);
+        n+((historical || modulationPower) ? Number(c.estimated_thermal_power_w)||0 : Number(c.active_configured_flow_l_min)||0),0);
       return {...f,name:f.label,rooms:roomsForFloor,power};
     }).filter(f=>f.power>0&&f.rooms.length>0);
     if(!floorNodes.length)return '<div class="chart-empty">No active room allocations are available for the running circuits.</div>';
@@ -257,7 +258,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     const columns='<text x="8" y="18" class="heat-flow-column">HEAT SOURCE</text><text x="122" y="18" text-anchor="middle" class="heat-flow-column">MANIFOLDS</text><text x="245" y="18" class="heat-flow-column">ROOMS</text>';
     const roomSvg=roomNodes.map(r=>node(r,"room")).join("");
     const scale=unit==="W"?1000:1;
-    return `<div class="heat-flow-summary"><div><span>${unit==="kWh"?({gas_daily:"Daily gas-reconciled room energy",gas_weekly:"Weekly gas-reconciled room energy",gas_monthly:"Monthly gas-reconciled room energy",gas_season:"Heating-season gas-reconciled room energy"}[model]||"Gas-reconciled room energy"):model.includes("modulation")?"Modulation-estimated boiler output":"Estimated active UFH output"}</span><strong>${(total/scale).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div><div><span>Downstairs</span><strong>${(allocations.ground_floor?Object.values(allocations.ground_floor).reduce((a,b)=>a+b,0)/scale:0).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div><div><span>Upstairs</span><strong>${(allocations.upstairs?Object.values(allocations.upstairs).reduce((a,b)=>a+b,0)/scale:0).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div></div><div class="heat-flow-scroll"><svg viewBox="0 0 360 ${height+30}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Three-layer Sankey diagram showing estimated heat from the boiler to downstairs and upstairs manifolds, then to served rooms">${columns}${linkSvg}${node(boiler,"boiler")}${floorNodes.map(f=>node(f,"manifold")).join("")}${roomSvg}</svg></div><div class="subtle">${model==="boiler"?"Link widths show gas-meter-reconciled room allocations, averaged over burner-on exposure. This is a period average, not live boiler output.":model.includes("modulation")?"Boiler output is estimated from live modulation (25 kW rated output, 3.2 kW minimum while firing) and distributed across active circuits by configured flow, then among served rooms. It is an estimate, not a heat-meter reading.":"Link widths represent estimated thermal power. Room allocations are derived from manually configured circuit flow and an assumed 9°C water temperature drop, divided equally among each circuit served rooms. The boiler total is the sum of the two manifold allocations; it is not a direct measurement of boiler heat output or room heat delivery."}</div>`;;
+    return `<div class="heat-flow-summary"><div><span>${unit==="kWh"?({gas_daily:"Daily gas-reconciled room energy",gas_weekly:"Weekly gas-reconciled room energy",gas_monthly:"Monthly gas-reconciled room energy",gas_season:"Seasonal gas-reconciled room energy",modulation_daily:"Daily modulation energy",modulation_weekly:"Weekly modulation energy",modulation_monthly:"Monthly modulation energy",modulation_season:"Seasonal modulation energy"}[model]||"Room heating energy"):model.includes("modulation")?"Modulation-estimated boiler output":"Estimated active UFH output"}</span><strong>${(total/scale).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div><div><span>Downstairs</span><strong>${(allocations.ground_floor?Object.values(allocations.ground_floor).reduce((a,b)=>a+b,0)/scale:0).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div><div><span>Upstairs</span><strong>${(allocations.upstairs?Object.values(allocations.upstairs).reduce((a,b)=>a+b,0)/scale:0).toFixed(2)} ${unit==="kWh"?"kWh":"kW"}</strong></div></div><div class="heat-flow-scroll"><svg viewBox="0 0 360 ${height+30}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Three-layer Sankey diagram showing estimated heat from the boiler to downstairs and upstairs manifolds, then to served rooms">${columns}${linkSvg}${node(boiler,"boiler")}${floorNodes.map(f=>node(f,"manifold")).join("")}${roomSvg}</svg></div><div class="subtle">${model==="boiler"?"Link widths show gas-meter-reconciled room allocations, averaged over burner-on exposure. This is a period average, not live boiler output.":model.includes("modulation")?"Boiler output is estimated from live modulation (25 kW rated output, 3.2 kW minimum while firing) and distributed across active circuits by configured flow, then among served rooms. It is an estimate, not a heat-meter reading.":"Link widths represent estimated thermal power. Room allocations are derived from manually configured circuit flow and an assumed 9°C water temperature drop, divided equally among each circuit served rooms. The boiler total is the sum of the two manifold allocations; it is not a direct measurement of boiler heat output or room heat delivery."}</div>`;;
   }
   _systemFlowDiagram(hydraulics, rooms, pumps) {
     const circuits=Object.entries(hydraulics?.circuits||{});
@@ -321,36 +322,48 @@ class HeatingIntelligenceCard extends HTMLElement {
     return this._heatFlowSankey({circuits}, rooms, method + "_daily", "kWh");
   }
 
-  _gasReconciledPeriodSankey(experiment, rooms, period) {
+  _roomEnergyPeriodSankey(experiment, rooms, method, period) {
     const fields = {
-      daily: "boiler_daily_room_energy_kwh",
-      weekly: "boiler_weekly_room_energy_kwh",
-      monthly: "boiler_monthly_room_energy_kwh",
-      season: "boiler_heating_season_room_energy_kwh"
+      modulation: {
+        daily: "boiler_modulation_daily_room_energy_kwh",
+        weekly: "boiler_modulation_weekly_room_energy_kwh",
+        monthly: "boiler_modulation_monthly_room_energy_kwh",
+        season: "boiler_modulation_heating_season_room_energy_kwh"
+      },
+      gas_reconciled: {
+        daily: "boiler_gas_reconciled_daily_room_energy_kwh",
+        weekly: "boiler_gas_reconciled_weekly_room_energy_kwh",
+        monthly: "boiler_gas_reconciled_monthly_room_energy_kwh",
+        season: "boiler_gas_reconciled_heating_season_room_energy_kwh"
+      }
     };
-    const source = experiment?.[fields[period]] || {};
-    let energy = source;
-    // Daily gas allocations are persisted by ISO date; render the latest
-    // completed/current day rather than treating the date key as a room ID.
-    if (period === "daily") {
-      const dates = Object.keys(source)
-        .filter(key => /^\d{4}-\d{2}-\d{2}$/.test(key) && source[key] && typeof source[key] === "object")
-        .sort();
-      energy = dates.length ? source[dates[dates.length - 1]] : source;
-    }
-    // The model already exposes the current season's room totals as a flat
-    // room-ID map, unlike its internal persisted season-keyed history.
+    const field = fields[method]?.[period];
+    const energy = field ? (experiment?.[field] || {}) : {};
     const circuits = {};
     for (const [roomId, value] of Object.entries(energy)) {
       const room = rooms?.[roomId];
       if (!room || !(Number(value) > 0)) continue;
-      circuits["gas_" + period + "_" + roomId] = {
-        flow_active: false, estimated_thermal_power_w: Number(value),
-        demand_floor: room.floor || "unassigned", served_rooms: [roomId]
+      circuits[method + "_" + period + "_" + roomId] = {
+        flow_active: false,
+        estimated_thermal_power_w: Number(value),
+        demand_floor: room.floor || "unassigned",
+        served_rooms: [roomId]
       };
     }
-    if (!Object.keys(circuits).length) return '<div class="chart-empty">No gas-reconciled room heat is available for this period yet.</div>';
-    return this._heatFlowSankey({circuits}, rooms, "gas_" + period, "kWh");
+    if (!Object.keys(circuits).length) {
+      const label = method === "modulation" ? "Modulation" : "Gas-reconciled";
+      return '<div class="chart-empty">No ' + label.toLowerCase() + ' room energy is available for this period yet.</div>';
+    }
+    const model = method === "modulation" ? "modulation_" + period : "gas_" + period;
+    return this._heatFlowSankey({circuits}, rooms, model, "kWh");
+  }
+
+  _modulationPeriodSankey(experiment, rooms, period) {
+    return this._roomEnergyPeriodSankey(experiment, rooms, "modulation", period);
+  }
+
+  _gasReconciledPeriodSankey(experiment, rooms, period) {
+    return this._roomEnergyPeriodSankey(experiment, rooms, "gas_reconciled", period);
   }
 
   _dailyAlgorithmEnergyChart(rows, key, title) {
@@ -815,15 +828,15 @@ class HeatingIntelligenceCard extends HTMLElement {
         </div>
         <div class="section"><div class="section-title">Weekly room-demand heatmap ${this._info("Weekly room-demand heatmap","Each cell represents one hour of the day. Darker green means more minutes with a recorded heating-demand cycle during that hour. It uses stored demand-cycle start/end times; missing history is not interpreted as zero demand.")}</div><div class="section-content"><div class="subtle">Demand minutes by room, day and hour. Select a cell to inspect its time and duration.</div>${this._demandHeatmap(entries)}</div></div>
         <div class="section"><div class="section-title">UFH circuit flow</div><div class="subtle">Live circuit status and configured flow values, grouped by manifold.</div><div class="section-content">${this._ufhCircuitFlow(attrs.ufh_hydraulics)}</div></div>
-        <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recent room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="2" aria-pressed="${(this._demandHours||4)===2}">2 hours</button><button data-hours="4" aria-pressed="${(this._demandHours||4)===4}">4 hours</button><button data-hours="12" aria-pressed="${(this._demandHours||4)===12}">12 hours</button></div><div class="demand-timeline">${this._demandTimeline(entries,this._demandHours||4)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value. Select a cycle to inspect its timing and duration.</div></div><div class="section"><div class="section-title">Instant power · modulation</div><div class="section-content">${this._systemTrendChart(attrs.system_history,this._systemRange||24,[{key:"modulation_calibrated_output_kw",label:"Calibrated modulation output"}],"Instant thermal power · burner modulation","kW")}</div></div>
-        <div class="section"><div class="section-title">Daily energy · modulation</div><div class="section-content">${this._roomEnergyChart(attrs.boiler_energy_experiment?.boiler_modulation_daily_room_energy_kwh,rooms,"Daily energy · modulation","Today")}</div></div>
-        <div class="section"><div class="section-title">Daily energy · gas reconciled</div><div class="section-content">${this._roomEnergyChart(attrs.boiler_energy_experiment?.boiler_gas_reconciled_daily_room_energy_kwh,rooms,"Daily energy · gas reconciled","Today")}</div></div>
-        <div class="section"><div class="section-title">Weekly energy · modulation</div><div class="section-content">${this._roomEnergyChart(attrs.boiler_energy_experiment?.boiler_modulation_weekly_room_energy_kwh,rooms,"Weekly energy · modulation","This week")}</div></div>
-        <div class="section"><div class="section-title">Weekly energy · gas reconciled</div><div class="section-content">${this._roomEnergyChart(attrs.boiler_energy_experiment?.boiler_gas_reconciled_weekly_room_energy_kwh,rooms,"Weekly energy · gas reconciled","This week")}</div></div>
-        <div class="section"><div class="section-title">Monthly energy · modulation</div><div class="section-content">${this._roomEnergyChart(attrs.boiler_energy_experiment?.boiler_modulation_monthly_room_energy_kwh,rooms,"Monthly energy · modulation","This month")}</div></div>
-        <div class="section"><div class="section-title">Monthly energy · gas reconciled</div><div class="section-content">${this._roomEnergyChart(attrs.boiler_energy_experiment?.boiler_gas_reconciled_monthly_room_energy_kwh,rooms,"Monthly energy · gas reconciled","This month")}</div></div>
-        <div class="section"><div class="section-title">Heating-season energy · modulation</div><div class="section-content">${this._roomEnergyChart(attrs.boiler_energy_experiment?.boiler_modulation_heating_season_room_energy_kwh,rooms,"Heating-season energy · modulation",attrs.boiler_energy_experiment?.boiler_heating_season||"1 Sep–1 May")}</div></div>
-        <div class="section"><div class="section-title">Heating-season energy · gas reconciled</div><div class="section-content">${this._roomEnergyChart(attrs.boiler_energy_experiment?.boiler_gas_reconciled_heating_season_room_energy_kwh,rooms,"Heating-season energy · gas reconciled",attrs.boiler_energy_experiment?.boiler_heating_season||"1 Sep–1 May")}</div></div>
+        <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recent room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="2" aria-pressed="${(this._demandHours||4)===2}">2 hours</button><button data-hours="4" aria-pressed="${(this._demandHours||4)===4}">4 hours</button><button data-hours="12" aria-pressed="${(this._demandHours||4)===12}">12 hours</button></div><div class="demand-timeline">${this._demandTimeline(entries,this._demandHours||4)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value. Select a cycle to inspect its timing and duration.</div></div><div class="section"><div class="section-title">Instant power - modulation</div><div class="section-content">${this._modulationHeatFlowSankey(attrs.boiler_energy_experiment,attrs.ufh_hydraulics,rooms)}</div></div>
+        <div class="section"><div class="section-title">Daily energy - modulation</div><div class="section-content">${this._modulationPeriodSankey(attrs.boiler_energy_experiment,rooms,"daily")}</div></div>
+        <div class="section"><div class="section-title">Daily energy - gas reconciled</div><div class="section-content">${this._gasReconciledPeriodSankey(attrs.boiler_energy_experiment,rooms,"daily")}</div></div>
+        <div class="section"><div class="section-title">Weekly energy - modulation</div><div class="section-content">${this._modulationPeriodSankey(attrs.boiler_energy_experiment,rooms,"weekly")}</div></div>
+        <div class="section"><div class="section-title">Weekly energy - gas reconciled</div><div class="section-content">${this._gasReconciledPeriodSankey(attrs.boiler_energy_experiment,rooms,"weekly")}</div></div>
+        <div class="section"><div class="section-title">Monthly energy - modulation</div><div class="section-content">${this._modulationPeriodSankey(attrs.boiler_energy_experiment,rooms,"monthly")}</div></div>
+        <div class="section"><div class="section-title">Monthly energy - gas reconciled</div><div class="section-content">${this._gasReconciledPeriodSankey(attrs.boiler_energy_experiment,rooms,"monthly")}</div></div>
+        <div class="section"><div class="section-title">Seasonal energy - modulation</div><div class="section-content">${this._modulationPeriodSankey(attrs.boiler_energy_experiment,rooms,"season")}</div></div>
+        <div class="section"><div class="section-title">Seasonal energy - gas reconciled</div><div class="section-content">${this._gasReconciledPeriodSankey(attrs.boiler_energy_experiment,rooms,"season")}</div></div>
         <div class="section"><div class="section-title">System trends</div><div class="section-content"><div class="system-ranges"><button data-system-range="24" aria-pressed="${(this._systemRange||24)===24}">24h</button><button data-system-range="168" aria-pressed="${(this._systemRange||24)===168}">7d</button><button data-system-range="720" aria-pressed="${(this._systemRange||24)===720}">30d</button></div>${this._systemTrendChart(attrs.system_history,this._systemRange||24,[{key:"modulation_output_kw",label:"Modulation output"},{key:"boiler_power_w",label:"Boiler electrical"}],"Boiler power and modulation","kW / W")}${this._systemTrendChart(attrs.system_history,this._systemRange||24,[{key:"water_supply_c",label:"Supply"},{key:"water_return_c",label:"Return"},{key:"indoor_average_c",label:"Indoor"},{key:"outdoor_c",label:"Outdoor"}],"Temperature behaviour","°C")}${this._systemTrendChart(attrs.system_history,this._systemRange||24,[{key:"active_flow_l_min",label:"Active configured flow"}],"Hydraulic flow","L/min")}${this._energyChart(attrs.energy_history,this._systemRange||720)}</div></div>
         <div class="section"><div class="section-title">Forecasts</div>
           <div class="subtle">Explainable short-term projections · confidence reflects sample coverage and trend consistency.</div>

@@ -232,3 +232,58 @@ room-level attic-floor paths require explicit
 `attic_floor_room_conductances_w_per_k` entries. If no allocation is present,
 the aggregate path remains pending. These paths remain topology data; missing
 capacities or conductances still prevent RC simulation.
+
+
+## Parameter identification and calibration
+
+Calibration is staged by identifiability; the model must not fit parameters that
+the available sensors cannot distinguish.
+
+1. **Data qualification.** Align room, outdoor and attic temperature histories;
+   exclude long gaps, unavailable states, open-window intervals, known heating
+   periods for free-cooling fits, and periods with unmeasured disturbances.
+2. **Free-cooling response.** Estimate the room's (H/C) ratio (1/hour) from
+   (dT_{room}/dt = -(H/C)(T_{room}-T_{out})). This does not identify absolute
+   heat-loss conductance (H) and thermal capacity (C) separately. Solar and
+   internal gains remain confounders unless measured or excluded.
+3. **Absolute room parameters.** Identify (H) only when an independent
+   capacity or useful thermal-input measurement exists. Identify (C) only
+   when heat input and losses are independently constrained. Burner modulation,
+   gas input, pump electrical power, configured circuit flow and room demand
+   are not room-level useful heat measurements.
+4. **Inter-room conductance.** Fit only when multiple room temperatures have
+   sufficient independent temperature excitation and other heat paths are
+   constrained. Otherwise retain an unidentified edge.
+5. **UFH slab parameters.** Slab capacity and slab-to-room conductance remain
+   unidentified without slab/surface temperature or independently measured
+   heat delivery with sufficiently informative transients. Do not backfill
+   them from screed thickness alone.
+6. **Attic paths.** Roof U-value × roof area can provide a configured aggregate
+   conductance when both inputs are explicitly supplied. Attic-floor coupling
+   needs room-level allocation; attic temperature alone cannot identify each
+   upstairs room's conductance.
+
+Each fitted parameter must retain its source, fitting window, sample count,
+confidence/quality diagnostics, and whether it is measured, configured, or
+estimated. Candidate estimates are not promoted to active solver parameters
+until they pass holdout validation.
+
+## Historical simulation and validation
+
+The offline replay primitive uses Recorder-shaped samples, zero-order-held
+outdoor/gain inputs, bounded time steps and explicit gap rejection. It never
+resets the simulated temperature to the observed temperature after the initial
+condition. Predictions are compared with the observed room series using MAE,
+RMSE, mean bias and maximum absolute error.
+
+Use chronological splits: an earlier calibration window and a later untouched
+validation window. Do not randomly shuffle time-series samples. Report coverage,
+skipped intervals and holdout dates with every score. A score is withheld when
+there are too few validation samples.
+
+The current replay primitive is a **single-room RC baseline**, not yet the
+full multi-zone/UFH network. It requires caller-supplied capacity and
+conductance; the free-cooling estimator returns only H/C. No automatic fitting
+or solver activation occurs. The next extension is multi-node replay with
+identified room, slab and attic states once their parameters are supported by
+independent measurements.

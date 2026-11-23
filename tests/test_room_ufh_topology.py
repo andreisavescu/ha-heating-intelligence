@@ -92,3 +92,60 @@ def test_duplicate_or_missing_circuit_ids_are_reported():
         {"circuit_id": "c1", "reason": "duplicate_circuit_id"},
         {"index": 2, "reason": "missing_circuit_id"},
     ]
+
+
+def test_each_room_gets_air_node_with_observed_temperature_and_air_only_capacity():
+    result = MODEL.build_room_ufh_topology(
+        {
+            "living": {
+                "name": "Living",
+                "floor": "ground_floor",
+                "temperature": 21.5,
+                "temperature_entity": "sensor.living_temperature",
+                "volume_m3": 105.0,
+            },
+            "bedroom": {
+                "floor": "upstairs",
+                "temperature": None,
+                "volume_m3": 42.0,
+            },
+        },
+        [],
+    )
+    living = result["room_air_nodes"]["room:living"]
+    assert living["temperature_c"] == 21.5
+    assert living["temperature_source"] == "configured_sensor"
+    assert living["air_only_capacity_wh_per_k"] == 35.175
+    assert living["effective_room_capacity_wh_per_k"] is None
+    bedroom = result["room_air_nodes"]["room:bedroom"]
+    assert bedroom["temperature_c"] is None
+    assert bedroom["temperature_source"] == "unavailable"
+
+
+def test_room_air_and_slab_nodes_are_connected_by_unidentified_topology_edge():
+    result = MODEL.build_room_ufh_topology(
+        {"living": {"temperature": 21.0}},
+        [{"id": "living_loop", "served_rooms": ["living"]}],
+    )
+    assert set(result["room_air_nodes"]) == {"room:living"}
+    assert set(result["room_slab_nodes"]) == {"slab:living"}
+    assert result["room_slab_couplings"] == [{
+        "from": "slab:living",
+        "to": "room:living",
+        "path": "ufh_slab_to_room_air",
+        "conductance_w_per_k": None,
+        "status": "conductance_not_identified",
+        "note": "Topology edge only; excluded from RC solver until conductance is identified.",
+    }]
+
+
+def test_missing_or_invalid_room_volume_does_not_create_air_capacity():
+    result = MODEL.build_room_ufh_topology(
+        {
+            "missing": {"temperature": 20.0},
+            "invalid": {"temperature": 19.0, "volume_m3": -4},
+        },
+        [],
+    )
+    assert result["room_air_nodes"]["room:missing"]["air_only_capacity_wh_per_k"] is None
+    assert result["room_air_nodes"]["room:invalid"]["air_only_capacity_wh_per_k"] is None

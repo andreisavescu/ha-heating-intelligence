@@ -312,3 +312,42 @@ def test_gas_reconciled_heating_season_totals_survive_daily_ledger_cleanup():
     assert "2026-09-01" not in experiment["daily_room_energy_kwh"]
     assert experiment["heating_season_room_energy_kwh"]["2026-09-01/2027-05-01"]["r"] > 0
     assert result["boiler_heating_season_allocated_heat_kwh"] > 0
+
+
+
+def test_modulation_and_gas_reconciled_heating_season_periods_are_independent():
+    from datetime import datetime, timezone
+
+    history = {}
+    now = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
+    circuits = {
+        "c": {
+            "flow_active": True,
+            "active_configured_flow_l_min": 1.5,
+            "configured_flow_l_min": 1.5,
+            "served_rooms": ["room"],
+        }
+    }
+    rooms = {"room": {"demand": True}}
+
+    first = MODEL.update_boiler_energy_model(
+        history, 10.0, 0.0, True, 40, circuits, rooms, 60, now=now
+    )
+    second = MODEL.update_boiler_energy_model(
+        history, 10.1, 0.0, False, 0, circuits, rooms, 60, now=now
+    )
+
+    # Modulation energy is integrated independently from the gas-meter update.
+    assert abs(first["boiler_modulation_daily_room_energy_kwh"]["room"] - (10 / 60)) < 1e-6
+    assert abs(second["boiler_modulation_heating_season_room_energy_kwh"]["room"] - (10 / 60)) < 1e-6
+    assert abs(second["boiler_modulation_energy_heating_season_kwh"] - (10 / 60)) < 1e-4
+
+    # Gas-reconciled energy comes only from the cumulative heating-gas meter delta.
+    expected_gas_heat = 0.1 * MODEL.DEFAULT_GAS_KWH_PER_M3 * MODEL.DEFAULT_BOILER_EFFICIENCY
+    assert abs(second["boiler_gas_reconciled_daily_room_energy_kwh"]["room"] - expected_gas_heat) < 1e-6
+    assert abs(second["boiler_gas_reconciled_weekly_room_energy_kwh"]["room"] - expected_gas_heat) < 1e-6
+    assert abs(second["boiler_gas_reconciled_monthly_room_energy_kwh"]["room"] - expected_gas_heat) < 1e-6
+    assert abs(second["boiler_gas_reconciled_heating_season_room_energy_kwh"]["room"] - expected_gas_heat) < 1e-6
+    assert abs(second["boiler_gas_reconciled_energy_today_kwh"] - expected_gas_heat) < 1e-4
+    assert abs(second["boiler_gas_reconciled_energy_heating_season_kwh"] - expected_gas_heat) < 1e-4
+    assert second["boiler_modulation_energy_heating_season_kwh"] != second["boiler_gas_reconciled_energy_heating_season_kwh"]

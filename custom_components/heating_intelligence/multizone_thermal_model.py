@@ -322,10 +322,21 @@ def build_multizone_observation_model(
             "status": "temperature_unavailable",
         }
 
-    # Conductive roof and ceiling paths are only exposed when both U-value
-    # and area were explicitly entered in the house assessment.
+    # Conductive attic paths are only exposed from explicitly configured
+    # U-values and areas. The outdoor boundary exists even if its live sensor
+    # is unavailable; a boundary temperature is an observation, not topology.
     connections = []
     pending_paths = []
+    attic_floor_paths = []
+    roof_u = _finite_or_none(profile.get("roof_u_value"))
+    roof_area = _finite_or_none(profile.get("roof_area_m2"))
+    if "attic:air" in nodes and roof_u is not None and roof_u > 0 and roof_area is not None and roof_area > 0 and "boundary:outdoors" not in nodes:
+        nodes["boundary:outdoors"] = {
+            "kind": "fixed_boundary", "name": "Outdoors",
+            "temperature_c": outdoor_c,
+            "temperature_entity": outdoor_record.get("entity_id") if isinstance(outdoor_record, dict) else None,
+            "status": "observed" if outdoor_c is not None else "temperature_unavailable",
+        }
     for node_id, u_key, area_key, label in (
         ("attic:air", "roof_u_value", "roof_area_m2", "roof"),
         ("attic:air", "attic_floor_u_value", "attic_floor_area_m2", "attic_floor"),
@@ -348,12 +359,38 @@ def build_multizone_observation_model(
                     "status": "configured",
                 })
             else:
-                pending_paths.append({
-                    "path": label,
-                    "conductance_w_per_k": round(u_value * area, 4),
-                    "source": "configured_u_value_times_area",
-                    "status": "awaiting_upstairs_zone_coupling",
-                })
+                # The total ceiling conductance is known, but its allocation
+                # across rooms is not. Accept only explicit room-level shares.
+                configured_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
+                valid_shares = []
+                for room_id, room_conductance in configured_shares.items():
+                    numeric = _finite_or_none(room_conductance)
+                    if room_id in rooms and rooms[room_id].get("floor") == "upstairs" and numeric is not None and numeric > 0:
+                        valid_shares.append((room_id, numeric))
+                if valid_shares:
+                    for room_id, room_conductance in valid_shares:
+                        attic_floor_paths.append({
+                            "from": "attic:air",
+                            "to": "room:" + room_id,
+                            "path": "attic_floor",
+                            "conductance_w_per_k": round(room_conductance, 4),
+                            "source": "explicit_room_level_attic_floor_conductance",
+                            "status": "configured",
+                        })
+                    if abs(sum(value for _, value in valid_shares) - u_value * area) > max(0.1, u_value * area * 0.05):
+                        pending_paths.append({
+                            "path": "attic_floor",
+                            "conductance_w_per_k": round(u_value * area, 4),
+                            "status": "configured_room_shares_do_not_match_total",
+                            "configured_room_conductance_w_per_k": round(sum(value for _, value in valid_shares), 4),
+                        })
+                else:
+                    pending_paths.append({
+                        "path": label,
+                        "conductance_w_per_k": round(u_value * area, 4),
+                        "source": "configured_u_value_times_area",
+                        "status": "awaiting_upstairs_room_conductance_allocation",
+                    })
 
     # Only explicit conductances create room-to-room or room-to-outdoor links.
     inter_room_paths = []
@@ -563,9 +600,10 @@ def build_multizone_observation_model(
         "simulation_status": simulation_readiness["status"],
         "simulation_readiness": simulation_readiness,
         "nodes": nodes,
-        "configured_connections": connections + inter_room_paths + room_envelope_paths,
+        "configured_connections": connections + attic_floor_paths + inter_room_paths + room_envelope_paths,
         "inter_room_paths": inter_room_paths,
         "room_envelope_paths": room_envelope_paths,
+        "attic_floor_paths": attic_floor_paths,
         "unresolved_room_paths": unresolved_room_paths,
         "room_ufh_topology": room_ufh_topology,
         "ventilation_paths": ventilation_paths,

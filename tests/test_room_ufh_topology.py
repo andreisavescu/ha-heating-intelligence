@@ -149,3 +149,74 @@ def test_missing_or_invalid_room_volume_does_not_create_air_capacity():
     )
     assert result["room_air_nodes"]["room:missing"]["air_only_capacity_wh_per_k"] is None
     assert result["room_air_nodes"]["room:invalid"]["air_only_capacity_wh_per_k"] is None
+
+
+
+def test_multi_zone_inventory_receives_configured_ufh_circuits():
+    result = MODEL.build_multizone_observation_model(
+        {"living": {"name": "Living", "floor": "ground_floor", "temperature": 21.0}},
+        circuits=[{
+            "id": "circuit_01",
+            "name": "Living loop",
+            "floor": "ground_floor",
+            "pump_id": "ground_floor",
+            "pipe_length_m": 82.0,
+            "served_rooms": ["living"],
+            "demand_rooms": [],
+        }],
+    )
+    topology = result["room_ufh_topology"]
+    assert topology["room_slab_nodes"]["slab:living"]["circuit_ids"] == ["circuit_01"]
+    assert topology["circuits"]["circuit_01"]["pipe_length_m"] == 82.0
+    assert topology["circuits"]["circuit_01"]["thermal_output_w"] is None
+
+
+def test_explicit_inter_room_and_room_envelope_paths_are_exposed():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "living": {"temperature": 21.0, "envelope_conductance_w_per_k": 12.5},
+            "hall": {"temperature": 20.0},
+        },
+        profile={"room_connections": [{
+            "from_room": "living", "to_room": "hall", "conductance_w_per_k": 8.0,
+        }]},
+    )
+    assert result["inter_room_paths"][0]["conductance_w_per_k"] == 8.0
+    assert result["room_envelope_paths"][0]["conductance_w_per_k"] == 12.5
+    assert "boundary:outdoors" in result["nodes"]
+
+
+def test_invalid_inter_room_links_are_reported_not_used():
+    result = MODEL.build_multizone_observation_model(
+        {"living": {"temperature": 21.0}},
+        profile={"room_connections": [{
+            "from_room": "living", "to_room": "missing", "conductance_w_per_k": 5.0,
+        }]},
+    )
+    assert result["inter_room_paths"] == []
+    assert result["unresolved_room_paths"] == [{"index": 0, "reason": "invalid_room_reference"}]
+
+
+def test_attic_roof_path_creates_outdoor_boundary_without_live_weather_sensor():
+    result = MODEL.build_multizone_observation_model(
+        {"bedroom": {"floor": "upstairs", "temperature": 20.0}},
+        attic={"attic_temperature": 8.0, "temperature_entity": "sensor.attic_temperature"},
+        profile={"roof_u_value": 0.25, "roof_area_m2": 74.0},
+    )
+    roof = [item for item in result["configured_connections"] if item["path"] == "roof"]
+    assert roof[0]["conductance_w_per_k"] == 18.5
+    assert result["nodes"]["boundary:outdoors"]["temperature_c"] is None
+
+
+def test_attic_floor_path_requires_explicit_room_conductance_allocation():
+    result = MODEL.build_multizone_observation_model(
+        {"bedroom": {"floor": "upstairs", "temperature": 20.0}},
+        attic={"attic_temperature": 8.0},
+        profile={
+            "attic_floor_u_value": 0.3,
+            "attic_floor_area_m2": 74.0,
+            "attic_floor_room_conductances_w_per_k": {"bedroom": 22.2},
+        },
+    )
+    assert result["attic_floor_paths"][0]["to"] == "room:bedroom"
+    assert result["attic_floor_paths"][0]["conductance_w_per_k"] == 22.2

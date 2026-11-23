@@ -256,3 +256,228 @@ def build_experiment_summary(
     if climate_entity:
         result["ac_mode_intervals"] = climate_mode_intervals(rows, climate_entity)
     return result
+
+
+def identify_free_cooling_h_over_c(
+    rows: list[dict[str, Any]],
+    room_temperature_entity: str,
+    outdoor_temperature_entity: str,
+    *,
+    heating_entity: str | None = None,
+    max_gap_seconds: float = 900.0,
+    min_temperature_difference_c: float = 2.0,
+    min_intervals: int = 30,
+) -> dict[str, Any]:
+    """Estimate the free-cooling H/C ratio from dT/dt = -k(Troom-Tout).
+
+    This identifies only the ratio H/C (1/hour), not H or C separately.
+    Intervals with heating active, inadequate temperature difference, or
+    large/missing samples are excluded. Solar and internal gains remain
+    potential confounders and are disclosed in the result.
+    """
+    room = dict(numeric_series(rows, room_temperature_entity))
+    outdoor = dict(numeric_series(rows, outdoor_temperature_entity))
+    heating_events = []
+    if heating_entity:
+        for row in rows:
+            if row.get("entity_id") != heating_entity:
+                continue
+            stamp = _timestamp(row.get("last_changed"))
+            if stamp is not None:
+                state = str(row.get("state", "")).lower()
+                heating_events.append((stamp, state not in ("off", "false", "0", "idle", "unavailable", "unknown")))
+        heating_events.sort()
+
+    def heating_active(stamp):
+        state = False
+        for event_time, active in heating_events:
+            if event_time > stamp:
+                break
+            state = active
+        return state
+
+    common = sorted(set(room) & set(outdoor))
+    xs, ys = [], []
+    excluded = {"gap": 0, "small_temperature_difference": 0, "heating_active": 0}
+    for first, second in zip(common, common[1:]):
+        seconds = (second - first).total_seconds()
+        if seconds <= 0 or seconds > max_gap_seconds:
+            excluded["gap"] += 1
+            continue
+        if heating_entity and heating_active(first):
+            excluded["heating_active"] += 1
+            continue
+        delta0 = room[first] - outdoor[first]
+        delta1 = room[second] - outdoor[second]
+        if min(delta0, delta1) < min_temperature_difference_c:
+            excluded["small_temperature_difference"] += 1
+            continue
+        hours = seconds / 3600.0
+        midpoint_delta = (delta0 + delta1) / 2.0
+        rate = (room[second] - room[first]) / hours
+        xs.append(midpoint_delta)
+        ys.append(rate)
+
+    if len(xs) < min_intervals:
+        return {
+            "status": "insufficient_free_cooling_data",
+            "identified_parameter": "H_over_C_per_hour",
+            "estimate": None,
+            "valid_interval_count": len(xs),
+            "minimum_required_intervals": min_intervals,
+            "excluded_intervals": excluded,
+        }
+    denominator = sum(value * value for value in xs)
+    if denominator <= 0:
+        return {"status": "unidentifiable_temperature_excitation", "estimate": None}
+    slope = sum(x * y for x, y in zip(xs, ys)) / denominator
+    ratio = -slope
+    residuals = [y - slope * x for x, y in zip(xs, ys)]
+    mean_y = sum(ys) / len(ys)
+    total = sum((value - mean_y) ** 2 for value in ys)
+    residual_sum = sum(value * value for value in residuals)
+    r_squared = 1.0 - residual_sum / total if total > 0 else None
+    if ratio <= 0 or not math.isfinite(ratio):
+        return {
+            "status": "non_physical_or_confounded_fit",
+            "identified_parameter": "H_over_C_per_hour",
+            "estimate": None,
+            "valid_interval_count": len(xs),
+            "excluded_intervals": excluded,
+        }
+    return {
+        "status": "candidate_estimate",
+        "identified_parameter": "H_over_C_per_hour",
+        "estimate": round(ratio, 6),
+        "unit": "1/hour",
+        "valid_interval_count": len(xs),
+        "r_squared": round(r_squared, 4) if r_squared is not None else None,
+        "excluded_intervals": excluded,
+        "method": "through_origin_least_squares_free_cooling",
+        "limitations": [
+            "Identifies H/C only; absolute heat-loss coefficient and thermal capacity remain inseparable.",
+            "Solar and internal gains can bias the estimate unless measured or excluded.",
+            "Room temperature is not slab temperature or delivered heat.",
+            "A candidate estimate requires independent validation before use.",
+        ],
+    }
+
+
+def simulate_historical_room(
+    rows: list[dict[str, Any]],
+    *,
+    room_temperature_entity: str,
+    outdoor_temperature_entity: str,
+    initial_temperature_c: float,
+    capacity_wh_per_k: float,
+    conductance_w_per_k: float,
+    gain_entity: str | None = None,
+    max_gap_seconds: float = 900.0,
+    max_step_seconds: float = 300.0,
+) -> dict[str, Any]:
+    """Replay a single-room RC model against historical boundary/gain samples.
+
+    Uses zero-order-held inputs and explicit substeps. Observed room
+    temperatures are used only for scoring, never to reset the simulated
+    state after the initial timestamp.
+    """
+    if capacity_wh_per_k <= 0 or conductance_w_per_k <= 0:
+        return {"status": "invalid_parameters", "predictions": []}
+    room_points = numeric_series(rows, room_temperature_entity)
+    outdoor = dict(numeric_series(rows, outdoor_temperature_entity))
+    gains = dict(numeric_series(rows, gain_entity)) if gain_entity else {}
+    if len(room_points) < 2 or not outdoor:
+        return {"status": "insufficient_history", "predictions": []}
+    start, end = room_points[0][0], room_points[-1][0]
+    input_times = sorted(set(outdoor) | set(gains))
+    if not input_times:
+        return {"status": "insufficient_boundary_samples", "predictions": []}
+
+    def held(series, stamp, default=None):
+        prior = [time for time in series if time <= stamp]
+        if not prior:
+            return default
+        return series[max(prior)]
+
+    simulated = float(initial_temperature_c)
+    predictions = []
+    skipped = 0
+    for observed_at, observed in room_points:
+        if observed_at < start or observed_at > end:
+            continue
+        outside = held(outdoor, observed_at)
+        if outside is None:
+            skipped += 1
+            continue
+        if predictions:
+            previous = predictions[-1]["timestamp"]
+            seconds = (observed_at - _timestamp(previous)).total_seconds()
+            if seconds <= 0 or seconds > max_gap_seconds:
+                skipped += 1
+                continue
+            steps = max(1, math.ceil(seconds / max_step_seconds))
+            dt_hours = seconds / steps / 3600.0
+            for step in range(steps):
+                step_time = _timestamp(previous).timestamp() + (step + 0.5) * seconds / steps
+                from datetime import datetime
+                stamp = datetime.fromtimestamp(step_time, tz=timezone.utc)
+                outside_step = held(outdoor, stamp, outside)
+                gain_step = held(gains, stamp, 0.0) or 0.0
+                rate_w = conductance_w_per_k * (outside_step - simulated) + gain_step
+                simulated += rate_w * dt_hours / capacity_wh_per_k
+        predictions.append({
+            "timestamp": observed_at.isoformat(),
+            "observed_temperature_c": round(observed, 4),
+            "predicted_temperature_c": round(simulated, 4),
+            "outdoor_temperature_c": round(outside, 4),
+        })
+    if len(predictions) < 2:
+        return {"status": "insufficient_replay_coverage", "predictions": predictions, "skipped_intervals": skipped}
+    return {
+        "status": "available",
+        "model": "single_room_lumped_rc",
+        "predictions": predictions,
+        "prediction_count": len(predictions),
+        "skipped_intervals": skipped,
+        "parameter_source": "caller_supplied_not_fitted_on_this_replay",
+    }
+
+
+def validate_historical_simulation(
+    simulation: dict[str, Any],
+    *,
+    validation_start: str | None = None,
+    validation_end: str | None = None,
+) -> dict[str, Any]:
+    """Score a historical replay over an explicitly selected holdout period."""
+    if simulation.get("status") != "available":
+        return {"status": "insufficient_simulation", "metrics": None}
+    start_at = _timestamp(validation_start) if validation_start else None
+    end_at = _timestamp(validation_end) if validation_end else None
+    errors = []
+    for item in simulation.get("predictions", []):
+        stamp = _timestamp(item.get("timestamp"))
+        if stamp is None or (start_at and stamp < start_at) or (end_at and stamp > end_at):
+            continue
+        observed = _number(item.get("observed_temperature_c"))
+        predicted = _number(item.get("predicted_temperature_c"))
+        if observed is not None and predicted is not None:
+            errors.append(predicted - observed)
+    if len(errors) < 2:
+        return {"status": "insufficient_validation_samples", "sample_count": len(errors), "metrics": None}
+    mae = sum(abs(error) for error in errors) / len(errors)
+    rmse = math.sqrt(sum(error * error for error in errors) / len(errors))
+    bias = sum(errors) / len(errors)
+    return {
+        "status": "scored",
+        "sample_count": len(errors),
+        "metrics": {
+            "mae_c": round(mae, 4),
+            "rmse_c": round(rmse, 4),
+            "bias_c": round(bias, 4),
+            "max_absolute_error_c": round(max(abs(error) for error in errors), 4),
+        },
+        "error_definition": "predicted_minus_observed",
+        "holdout_period": {"start": validation_start, "end": validation_end},
+        "calibration_data_reused": False,
+    }

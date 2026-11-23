@@ -170,6 +170,7 @@ def build_multizone_observation_model(
     attic: dict[str, Any] | None = None,
     profile: dict[str, Any] | None = None,
     plant: dict[str, Any] | None = None,
+    circuits: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Map configured HA observations into a transparent, parameter-aware zone inventory.
 
@@ -182,6 +183,7 @@ def build_multizone_observation_model(
     attic = attic or {}
     profile = profile or {}
     plant = plant or {}
+    circuits = circuits or []
 
     def value(record):
         if isinstance(record, dict):
@@ -236,6 +238,10 @@ def build_multizone_observation_model(
             "temperature_entity": outdoor_record.get("entity_id") if isinstance(outdoor_record, dict) else None,
             "status": "observed" if outdoor_c is not None else "temperature_unavailable",
         }
+
+    # Room-level UFH topology is a parallel inventory; it does not replace
+    # legacy floor nodes or feed the solver until physical parameters exist.
+    room_ufh_topology = build_room_ufh_topology(rooms, circuits)
 
     # Floor-level observations remain separate from room air. A screed node
     # is pending until its temperature/capacity can be identified.
@@ -316,15 +322,28 @@ def build_multizone_observation_model(
             "status": "temperature_unavailable",
         }
 
-    # Conductive roof and ceiling paths are only exposed when both U-value
-    # and area were explicitly entered in the house assessment.
+    # Conductive attic paths are only exposed from explicitly configured
+    # U-values and areas. The outdoor boundary exists even if its live sensor
+    # is unavailable; a boundary temperature is an observation, not topology.
     connections = []
     pending_paths = []
+    attic_floor_paths = []
+    roof_u = _finite_or_none(profile.get("roof_u_value"))
+    roof_area = _finite_or_none(profile.get("roof_area_m2"))
+    if "attic:air" in nodes and roof_u is not None and roof_u > 0 and roof_area is not None and roof_area > 0 and "boundary:outdoors" not in nodes:
+        nodes["boundary:outdoors"] = {
+            "kind": "fixed_boundary", "name": "Outdoors",
+            "temperature_c": outdoor_c,
+            "temperature_entity": outdoor_record.get("entity_id") if isinstance(outdoor_record, dict) else None,
+            "status": "observed" if outdoor_c is not None else "temperature_unavailable",
+        }
     for node_id, u_key, area_key, label in (
         ("attic:air", "roof_u_value", "roof_area_m2", "roof"),
         ("attic:air", "attic_floor_u_value", "attic_floor_area_m2", "attic_floor"),
     ):
-        if node_id not in nodes or "boundary:outdoors" not in nodes:
+        if node_id not in nodes:
+            continue
+        if label == "roof" and "boundary:outdoors" not in nodes:
             continue
         try:
             u_value = float(profile.get(u_key))
@@ -342,12 +361,78 @@ def build_multizone_observation_model(
                     "status": "configured",
                 })
             else:
-                pending_paths.append({
-                    "path": label,
-                    "conductance_w_per_k": round(u_value * area, 4),
-                    "source": "configured_u_value_times_area",
-                    "status": "awaiting_upstairs_zone_coupling",
-                })
+                # The total ceiling conductance is known, but its allocation
+                # across rooms is not. Accept only explicit room-level shares.
+                configured_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
+                valid_shares = []
+                for room_id, room_conductance in configured_shares.items():
+                    numeric = _finite_or_none(room_conductance)
+                    if room_id in rooms and rooms[room_id].get("floor") == "upstairs" and numeric is not None and numeric > 0:
+                        valid_shares.append((room_id, numeric))
+                if valid_shares:
+                    for room_id, room_conductance in valid_shares:
+                        attic_floor_paths.append({
+                            "from": "attic:air",
+                            "to": "room:" + room_id,
+                            "path": "attic_floor",
+                            "conductance_w_per_k": round(room_conductance, 4),
+                            "source": "explicit_room_level_attic_floor_conductance",
+                            "status": "configured",
+                        })
+                    if abs(sum(value for _, value in valid_shares) - u_value * area) > max(0.1, u_value * area * 0.05):
+                        pending_paths.append({
+                            "path": "attic_floor",
+                            "conductance_w_per_k": round(u_value * area, 4),
+                            "status": "configured_room_shares_do_not_match_total",
+                            "configured_room_conductance_w_per_k": round(sum(value for _, value in valid_shares), 4),
+                        })
+                else:
+                    pending_paths.append({
+                        "path": label,
+                        "conductance_w_per_k": round(u_value * area, 4),
+                        "source": "configured_u_value_times_area",
+                        "status": "awaiting_upstairs_zone_coupling",
+                        "detail": "Room-level allocation requires explicit attic_floor_room_conductances_w_per_k entries.",
+                    })
+
+    # Only explicit conductances create room-to-room or room-to-outdoor links.
+    inter_room_paths = []
+    unresolved_room_paths = []
+    for index, item in enumerate(profile.get("room_connections", []) or []):
+        if not isinstance(item, dict):
+            unresolved_room_paths.append({"index": index, "reason": "invalid_connection_record"})
+            continue
+        source_room = str(item.get("from_room") or "")
+        target_room = str(item.get("to_room") or "")
+        conductance = _finite_or_none(item.get("conductance_w_per_k"))
+        if source_room not in rooms or target_room not in rooms or source_room == target_room:
+            unresolved_room_paths.append({"index": index, "reason": "invalid_room_reference"})
+            continue
+        if conductance is None or conductance <= 0:
+            unresolved_room_paths.append({"index": index, "reason": "conductance_not_configured"})
+            continue
+        inter_room_paths.append({
+            "from": "room:" + source_room, "to": "room:" + target_room,
+            "path": "inter_room", "conductance_w_per_k": round(conductance, 4),
+            "source": "explicit_house_assessment", "status": "configured",
+        })
+
+    room_envelope_paths = []
+    for room_id, room in rooms.items():
+        conductance = _finite_or_none(room.get("envelope_conductance_w_per_k"))
+        if conductance is not None and conductance > 0:
+            room_envelope_paths.append({
+                "from": "room:" + room_id, "to": "boundary:outdoors",
+                "path": "room_envelope", "conductance_w_per_k": round(conductance, 4),
+                "source": "explicit_room_configuration", "status": "configured",
+            })
+    if room_envelope_paths and "boundary:outdoors" not in nodes:
+        nodes["boundary:outdoors"] = {
+            "kind": "fixed_boundary", "name": "Outdoors",
+            "temperature_c": outdoor_c,
+            "temperature_entity": outdoor_record.get("entity_id") if isinstance(outdoor_record, dict) else None,
+            "status": "observed" if outdoor_c is not None else "temperature_unavailable",
+        }
 
     solar_record = weather.get("solar_radiation")
     solar_w_m2 = value(solar_record)
@@ -518,7 +603,12 @@ def build_multizone_observation_model(
         "simulation_status": simulation_readiness["status"],
         "simulation_readiness": simulation_readiness,
         "nodes": nodes,
-        "configured_connections": connections,
+        "configured_connections": connections + attic_floor_paths + inter_room_paths + room_envelope_paths,
+        "inter_room_paths": inter_room_paths,
+        "room_envelope_paths": room_envelope_paths,
+        "attic_floor_paths": attic_floor_paths,
+        "unresolved_room_paths": unresolved_room_paths,
+        "room_ufh_topology": room_ufh_topology,
         "ventilation_paths": ventilation_paths,
         "house_heat_loss_decomposition": envelope_decomposition,
         "aggregate_capacity_budget": capacity_budget,
@@ -608,3 +698,149 @@ def _finite_or_none(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def build_room_ufh_topology(
+    rooms: dict[str, dict[str, Any]],
+    circuits: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build room-level latent UFH slab nodes while preserving circuit topology.
+
+    Each configured room receives one effective slab node. Hydraulic circuits
+    remain individual records and may contribute to more than one room. A room
+    may receive heat from multiple circuits. This is topology only: no slab
+    temperature, capacity, flow-derived heat or thermal conductance is inferred.
+    """
+    room_nodes: dict[str, dict[str, Any]] = {}
+    room_air_nodes: dict[str, dict[str, Any]] = {}
+    room_slab_couplings: list[dict[str, Any]] = []
+    for room_id, room in rooms.items():
+        volume = _finite_or_none(room.get("volume_m3"))
+        air_capacity = (
+            1.2 * 1005.0 / 3600.0 * volume
+            if volume is not None and volume > 0 else None
+        )
+        room_air_nodes[f"room:{room_id}"] = {
+            "kind": "room_air",
+            "room_id": room_id,
+            "room_name": room.get("name", room_id),
+            "floor": room.get("floor", "unassigned"),
+            "temperature_c": _finite_or_none(room.get("temperature")),
+            "temperature_entity": room.get("temperature_entity"),
+            "temperature_source": (
+                "configured_sensor" if _finite_or_none(room.get("temperature")) is not None
+                else "unavailable"
+            ),
+            "volume_m3": volume,
+            "air_only_capacity_wh_per_k": round(air_capacity, 4) if air_capacity is not None else None,
+            "effective_room_capacity_wh_per_k": None,
+            "effective_capacity_status": "not_identified",
+            "status": "observed" if _finite_or_none(room.get("temperature")) is not None else "temperature_unavailable",
+        }
+        room_nodes[f"slab:{room_id}"] = {
+            "kind": "room_ufh_slab",
+            "room_id": room_id,
+            "room_name": room.get("name", room_id),
+            "floor": room.get("floor", "unassigned"),
+            "temperature_c": None,
+            "temperature_source": "latent_unobserved_state",
+            "capacity_wh_per_k": None,
+            "room_slab_conductance_w_per_k": None,
+            "circuit_ids": [],
+            "status": "topology_only_parameters_unidentified",
+        }
+
+    circuit_records: dict[str, dict[str, Any]] = {}
+    unresolved: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, circuit in enumerate(circuits):
+        circuit_id = str(circuit.get("id") or "").strip()
+        if not circuit_id:
+            unresolved.append({"index": index, "reason": "missing_circuit_id"})
+            continue
+        if circuit_id in seen:
+            unresolved.append({"circuit_id": circuit_id, "reason": "duplicate_circuit_id"})
+            continue
+        seen.add(circuit_id)
+
+        # served_rooms is the explicit thermal destination. Preserve the
+        # existing legacy fallback order without treating demand_scope itself
+        # as a physical heat-delivery measurement.
+        served = circuit.get("served_rooms")
+        if served is None:
+            served = []
+        if not served and circuit.get("room_id"):
+            served = [circuit["room_id"]]
+        if not served:
+            served = circuit.get("demand_rooms") or []
+
+        room_ids = list(dict.fromkeys(
+            str(room_id) for room_id in served if room_id is not None
+        ))
+        valid_room_ids = [room_id for room_id in room_ids if room_id in rooms]
+        unknown_room_ids = [room_id for room_id in room_ids if room_id not in rooms]
+        if unknown_room_ids:
+            unresolved.append({
+                "circuit_id": circuit_id,
+                "reason": "served_room_not_configured",
+                "room_ids": unknown_room_ids,
+            })
+
+        record = {
+            "circuit_id": circuit_id,
+            "name": circuit.get("name", circuit_id),
+            "floor": circuit.get("floor", "unassigned"),
+            "pump_id": circuit.get("pump_id"),
+            "pipe_length_m": _finite_or_none(circuit.get("pipe_length_m")),
+            "served_room_ids": valid_room_ids,
+            "unresolved_room_ids": unknown_room_ids,
+            "source": (
+                "explicit_served_rooms" if circuit.get("served_rooms")
+                else "legacy_room_id" if circuit.get("room_id")
+                else "legacy_demand_rooms" if circuit.get("demand_rooms")
+                else "no_room_assignment"
+            ),
+            "thermal_output_w": None,
+            "status": "mapped_to_room_slabs" if valid_room_ids else "no_valid_served_rooms",
+        }
+        circuit_records[circuit_id] = record
+        for room_id in valid_room_ids:
+            room_nodes[f"slab:{room_id}"]["circuit_ids"].append(circuit_id)
+
+    for node in room_nodes.values():
+        node["circuit_count"] = len(node["circuit_ids"])
+        if not node["circuit_ids"]:
+            node["status"] = "no_configured_ufh_circuit"
+
+    for room_id in rooms:
+        room_slab_couplings.append({
+            "from": f"slab:{room_id}",
+            "to": f"room:{room_id}",
+            "path": "ufh_slab_to_room_air",
+            "conductance_w_per_k": None,
+            "status": "conductance_not_identified",
+            "note": "Topology edge only; excluded from RC solver until conductance is identified.",
+        })
+
+    return {
+        "representation": "one_room_air_and_one_effective_ufh_slab_node_per_room",
+        "room_air_nodes": room_air_nodes,
+        "room_slab_nodes": room_nodes,
+        "room_slab_couplings": room_slab_couplings,
+        "circuits": circuit_records,
+        "coverage": {
+            "configured_rooms": len(rooms),
+            "rooms_with_circuits": sum(bool(node["circuit_ids"]) for node in room_nodes.values()),
+            "configured_circuits": len(circuits),
+            "mapped_circuits": sum(bool(item["served_room_ids"]) for item in circuit_records.values()),
+            "unresolved_assignments": len(unresolved),
+        },
+        "unresolved_assignments": unresolved,
+        "parameter_status": {
+            "slab_temperature": "not_measured_or_estimated",
+            "slab_capacity": "not_identified",
+            "room_slab_conductance": "not_identified",
+            "circuit_heat_output": "not_measured",
+            "configured_flow": "not_used_as_thermal_power",
+        },
+    }

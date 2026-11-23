@@ -90,8 +90,96 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["house_assessment", "add_room", "edit_rooms", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
+            menu_options=["house_assessment", "thermal_topology", "add_room", "edit_rooms", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
         )
+
+    async def async_step_thermal_topology(self, user_input=None):
+        """Configure explicit room and attic thermal conductances."""
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        if not rooms:
+            return self.async_abort(reason="no_rooms")
+        room_options = {item["id"]: item[CONF_NAME] for item in rooms}
+        if user_input is not None:
+            data = dict(self.config_entry.options)
+            updated_rooms = [dict(item) for item in rooms]
+            envelope_room = user_input.get("envelope_room")
+            envelope_value = user_input.get("room_envelope_conductance")
+            if envelope_room and envelope_value is not None:
+                value = float(envelope_value)
+                if value <= 0:
+                    return self.async_show_form(
+                        step_id="thermal_topology",
+                        data_schema=self._thermal_topology_schema(room_options, data),
+                        errors={"room_envelope_conductance": "must_be_positive"},
+                    )
+                for room in updated_rooms:
+                    if room["id"] == envelope_room:
+                        room["envelope_conductance_w_per_k"] = value
+            data[CONF_ROOMS] = updated_rooms
+
+            source = user_input.get("from_room")
+            target = user_input.get("to_room")
+            link_value = user_input.get("inter_room_conductance")
+            if source and target and link_value is not None:
+                value = float(link_value)
+                if source == target or value <= 0:
+                    return self.async_show_form(
+                        step_id="thermal_topology",
+                        data_schema=self._thermal_topology_schema(room_options, data),
+                        errors={"inter_room_conductance": "invalid_connection"},
+                    )
+                assessment = dict(data.get(CONF_HOUSE_ASSESSMENT, {}))
+                links = list(assessment.get("room_connections", []))
+                links = [item for item in links if {item.get("from_room"), item.get("to_room")} != {source, target}]
+                links.append({"from_room": source, "to_room": target, "conductance_w_per_k": value})
+                assessment["room_connections"] = links
+                data[CONF_HOUSE_ASSESSMENT] = assessment
+
+            attic_room = user_input.get("attic_floor_room")
+            attic_value = user_input.get("attic_floor_conductance")
+            if attic_room and attic_value is not None:
+                value = float(attic_value)
+                room = next((item for item in updated_rooms if item["id"] == attic_room), None)
+                if room is None or room.get(CONF_FLOOR) != "upstairs" or value <= 0:
+                    return self.async_show_form(
+                        step_id="thermal_topology",
+                        data_schema=self._thermal_topology_schema(room_options, data),
+                        errors={"attic_floor_conductance": "invalid_upstairs_conductance"},
+                    )
+                assessment = dict(data.get(CONF_HOUSE_ASSESSMENT, {}))
+                shares = dict(assessment.get("attic_floor_room_conductances_w_per_k", {}))
+                shares[attic_room] = value
+                assessment["attic_floor_room_conductances_w_per_k"] = shares
+                data[CONF_HOUSE_ASSESSMENT] = assessment
+            return self.async_create_entry(title="", data=data)
+
+        return self.async_show_form(
+            step_id="thermal_topology",
+            data_schema=self._thermal_topology_schema(room_options, self.config_entry.options),
+        )
+
+    @staticmethod
+    def _thermal_topology_schema(room_options, options):
+        """Build optional conductance fields without supplying physical defaults."""
+        assessment = options.get(CONF_HOUSE_ASSESSMENT, {})
+        return vol.Schema({
+            vol.Optional("envelope_room"): vol.In(room_options),
+            vol.Optional("room_envelope_conductance"): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0.01, max=10000, step=0.1, unit_of_measurement="W/K", mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional("from_room"): vol.In(room_options),
+            vol.Optional("to_room"): vol.In(room_options),
+            vol.Optional("inter_room_conductance"): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0.01, max=10000, step=0.1, unit_of_measurement="W/K", mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional("attic_floor_room"): vol.In({
+                item["id"]: item[CONF_NAME] for item in options.get(CONF_ROOMS, [])
+                if item.get(CONF_FLOOR) == "upstairs"
+            }),
+            vol.Optional("attic_floor_conductance"): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0.01, max=10000, step=0.1, unit_of_measurement="W/K", mode=selector.NumberSelectorMode.BOX)
+            ),
+        })
 
     async def async_step_house_assessment(self, user_input=None):
         """Start the optional, editable whole-house assessment."""

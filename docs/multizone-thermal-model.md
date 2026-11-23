@@ -169,3 +169,121 @@ rolling in-memory learner. They provide an independent comparison and data
 quality signal; they are not used as thermal capacities, envelope conductances
 or a claim of calibrated multi-zone simulation. Each mode needs at least six
 valid intervals before a rate is exposed.
+
+
+## v0.20.0 — room-level UFH topology (first implementation slice)
+
+The first topology helper builds one latent UFH slab node for every configured
+room while retaining each hydraulic circuit as an independent record. This
+supports multiple circuits feeding one room and one circuit serving multiple
+rooms. Circuit-to-room assignments use the explicit `served_rooms` list when
+present; legacy `room_id` and then `demand_rooms` are retained as clearly
+labelled fallbacks for older configurations.
+
+This is a topology inventory only. It does not yet replace the existing
+floor-level observation nodes, alter energy allocation, or feed the RC solver.
+A room slab node has no measured temperature, identified capacity or
+room-to-slab conductance at this stage. Circuit thermal output remains null;
+manually configured flow is not converted into heat output. Unknown room
+references, missing circuit IDs and duplicate circuit IDs are reported rather
+than silently attached to invented rooms.
+
+The next slice can connect these room slab nodes to room-air nodes and define
+the dynamic-state interface, still withholding simulation until physical
+parameters are available.
+
+
+### Room-air nodes and slab coupling (second implementation slice)
+
+The topology inventory now includes one room-air node alongside each room's
+effective UFH slab node. Room-air temperature is copied only from the
+configured room temperature observation. When a positive room volume is
+configured, an air-only sensible capacity is calculated using the documented
+air density and specific heat; it is explicitly not the effective room
+capacity, which also includes furnishings and building mass.
+
+Each room has a directed topology edge from its slab node to its air node.
+The edge conductance remains null and the edge is not passed to the RC solver.
+This records the intended physical relationship without inventing a
+room-to-slab heat-transfer coefficient. The slab temperature and capacity
+remain unknown, and missing room temperatures or volumes remain missing.
+
+
+## v0.20.0 — topology integration and envelope paths (implementation slices 3–5)
+
+The coordinator passes the configured `ufh_circuits` into the multi-zone
+observation builder. The resulting `room_ufh_topology` inventory is exposed
+alongside existing floor-level nodes; it does not replace them. Circuit IDs,
+pump assignment, floor, pipe length and served-room mappings are retained.
+Configured flow is never converted into thermal output.
+
+Room-to-room links are included only when a positive
+`conductance_w_per_k` is explicitly supplied in the house assessment's
+`room_connections` list. Room-to-outdoor links are included only when a
+positive `envelope_conductance_w_per_k` is explicitly supplied for that room.
+Invalid room references and missing conductances are reported in
+`unresolved_room_paths`. Room area alone is not used to invent a wall
+conductance.
+
+The attic roof path uses the explicitly configured roof U-value multiplied by
+roof area and creates an outdoor boundary node even if the outdoor sensor is
+unavailable. The attic-floor total is not arbitrarily divided among rooms:
+room-level attic-floor paths require explicit
+`attic_floor_room_conductances_w_per_k` entries. If no allocation is present,
+the aggregate path remains pending. These paths remain topology data; missing
+capacities or conductances still prevent RC simulation.
+
+
+## Parameter identification and calibration
+
+Calibration is staged by identifiability; the model must not fit parameters that
+the available sensors cannot distinguish.
+
+1. **Data qualification.** Align room, outdoor and attic temperature histories;
+   exclude long gaps, unavailable states, open-window intervals, known heating
+   periods for free-cooling fits, and periods with unmeasured disturbances.
+2. **Free-cooling response.** Estimate the room's (H/C) ratio (1/hour) from
+   (dT_{room}/dt = -(H/C)(T_{room}-T_{out})). This does not identify absolute
+   heat-loss conductance (H) and thermal capacity (C) separately. Solar and
+   internal gains remain confounders unless measured or excluded.
+3. **Absolute room parameters.** Identify (H) only when an independent
+   capacity or useful thermal-input measurement exists. Identify (C) only
+   when heat input and losses are independently constrained. Burner modulation,
+   gas input, pump electrical power, configured circuit flow and room demand
+   are not room-level useful heat measurements.
+4. **Inter-room conductance.** Fit only when multiple room temperatures have
+   sufficient independent temperature excitation and other heat paths are
+   constrained. Otherwise retain an unidentified edge.
+5. **UFH slab parameters.** Slab capacity and slab-to-room conductance remain
+   unidentified without slab/surface temperature or independently measured
+   heat delivery with sufficiently informative transients. Do not backfill
+   them from screed thickness alone.
+6. **Attic paths.** Roof U-value × roof area can provide a configured aggregate
+   conductance when both inputs are explicitly supplied. Attic-floor coupling
+   needs room-level allocation; attic temperature alone cannot identify each
+   upstairs room's conductance.
+
+Each fitted parameter must retain its source, fitting window, sample count,
+confidence/quality diagnostics, and whether it is measured, configured, or
+estimated. Candidate estimates are not promoted to active solver parameters
+until they pass holdout validation.
+
+## Historical simulation and validation
+
+The offline replay primitive uses Recorder-shaped samples, zero-order-held
+outdoor/gain inputs, bounded time steps and explicit gap rejection. It never
+resets the simulated temperature to the observed temperature after the initial
+condition. Predictions are compared with the observed room series using MAE,
+RMSE, mean bias and maximum absolute error.
+
+Use chronological splits: an earlier calibration window and a later untouched
+validation window. Do not randomly shuffle time-series samples. Report coverage,
+skipped intervals and holdout dates with every score. A score is withheld when
+there are too few validation samples.
+
+The current replay primitive is a **single-room RC baseline**, not yet the
+full multi-zone/UFH network. It requires caller-supplied capacity and
+conductance; the free-cooling estimator returns only H/C. No automatic fitting
+or solver activation occurs. The next extension is multi-node replay with
+identified room, slab and attic states once their parameters are supported by
+independent measurements.

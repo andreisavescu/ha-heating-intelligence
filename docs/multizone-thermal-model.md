@@ -169,3 +169,25 @@ rolling in-memory learner. They provide an independent comparison and data
 quality signal; they are not used as thermal capacities, envelope conductances
 or a claim of calibrated multi-zone simulation. Each mode needs at least six
 valid intervals before a rate is exposed.
+
+
+## v0.20.0 — room-level UFH topology (first implementation slice)
+
+The first topology helper builds one latent UFH slab node for every configured
+room while retaining each hydraulic circuit as an independent record. This
+supports multiple circuits feeding one room and one circuit serving multiple
+rooms. Circuit-to-room assignments use the explicit `served_rooms` list when
+present; legacy `room_id` and then `demand_rooms` are retained as clearly
+labelled fallbacks for older configurations.
+
+This is a topology inventory only. It does not yet replace the existing
+floor-level observation nodes, alter energy allocation, or feed the RC solver.
+A room slab node has no measured temperature, identified capacity or
+room-to-slab conductance at this stage. Circuit thermal output remains null;
+manually configured flow is not converted into heat output. Unknown room
+references, missing circuit IDs and duplicate circuit IDs are reported rather
+than silently attached to invented rooms.
+
+The next slice can connect these room slab nodes to room-air nodes and define
+the dynamic-state interface, still withholding simulation until physical
+parameters are available.

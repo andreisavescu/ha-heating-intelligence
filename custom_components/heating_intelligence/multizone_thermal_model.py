@@ -341,7 +341,9 @@ def build_multizone_observation_model(
         ("attic:air", "roof_u_value", "roof_area_m2", "roof"),
         ("attic:air", "attic_floor_u_value", "attic_floor_area_m2", "attic_floor"),
     ):
-        if node_id not in nodes or "boundary:outdoors" not in nodes:
+        if node_id not in nodes:
+            continue
+        if label == "roof" and "boundary:outdoors" not in nodes:
             continue
         try:
             u_value = float(profile.get(u_key))

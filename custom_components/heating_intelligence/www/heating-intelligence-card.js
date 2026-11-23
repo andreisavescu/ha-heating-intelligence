@@ -340,13 +340,6 @@ class HeatingIntelligenceCard extends HTMLElement {
     return '<div class="chart-wrap"><div class="chart-heading"><strong>'+this._esc(title)+'</strong><span>kWh / day</span></div><svg viewBox="0 0 400 128" role="img" aria-label="'+this._esc(title)+'"><line x1="34" y1="20" x2="394" y2="20" class="chart-grid"/><line x1="34" y1="59" x2="394" y2="59" class="chart-grid"/><line x1="34" y1="98" x2="394" y2="98" class="chart-grid"/>'+bars+'</svg></div>';
   }
 
-  _roomHeatAllocation(rooms) {
-    const list=Object.values(rooms||{}).sort((a,b)=>(Number(b.estimated_thermal_power_w)||0)-(Number(a.estimated_thermal_power_w)||0));
-    if(!list.length)return '<div class="chart-empty">No rooms configured.</div>';
-    const max=Math.max(1,...list.map(r=>Number(r.estimated_thermal_power_w)||0));
-    return list.map(r=>{const p=Number(r.estimated_thermal_power_w)||0,e=Number(r.thermal_energy_today_kwh)||0;return '<div class="allocation-row"><div><b>'+this._esc(r.name)+'</b><small>'+p.toFixed(0)+' W · '+e.toFixed(3)+' kWh today</small></div><div class="allocation-track"><i style="width:'+(p/max*100).toFixed(1)+'%"></i></div></div>';}).join("")+'<div class="subtle">Heat allocation is estimated from active configured circuits and served rooms.</div>';
-  }
-
   _demandTimeline(rooms, hours=24) {
     const end=Date.now(), start=end-hours*3600000, width=720;
     const rows=rooms.map(room=>{
@@ -398,8 +391,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     ) * 1000;
     const eligibleCircuits = Object.entries(circuits).filter(([, circuit]) =>
       circuit.flow_active &&
-      Number(circuit.estimated_thermal_power_w) > 0 &&
-      Number(circuit.active_configured_flow_l_min || circuit.configured_flow_l_min || 0) > 0 &&
+      Number(circuit.active_configured_flow_l_min || 0) > 0 &&
       (circuit.served_rooms || []).some(id => rooms[id])
     );
     const totalEligibleFlow = eligibleCircuits.reduce((sum, [, circuit]) =>

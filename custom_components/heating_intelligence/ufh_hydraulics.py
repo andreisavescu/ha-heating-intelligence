@@ -125,6 +125,6 @@ def build_ufh_hydraulic_snapshot(
             "timer has elapsed and the configured demand is on. Demand may be a selected "
             "room set or any room on the circuit floor. It stops immediately when either "
             "condition is no longer true. Thermal power is estimated from manual flow "
-            "and an assumed 9°C water temperature drop; it is not measured."
+            "without inferring thermal output from configured flow."
         ),
     }

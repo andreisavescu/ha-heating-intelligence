@@ -33,7 +33,7 @@ CALCULATION_DETAILS = {
     "boiler_modulation_estimated_output_kw": ("Estimated live boiler output from burner modulation.", "if burner is on: max(3.2 kW, 25 kW × modulation % ÷ 100); otherwise 0 kW", "25 kW rated output and 3.2 kW minimum firing output assumptions; not a heat-meter reading."),
     "boiler_modulation_calibrated_output_kw": ("Live boiler output estimated from modulation and the smoothed daily gas calibration factor.", "max(3.2 kW, 25 kW × modulation % ÷ 100) × (0.66 × previous factor + 0.34 × previous-day observed factor)", "The previous complete day's gas-reconciled useful heat is divided by its raw modulation estimate; the smoothed factor is applied from the following day. If either daily total is missing, the prior factor is retained."),
     "boiler_calibration_factor": ("Daily smoothed calibration factor applied to live modulation-derived boiler output.", "0.66 × previous factor + 0.34 × (previous-day gas-reconciled useful heat ÷ previous-day raw modulation energy)", "Updated once per completed day when both daily totals are positive; the previous factor is retained when data is missing."),
-    "boiler_modulation_room_energy_kwh": ("Modulation-estimated boiler energy apportioned to this room by its share of active configured UFH circuit flow.", "interval modulation energy × room flow weight ÷ sum of all eligible room flow weights", "Only circuits with confirmed active flow and configured flow contribute; shared circuits split their flow equally among served rooms; calibration factor is not applied."),
+    "boiler_modulation_room_energy_kwh": ("Modulation-estimated boiler energy apportioned to this room by its share of active configured UFH circuit flow.", "interval modulation energy × room flow weight ÷ sum of all eligible room flow weights", "Only circuits with confirmed active flow and configured flow contribute; shared circuits split their flow equally among served rooms; the smoothed gas-derived calibration factor is applied to modulation output before room allocation."),
     "boiler_modulation_energy_today_kwh": ("Integrated modulation-estimated boiler output during eligible active-flow intervals today.", "Σ(estimated boiler output (kW) × interval seconds ÷ 3600)", "Burner must be on and at least one configured UFH circuit must have confirmed active flow."),
     "boiler_modulation_energy_week_kwh": ("Sum of daily modulation-estimated energy from the current calendar week.", "Σ daily modulation-estimated energy (kWh), Monday–today", "Uses retained daily ledger."),
     "boiler_modulation_energy_month_kwh": ("Sum of daily modulation-estimated energy from the current calendar month.", "Σ daily modulation-estimated energy (kWh), month start–today", "Uses retained daily ledger."),
@@ -307,7 +307,17 @@ class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
         self.room_name = room_name
         self.metric = metric
         self._attr_name = f"{room_name} {label}"
-        self._attr_unique_id = f"{DOMAIN}_{room_id}_modulation_estimated_heat_{period}"
+        # Reuse the former UFH energy entity unique IDs so existing entity
+        # registry entries, dashboards and Recorder history continue under the
+        # new burner-modulation calculation. Gas-reconciled entities keep their
+        # separate unique IDs.
+        legacy_period_ids = {
+            "daily": "thermal_energy_today_kwh",
+            "weekly": "thermal_energy_week_kwh",
+            "monthly": "thermal_energy_month_kwh",
+            "total": "thermal_energy_total_kwh",
+        }
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{legacy_period_ids[period]}"
         self._attr_state_class = state_class
 
     @property

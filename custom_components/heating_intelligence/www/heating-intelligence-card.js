@@ -191,8 +191,17 @@ class HeatingIntelligenceCard extends HTMLElement {
     return '<div class="chart-wrap"><div class="chart-heading"><strong>'+this._esc(title)+'</strong><span>'+this._esc(unit)+'</span></div><svg viewBox="0 0 '+w+' '+h+'" role="img" aria-label="'+this._esc(title)+'">'+grid+lines+'</svg><div class="chart-legend">'+legend+'</div><div class="chart-axis"><span>'+new Date(Date.parse(points[0].time)).toLocaleString()+'</span><span>'+new Date(Date.parse(points[points.length-1].time)).toLocaleString()+'</span></div></div>';
   }
   _heatFlowSankey(hydraulics, rooms, model = "hydraulic", unit = "W") {
-    const circuits=Object.entries(hydraulics?.circuits||{}).filter(([,c])=>c.flow_active&&Number(c.active_configured_flow_l_min)>0);
-    if(!circuits.length)return '<div class="chart-empty">No active UFH heat flow right now. The diagram will populate when a circuit is active.</div>';
+    // Historical Sankeys carry recorded kWh allocations, not live flow state.
+    // Do not apply the live-circuit gate to those period totals.
+    const historical = unit === "kWh";
+    const circuits=Object.entries(hydraulics?.circuits||{}).filter(([,c])=>
+      historical
+        ? Number(c.estimated_thermal_power_w) > 0
+        : c.flow_active && Number(c.active_configured_flow_l_min)>0
+    );
+    if(!circuits.length)return historical
+      ? '<div class="chart-empty">No recorded room energy is available for this period yet.</div>'
+      : '<div class="chart-empty">No active UFH heat flow right now. The diagram will populate when a circuit is active.</div>';
     const roomMap=rooms||{};
     const floors=[
       {id:"ground_floor",label:"Downstairs",x:122},
@@ -204,12 +213,16 @@ class HeatingIntelligenceCard extends HTMLElement {
       if(!allocations[floor])continue;
       const served=(c.served_rooms||[]).filter(id=>roomMap[id]);
       if(!served.length)continue;
-      const share=(Number(c.active_configured_flow_l_min)||0)/served.length;
+      const circuitValue = historical
+        ? Number(c.estimated_thermal_power_w) || 0
+        : Number(c.active_configured_flow_l_min) || 0;
+      const share=circuitValue/served.length;
       for(const id of served)allocations[floor][id]=(allocations[floor][id]||0)+share;
     }
     const floorNodes=floors.map(f=>{
       const roomsForFloor=Object.entries(allocations[f.id]).map(([id,power])=>({id,name:roomMap[id]?.name||id,power,floor:f.id}));
-      const power=circuits.filter(([,c])=>c.demand_floor===f.id).reduce((n,[,c])=>n+(Number(c.active_configured_flow_l_min)||0),0);
+      const power=circuits.filter(([,c])=>c.demand_floor===f.id).reduce((n,[,c])=>
+        n+(historical ? Number(c.estimated_thermal_power_w)||0 : Number(c.active_configured_flow_l_min)||0),0);
       return {...f,name:f.label,rooms:roomsForFloor,power};
     }).filter(f=>f.power>0&&f.rooms.length>0);
     if(!floorNodes.length)return '<div class="chart-empty">No active room allocations are available for the running circuits.</div>';
@@ -293,7 +306,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     for (const [roomId, value] of Object.entries(energy)) {
       const room = rooms?.[roomId];
       if (!room || !(Number(value) > 0)) continue;
-      circuits["daily_" + roomId] = {flow_active:true, estimated_thermal_power_w:Number(value), demand_floor:room.floor || "unassigned", served_rooms:[roomId]};
+      circuits["daily_" + roomId] = {flow_active:false, estimated_thermal_power_w:Number(value), demand_floor:room.floor || "unassigned", served_rooms:[roomId]};
     }
     if (!Object.keys(circuits).length) return '<div class="chart-empty">No room energy has been allocated for this day yet.</div>';
     return this._heatFlowSankey({circuits}, rooms, method + "_daily", "kWh");
@@ -323,7 +336,7 @@ class HeatingIntelligenceCard extends HTMLElement {
       const room = rooms?.[roomId];
       if (!room || !(Number(value) > 0)) continue;
       circuits["gas_" + period + "_" + roomId] = {
-        flow_active: true, estimated_thermal_power_w: Number(value),
+        flow_active: false, estimated_thermal_power_w: Number(value),
         demand_floor: room.floor || "unassigned", served_rooms: [roomId]
       };
     }

@@ -1,3 +1,12 @@
+## v0.18.9 — Restore historical energy Sankey diagrams
+
+- Render daily, weekly, monthly and heating-season gas-reconciled room energy from their recorded kWh allocations, independently of current UFH circuit or pump activity.
+- Keep the live modulation power Sankey gated by confirmed active configured UFH flow.
+- Keep historical allocations labelled and scaled as energy (kWh); do not reinterpret them as live thermal power.
+- Reuse the former per-room UFH energy entity unique IDs for burner-modulation daily, weekly, monthly and lifetime totals, preserving entity registry references and Recorder history; gas-reconciled entities remain separate.
+- Correct calculation metadata: the smoothed gas-derived calibration factor is applied before modulation energy is allocated to rooms.
+- No energy ledgers, calibration logic, gas correction, room allocation calculations or heating-control behavior changed.
+
 ## v0.18.8 — Fix Heating Intelligence card render failure
 
 - Remove the obsolete estimated thermal-output metric from the UFH circuit-flow section. It referenced an undefined `totalPower` variable and caused a JavaScript `ReferenceError` during card rendering.

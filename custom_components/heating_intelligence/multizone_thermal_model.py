@@ -170,6 +170,7 @@ def build_multizone_observation_model(
     attic: dict[str, Any] | None = None,
     profile: dict[str, Any] | None = None,
     plant: dict[str, Any] | None = None,
+    circuits: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Map configured HA observations into a transparent, parameter-aware zone inventory.
 
@@ -182,6 +183,7 @@ def build_multizone_observation_model(
     attic = attic or {}
     profile = profile or {}
     plant = plant or {}
+    circuits = circuits or []
 
     def value(record):
         if isinstance(record, dict):
@@ -236,6 +238,10 @@ def build_multizone_observation_model(
             "temperature_entity": outdoor_record.get("entity_id") if isinstance(outdoor_record, dict) else None,
             "status": "observed" if outdoor_c is not None else "temperature_unavailable",
         }
+
+    # Room-level UFH topology is a parallel inventory; it does not replace
+    # legacy floor nodes or feed the solver until physical parameters exist.
+    room_ufh_topology = build_room_ufh_topology(rooms, circuits)
 
     # Floor-level observations remain separate from room air. A screed node
     # is pending until its temperature/capacity can be identified.
@@ -348,6 +354,45 @@ def build_multizone_observation_model(
                     "source": "configured_u_value_times_area",
                     "status": "awaiting_upstairs_zone_coupling",
                 })
+
+    # Only explicit conductances create room-to-room or room-to-outdoor links.
+    inter_room_paths = []
+    unresolved_room_paths = []
+    for index, item in enumerate(profile.get("room_connections", []) or []):
+        if not isinstance(item, dict):
+            unresolved_room_paths.append({"index": index, "reason": "invalid_connection_record"})
+            continue
+        source_room = str(item.get("from_room") or "")
+        target_room = str(item.get("to_room") or "")
+        conductance = _finite_or_none(item.get("conductance_w_per_k"))
+        if source_room not in rooms or target_room not in rooms or source_room == target_room:
+            unresolved_room_paths.append({"index": index, "reason": "invalid_room_reference"})
+            continue
+        if conductance is None or conductance <= 0:
+            unresolved_room_paths.append({"index": index, "reason": "conductance_not_configured"})
+            continue
+        inter_room_paths.append({
+            "from": "room:" + source_room, "to": "room:" + target_room,
+            "path": "inter_room", "conductance_w_per_k": round(conductance, 4),
+            "source": "explicit_house_assessment", "status": "configured",
+        })
+
+    room_envelope_paths = []
+    for room_id, room in rooms.items():
+        conductance = _finite_or_none(room.get("envelope_conductance_w_per_k"))
+        if conductance is not None and conductance > 0:
+            room_envelope_paths.append({
+                "from": "room:" + room_id, "to": "boundary:outdoors",
+                "path": "room_envelope", "conductance_w_per_k": round(conductance, 4),
+                "source": "explicit_room_configuration", "status": "configured",
+            })
+    if room_envelope_paths and "boundary:outdoors" not in nodes:
+        nodes["boundary:outdoors"] = {
+            "kind": "fixed_boundary", "name": "Outdoors",
+            "temperature_c": outdoor_c,
+            "temperature_entity": outdoor_record.get("entity_id") if isinstance(outdoor_record, dict) else None,
+            "status": "observed" if outdoor_c is not None else "temperature_unavailable",
+        }
 
     solar_record = weather.get("solar_radiation")
     solar_w_m2 = value(solar_record)
@@ -518,7 +563,11 @@ def build_multizone_observation_model(
         "simulation_status": simulation_readiness["status"],
         "simulation_readiness": simulation_readiness,
         "nodes": nodes,
-        "configured_connections": connections,
+        "configured_connections": connections + inter_room_paths + room_envelope_paths,
+        "inter_room_paths": inter_room_paths,
+        "room_envelope_paths": room_envelope_paths,
+        "unresolved_room_paths": unresolved_room_paths,
+        "room_ufh_topology": room_ufh_topology,
         "ventilation_paths": ventilation_paths,
         "house_heat_loss_decomposition": envelope_decomposition,
         "aggregate_capacity_budget": capacity_budget,

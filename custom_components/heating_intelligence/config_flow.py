@@ -172,7 +172,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Optional("inter_room_conductance"): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=0.01, max=10000, step=0.1, unit_of_measurement="W/K", mode=selector.NumberSelectorMode.BOX)
             ),
-            vol.Optional("attic_floor_room", description={"suggested_value": None}): vol.In({
+            vol.Optional("attic_floor_room"): vol.In({
                 item["id"]: item[CONF_NAME] for item in options.get(CONF_ROOMS, [])
                 if item.get(CONF_FLOOR) == "upstairs"
             }),

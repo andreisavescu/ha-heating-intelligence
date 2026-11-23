@@ -122,7 +122,7 @@ def test_free_cooling_identifies_only_h_over_c_ratio():
         rows.append(row("outside", stamp, str(outside)))
         rows.append(row("room", stamp, str(room)))
         rows.append(row("heating", stamp, "off"))
-        room += -0.03 * (room - outside)
+        room += -(0.03 / 60.0) * (room - outside)
     result = MODULE.identify_free_cooling_h_over_c(
         rows, "room", "outside", heating_entity="heating", min_intervals=30,
         max_gap_seconds=90,

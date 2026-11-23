@@ -111,3 +111,64 @@ def test_experiment_summary_keeps_manual_events_separate_and_reports_room_period
     assert response["rate_c_per_hour"] == 0.4
     assert result["user_supplied_event_annotations"][0]["source"] == "user_report"
     assert "upstairs_ufh_pump_stopped" not in result["entities"]
+
+
+def test_free_cooling_identifies_only_h_over_c_ratio():
+    rows = []
+    room = 25.0
+    outside = 5.0
+    for index in range(61):
+        stamp = f"2026-11-15T{index // 60:02d}:{index % 60:02d}:00Z"
+        rows.append(row("outside", stamp, str(outside)))
+        rows.append(row("room", stamp, str(room)))
+        rows.append(row("heating", stamp, "off"))
+        room += -0.03 * (room - outside)
+    result = MODULE.identify_free_cooling_h_over_c(
+        rows, "room", "outside", heating_entity="heating", min_intervals=30,
+        max_gap_seconds=90,
+    )
+    assert result["status"] == "candidate_estimate"
+    assert result["identified_parameter"] == "H_over_C_per_hour"
+    assert abs(result["estimate"] - 0.03) < 0.002
+    assert any("not H or C separately" in item for item in result["limitations"])
+
+
+def test_historical_replay_and_holdout_validation_do_not_reset_to_observations():
+    rows = []
+    room = 20.0
+    outside = 5.0
+    from datetime import datetime, timedelta, timezone
+    start = datetime(2026, 11, 15, tzinfo=timezone.utc)
+    for index in range(13):
+        stamp = start + timedelta(minutes=5 * index)
+        rows.append(row("outside", stamp.isoformat(), str(outside)))
+        rows.append(row("room", stamp.isoformat(), f"{room:.8f}"))
+        room += (10.0 * (outside - room)) * (5.0 / 60.0) / 1000.0
+    simulation = MODULE.simulate_historical_room(
+        rows, room_temperature_entity="room", outdoor_temperature_entity="outside",
+        initial_temperature_c=20.0, capacity_wh_per_k=1000.0,
+        conductance_w_per_k=10.0, max_gap_seconds=600,
+    )
+    assert simulation["status"] == "available"
+    assert simulation["prediction_count"] == 13
+    score = MODULE.validate_historical_simulation(simulation)
+    assert score["status"] == "scored"
+    assert score["metrics"]["rmse_c"] < 0.001
+    assert score["calibration_data_reused"] is False
+
+
+def test_validation_can_score_only_a_separate_holdout_window():
+    simulation = {
+        "status": "available",
+        "predictions": [
+            {"timestamp": "2026-11-15T00:00:00Z", "observed_temperature_c": 20, "predicted_temperature_c": 30},
+            {"timestamp": "2026-11-15T01:00:00Z", "observed_temperature_c": 20, "predicted_temperature_c": 21},
+            {"timestamp": "2026-11-15T02:00:00Z", "observed_temperature_c": 20, "predicted_temperature_c": 22},
+        ],
+    }
+    score = MODULE.validate_historical_simulation(
+        simulation, validation_start="2026-11-15T01:00:00Z",
+        validation_end="2026-11-15T02:00:00Z",
+    )
+    assert score["sample_count"] == 2
+    assert score["metrics"]["mae_c"] == 1.5

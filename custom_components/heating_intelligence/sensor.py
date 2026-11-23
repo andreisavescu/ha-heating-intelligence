@@ -121,12 +121,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     for room in entry.options.get(CONF_ROOMS, []):
         if room.get("temperature_entity"):
             entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
-        entities.append(RoomThermalPowerSensor(coordinator, room["id"], room["name"]))
         entities.append(RoomModulationPowerSensor(coordinator, room["id"], room["name"]))
-        entities.extend(
-            RoomThermalEnergySensor(coordinator, room["id"], room["name"], metric)
-            for metric in ROOM_THERMAL_ENERGY_METRICS
-        )
         if room.get("humidity_entity"):
             entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "humidity"))
         if room.get("co2_entity"):
@@ -532,14 +527,6 @@ class WaterTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
         return super().available and self.coordinator.data.get("water_temperature") is not None
 
 
-ROOM_THERMAL_ENERGY_METRICS = {
-    "thermal_energy_today_kwh": ("Estimated UFH Thermal Energy Today", SensorStateClass.TOTAL),
-    "thermal_energy_week_kwh": ("Estimated UFH Thermal Energy This Week", SensorStateClass.TOTAL),
-    "thermal_energy_month_kwh": ("Estimated UFH Thermal Energy This Month", SensorStateClass.TOTAL),
-    "thermal_energy_total_kwh": ("Estimated UFH Thermal Energy Total", SensorStateClass.TOTAL_INCREASING),
-}
-
-
 class RoomModulationPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     """Live room heat-power estimate allocated from calibrated boiler modulation."""
 
@@ -603,65 +590,6 @@ class RoomModulationPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity
                 else experiment.get("boiler_modulation_estimated_output_kw"),
             "calibration_factor": experiment.get("boiler_calibration_factor"),
             **_calculation_attributes("boiler_modulation_calibrated_output_kw"),
-        }
-
-
-class RoomThermalPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
-    """Estimated instantaneous UFH thermal power allocated to a room."""
-
-    _attr_should_poll = False
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = "W"
-    _attr_icon = "mdi:heat-wave"
-
-    def __init__(self, coordinator, room_id: str, room_name: str) -> None:
-        super().__init__(coordinator)
-        self.room_id = room_id
-        self.room_name = room_name
-        self._attr_name = f"{room_name} Estimated UFH Heating Power"
-        self._attr_unique_id = f"{DOMAIN}_{room_id}_estimated_thermal_power_w"
-
-    @property
-    def native_value(self):
-        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
-        return room.get("estimated_thermal_power_w", 0.0)
-
-    @property
-    def extra_state_attributes(self):
-        return {"estimate": True, "method": "Active configured circuit thermal power is split equally among served rooms; circuit power uses configured flow and an assumed 9°C water delta.", "assumed_water_delta_t_c": 9.0, **_calculation_attributes("estimated_thermal_power_w")}
-
-
-class RoomThermalEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
-    """Estimated UFH heat delivered to a room, allocated from active circuits."""
-
-    _attr_should_poll = False
-    _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_native_unit_of_measurement = "kWh"
-    _attr_icon = "mdi:heat-wave"
-
-    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
-        super().__init__(coordinator)
-        self.room_id = room_id
-        self.room_name = room_name
-        self.metric = metric
-        label, state_class = ROOM_THERMAL_ENERGY_METRICS[metric]
-        self._attr_name = f"{room_name} {label}"
-        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
-        self._attr_state_class = state_class
-
-    @property
-    def native_value(self):
-        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
-        return room.get(self.metric, 0.0)
-
-    @property
-    def extra_state_attributes(self):
-        return {
-            "estimate": True,
-            "method": "Configured circuit flow × assumed 9°C water delta; active circuit energy is split equally among its assigned demand rooms.",
-            "assumed_water_delta_t_c": 9.0,
-            **_calculation_attributes(self.metric),
         }
 
 

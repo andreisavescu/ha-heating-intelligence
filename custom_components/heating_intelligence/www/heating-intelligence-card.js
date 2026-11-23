@@ -173,7 +173,6 @@ class HeatingIntelligenceCard extends HTMLElement {
     return `<div class="overview">
       <div class="metric"><span>Active circuits</span><strong>${activeCount} / ${circuits.length}</strong></div>
       <div class="metric"><span>Total active flow</span><strong>${fmtFlow(totalFlow)}</strong></div>
-      <div class="metric"><span>Estimated thermal output</span><strong>${this._fmt(totalPower / 1000, "kW", 2)}</strong></div>
     </div>${floorSections || '<div class="chart-empty">No floor assignment found for configured circuits.</div>'}
     <div class="subtle">Active flow uses the saved manual flowmeter setting only while the circuit's demand and 180-second pump confirmation are both active. No thermal output is inferred from configured flow alone.</div>`;
   }

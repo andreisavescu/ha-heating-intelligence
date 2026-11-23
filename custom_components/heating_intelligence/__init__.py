@@ -53,7 +53,7 @@ async def async_setup_entry(hass, entry) -> bool:
         room_id = room.get("id")
         if not room_id:
             continue
-        for period in ("daily", "weekly", "monthly", "total"):
+        for period in ("daily", "weekly", "monthly", "total", "season"):
             stale_unique_id = f"{DOMAIN}_{room_id}_modulation_estimated_heat_{period}"
             stale_entity_id = registry.async_get_entity_id("sensor", DOMAIN, stale_unique_id)
             if stale_entity_id:
@@ -61,6 +61,12 @@ async def async_setup_entry(hass, entry) -> bool:
         stale_experiment_id = registry.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{room_id}_boiler_experiment_energy")
         if stale_experiment_id:
             registry.async_remove(stale_experiment_id)
+        stale_lifetime_id = registry.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{room_id}_thermal_energy_total_kwh")
+        if stale_lifetime_id:
+            registry.async_remove(stale_lifetime_id)
+    stale_boiler_total = registry.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_boiler_modulation_estimated_heat_total")
+    if stale_boiler_total:
+        registry.async_remove(stale_boiler_total)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     async_repair_entity_device_associations(hass, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

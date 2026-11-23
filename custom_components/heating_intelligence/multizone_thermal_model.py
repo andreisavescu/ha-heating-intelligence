@@ -391,7 +391,8 @@ def build_multizone_observation_model(
                         "path": label,
                         "conductance_w_per_k": round(u_value * area, 4),
                         "source": "configured_u_value_times_area",
-                        "status": "awaiting_upstairs_room_conductance_allocation",
+                        "status": "awaiting_upstairs_zone_coupling",
+                        "detail": "Room-level allocation requires explicit attic_floor_room_conductances_w_per_k entries.",
                     })
 
     # Only explicit conductances create room-to-room or room-to-outdoor links.

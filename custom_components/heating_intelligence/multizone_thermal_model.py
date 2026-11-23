@@ -622,7 +622,31 @@ def build_room_ufh_topology(
     temperature, capacity, flow-derived heat or thermal conductance is inferred.
     """
     room_nodes: dict[str, dict[str, Any]] = {}
+    room_air_nodes: dict[str, dict[str, Any]] = {}
+    room_slab_couplings: list[dict[str, Any]] = []
     for room_id, room in rooms.items():
+        volume = _finite_or_none(room.get("volume_m3"))
+        air_capacity = (
+            1.2 * 1005.0 / 3600.0 * volume
+            if volume is not None and volume > 0 else None
+        )
+        room_air_nodes[f"room:{room_id}"] = {
+            "kind": "room_air",
+            "room_id": room_id,
+            "room_name": room.get("name", room_id),
+            "floor": room.get("floor", "unassigned"),
+            "temperature_c": _finite_or_none(room.get("temperature")),
+            "temperature_entity": room.get("temperature_entity"),
+            "temperature_source": (
+                "configured_sensor" if _finite_or_none(room.get("temperature")) is not None
+                else "unavailable"
+            ),
+            "volume_m3": volume,
+            "air_only_capacity_wh_per_k": round(air_capacity, 4) if air_capacity is not None else None,
+            "effective_room_capacity_wh_per_k": None,
+            "effective_capacity_status": "not_identified",
+            "status": "observed" if _finite_or_none(room.get("temperature")) is not None else "temperature_unavailable",
+        }
         room_nodes[f"slab:{room_id}"] = {
             "kind": "room_ufh_slab",
             "room_id": room_id,
@@ -698,9 +722,21 @@ def build_room_ufh_topology(
         if not node["circuit_ids"]:
             node["status"] = "no_configured_ufh_circuit"
 
+    for room_id in rooms:
+        room_slab_couplings.append({
+            "from": f"slab:{room_id}",
+            "to": f"room:{room_id}",
+            "path": "ufh_slab_to_room_air",
+            "conductance_w_per_k": None,
+            "status": "conductance_not_identified",
+            "note": "Topology edge only; excluded from RC solver until conductance is identified.",
+        })
+
     return {
-        "representation": "one_effective_ufh_slab_node_per_room",
+        "representation": "one_room_air_and_one_effective_ufh_slab_node_per_room",
+        "room_air_nodes": room_air_nodes,
         "room_slab_nodes": room_nodes,
+        "room_slab_couplings": room_slab_couplings,
         "circuits": circuit_records,
         "coverage": {
             "configured_rooms": len(rooms),

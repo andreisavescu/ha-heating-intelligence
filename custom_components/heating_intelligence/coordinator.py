@@ -1014,22 +1014,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
             now_local,
         )
-        # Keep a date-keyed side-by-side daily comparison. The hydraulic
-        # baseline sums the existing room thermal-energy estimates; the
-        # experimental series uses gas-reconciled useful boiler heat.
+        # Keep the modulation and gas-reconciled daily comparison. The retired
+        # hydraulic estimate is intentionally no longer calculated or recorded.
         comparison = self._history.setdefault("algorithm_daily_comparison", {})
         day_key = now_local.date().isoformat()
-        baseline_today = sum(
-            float(room.get("thermal_energy_today_kwh") or 0.0)
-            for room in result.get("rooms", {}).values()
-        )
         experiment_today = float(
             result["boiler_energy_experiment"].get("boiler_daily_allocated_heat_kwh", {}).get(day_key, 0.0)
         )
-        hydraulic_room_energy = {
-            room_id: round(float(room.get("thermal_energy_today_kwh") or 0.0), 6)
-            for room_id, room in result.get("rooms", {}).items()
-        }
         # Restored history may contain legacy/malformed nested room values.
         # Keep valid numeric allocations, but never let one bad historical value
         # abort the entire coordinator refresh or silently count a mapping as energy.
@@ -1053,11 +1044,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         modulation_total_energy = float(
             result["boiler_energy_experiment"].get("boiler_daily_modulation_generated_heat_kwh", {}).get(day_key, 0.0)
         )
-        floor_energy = {"ground_floor": 0.0, "upstairs": 0.0}
-        for room_id, room in result.get("rooms", {}).items():
-            floor_id = room.get("floor", "unassigned")
-            if floor_id in floor_energy:
-                floor_energy[floor_id] += hydraulic_room_energy.get(room_id, 0.0)
         modulation_floor_energy = {"ground_floor": 0.0, "upstairs": 0.0}
         for room_id, value in modulation_room_energy.items():
             floor_id = result.get("rooms", {}).get(room_id, {}).get("floor", "unassigned")
@@ -1065,7 +1051,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 modulation_floor_energy[floor_id] += value
         comparison[day_key] = {
             "date": day_key,
-            "hydraulic_estimated_heat_kwh": round(baseline_today, 6),
             "boiler_gas_calibrated_heat_kwh": round(experiment_today, 6),
             "boiler_allocated_heat_kwh": round(float(
                 result["boiler_energy_experiment"].get("boiler_daily_allocated_heat_kwh", {}).get(day_key, 0.0)
@@ -1073,8 +1058,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "boiler_unallocated_heat_kwh": round(float(
                 result["boiler_energy_experiment"].get("boiler_daily_unallocated_heat_kwh", {}).get(day_key, 0.0)
             ), 6),
-            "hydraulic_room_energy_kwh": hydraulic_room_energy,
-            "hydraulic_floor_energy_kwh": floor_energy,
             "modulation_generated_energy_kwh": round(modulation_total_energy, 6),
             "modulation_room_energy_kwh": modulation_room_energy,
             "modulation_floor_energy_kwh": {key: round(value, 6) for key, value in modulation_floor_energy.items()},
@@ -1090,7 +1073,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             if room_id in result["rooms"]:
                 result["rooms"][room_id]["boiler_generated_heat_energy_kwh"] = energy_kwh
         record_system_sample(self._history, now_local, {
-            "thermal_power_w": result.get("ufh_hydraulics", {}).get("active_estimated_thermal_power_w"),
             "pump_power_w": sum(float(p.get("power") or 0.0) for p in result.get("pumps", {}).values()),
             "boiler_power_w": result.get("efficiency", {}).get("boiler_power_w"),
             "active_flow_l_min": sum(float(v.get("active_configured_flow_l_min") or 0.0) for v in result.get("ufh_hydraulics", {}).get("circuits", {}).values()),

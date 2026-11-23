@@ -26,7 +26,6 @@ from .multizone_thermal_model import build_multizone_observation_model
 from .validated_learning import build_validated_learning_state, validated_learning_diagnostics
 from .thermal_storage import build_thermal_storage_response_analysis
 from .ufh_hydraulics import build_ufh_hydraulic_snapshot
-from .thermal_energy import update_room_thermal_energy
 from .boiler_energy_model import update_boiler_energy_model
 from .system_history import record_system_sample
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
@@ -726,16 +725,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             self.ufh_circuit_state,
             now,
         )
-        result["room_thermal_energy"] = update_room_thermal_energy(
-            self._history,
-            result["ufh_hydraulics"].get("circuits", {}),
-            result["rooms"],
-            elapsed,
-            now_local,
-        )
-        for room_id, metrics in result["room_thermal_energy"].items():
-            if room_id in result["rooms"]:
-                result["rooms"][room_id].update(metrics)
         result["indoor_air_quality"] = build_indoor_air_analysis(result["rooms"])
         for room_id, air_assessment in result["indoor_air_quality"].get("rooms", {}).items():
             if room_id in result["rooms"]:

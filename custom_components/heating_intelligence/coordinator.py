@@ -399,6 +399,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                         if heat_loss_u is not None and envelope_area is not None else None
                     ),
                 },
+                self.entry.options.get("ufh_circuits", []),
             )
             current["thermal_model"] = thermal_model
             self.async_set_updated_data(current)

@@ -608,3 +608,113 @@ def _finite_or_none(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def build_room_ufh_topology(
+    rooms: dict[str, dict[str, Any]],
+    circuits: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build room-level latent UFH slab nodes while preserving circuit topology.
+
+    Each configured room receives one effective slab node. Hydraulic circuits
+    remain individual records and may contribute to more than one room. A room
+    may receive heat from multiple circuits. This is topology only: no slab
+    temperature, capacity, flow-derived heat or thermal conductance is inferred.
+    """
+    room_nodes: dict[str, dict[str, Any]] = {}
+    for room_id, room in rooms.items():
+        room_nodes[f"slab:{room_id}"] = {
+            "kind": "room_ufh_slab",
+            "room_id": room_id,
+            "room_name": room.get("name", room_id),
+            "floor": room.get("floor", "unassigned"),
+            "temperature_c": None,
+            "temperature_source": "latent_unobserved_state",
+            "capacity_wh_per_k": None,
+            "room_slab_conductance_w_per_k": None,
+            "circuit_ids": [],
+            "status": "topology_only_parameters_unidentified",
+        }
+
+    circuit_records: dict[str, dict[str, Any]] = {}
+    unresolved: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, circuit in enumerate(circuits):
+        circuit_id = str(circuit.get("id") or "").strip()
+        if not circuit_id:
+            unresolved.append({"index": index, "reason": "missing_circuit_id"})
+            continue
+        if circuit_id in seen:
+            unresolved.append({"circuit_id": circuit_id, "reason": "duplicate_circuit_id"})
+            continue
+        seen.add(circuit_id)
+
+        # served_rooms is the explicit thermal destination. Preserve the
+        # existing legacy fallback order without treating demand_scope itself
+        # as a physical heat-delivery measurement.
+        served = circuit.get("served_rooms")
+        if served is None:
+            served = []
+        if not served and circuit.get("room_id"):
+            served = [circuit["room_id"]]
+        if not served:
+            served = circuit.get("demand_rooms") or []
+
+        room_ids = list(dict.fromkeys(
+            str(room_id) for room_id in served if room_id is not None
+        ))
+        valid_room_ids = [room_id for room_id in room_ids if room_id in rooms]
+        unknown_room_ids = [room_id for room_id in room_ids if room_id not in rooms]
+        if unknown_room_ids:
+            unresolved.append({
+                "circuit_id": circuit_id,
+                "reason": "served_room_not_configured",
+                "room_ids": unknown_room_ids,
+            })
+
+        record = {
+            "circuit_id": circuit_id,
+            "name": circuit.get("name", circuit_id),
+            "floor": circuit.get("floor", "unassigned"),
+            "pump_id": circuit.get("pump_id"),
+            "pipe_length_m": _finite_or_none(circuit.get("pipe_length_m")),
+            "served_room_ids": valid_room_ids,
+            "unresolved_room_ids": unknown_room_ids,
+            "source": (
+                "explicit_served_rooms" if circuit.get("served_rooms")
+                else "legacy_room_id" if circuit.get("room_id")
+                else "legacy_demand_rooms" if circuit.get("demand_rooms")
+                else "no_room_assignment"
+            ),
+            "thermal_output_w": None,
+            "status": "mapped_to_room_slabs" if valid_room_ids else "no_valid_served_rooms",
+        }
+        circuit_records[circuit_id] = record
+        for room_id in valid_room_ids:
+            room_nodes[f"slab:{room_id}"]["circuit_ids"].append(circuit_id)
+
+    for node in room_nodes.values():
+        node["circuit_count"] = len(node["circuit_ids"])
+        if not node["circuit_ids"]:
+            node["status"] = "no_configured_ufh_circuit"
+
+    return {
+        "representation": "one_effective_ufh_slab_node_per_room",
+        "room_slab_nodes": room_nodes,
+        "circuits": circuit_records,
+        "coverage": {
+            "configured_rooms": len(rooms),
+            "rooms_with_circuits": sum(bool(node["circuit_ids"]) for node in room_nodes.values()),
+            "configured_circuits": len(circuits),
+            "mapped_circuits": sum(bool(item["served_room_ids"]) for item in circuit_records.values()),
+            "unresolved_assignments": len(unresolved),
+        },
+        "unresolved_assignments": unresolved,
+        "parameter_status": {
+            "slab_temperature": "not_measured_or_estimated",
+            "slab_capacity": "not_identified",
+            "room_slab_conductance": "not_identified",
+            "circuit_heat_output": "not_measured",
+            "configured_flow": "not_used_as_thermal_power",
+        },
+    }

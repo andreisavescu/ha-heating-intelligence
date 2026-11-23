@@ -130,7 +130,7 @@ def test_free_cooling_identifies_only_h_over_c_ratio():
     assert result["status"] == "candidate_estimate"
     assert result["identified_parameter"] == "H_over_C_per_hour"
     assert abs(result["estimate"] - 0.03) < 0.002
-    assert any("not H or C separately" in item for item in result["limitations"])
+    assert any("absolute heat-loss conductance and thermal capacity remain inseparable" in item for item in result["limitations"])
 
 
 def test_historical_replay_and_holdout_validation_do_not_reset_to_observations():

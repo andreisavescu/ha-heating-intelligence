@@ -207,3 +207,28 @@ The edge conductance remains null and the edge is not passed to the RC solver.
 This records the intended physical relationship without inventing a
 room-to-slab heat-transfer coefficient. The slab temperature and capacity
 remain unknown, and missing room temperatures or volumes remain missing.
+
+
+## v0.20.0 — topology integration and envelope paths (implementation slices 3–5)
+
+The coordinator passes the configured `ufh_circuits` into the multi-zone
+observation builder. The resulting `room_ufh_topology` inventory is exposed
+alongside existing floor-level nodes; it does not replace them. Circuit IDs,
+pump assignment, floor, pipe length and served-room mappings are retained.
+Configured flow is never converted into thermal output.
+
+Room-to-room links are included only when a positive
+`conductance_w_per_k` is explicitly supplied in the house assessment's
+`room_connections` list. Room-to-outdoor links are included only when a
+positive `envelope_conductance_w_per_k` is explicitly supplied for that room.
+Invalid room references and missing conductances are reported in
+`unresolved_room_paths`. Room area alone is not used to invent a wall
+conductance.
+
+The attic roof path uses the explicitly configured roof U-value multiplied by
+roof area and creates an outdoor boundary node even if the outdoor sensor is
+unavailable. The attic-floor total is not arbitrarily divided among rooms:
+room-level attic-floor paths require explicit
+`attic_floor_room_conductances_w_per_k` entries. If no allocation is present,
+the aggregate path remains pending. These paths remain topology data; missing
+capacities or conductances still prevent RC simulation.

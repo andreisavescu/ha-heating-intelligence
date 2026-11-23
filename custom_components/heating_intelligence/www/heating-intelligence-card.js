@@ -403,6 +403,56 @@ class HeatingIntelligenceCard extends HTMLElement {
     }).join("");
     return `<div class="chart-wrap"><div class="chart-heading"><strong>Daily energy · last ${rows.length} days</strong><span>kWh</span></div><svg viewBox="0 0 400 128" role="img" aria-label="Daily gas and electricity consumption"><line x1="34" y1="20" x2="394" y2="20" class="chart-grid"/><line x1="34" y1="59" x2="394" y2="59" class="chart-grid"/><line x1="34" y1="98" x2="394" y2="98" class="chart-grid"/>${bars}</svg><div class="chart-legend"><span><i class="legend-gas"></i>Gas</span><span><i class="legend-electric"></i>Electricity</span></div></div>`;
   }
+  _pwmTimerState(floorId, pumpRunning) {
+    const key = `heating-intelligence-pwm-${floorId}`;
+    const now = Date.now();
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(key) || "null");
+    } catch (_) {
+      saved = null;
+    }
+    if (!saved || !Number.isFinite(Number(saved.nextAt))) {
+      saved = { running: Boolean(pumpRunning), nextAt: now + 25 * 60 * 1000 };
+    } else {
+      if (pumpRunning && !saved.running) {
+        saved.nextAt = now + 25 * 60 * 1000;
+      }
+      if (now >= Number(saved.nextAt)) {
+        saved.nextAt = now + 25 * 60 * 1000;
+      }
+      saved.running = Boolean(pumpRunning);
+    }
+    this._pwmNextAt = this._pwmNextAt || {};
+    this._pwmNextAt[floorId] = Number(saved.nextAt);
+    try {
+      localStorage.setItem(key, JSON.stringify(saved));
+    } catch (_) {}
+    return Number(saved.nextAt);
+  }
+  _startPwmCountdownTicker() {
+    if (this._pwmTicker) return;
+    this._pwmTicker = setInterval(() => {
+      const now = Date.now();
+      for (const floorId of ["ground_floor", "upstairs"]) {
+        let nextAt = this._pwmNextAt?.[floorId];
+        if (!Number.isFinite(nextAt)) continue;
+        if (now >= nextAt) {
+          nextAt = now + 25 * 60 * 1000;
+          this._pwmNextAt[floorId] = nextAt;
+          try {
+            const key = `heating-intelligence-pwm-${floorId}`;
+            const saved = JSON.parse(localStorage.getItem(key) || "{}");
+            saved.nextAt = nextAt;
+            localStorage.setItem(key, JSON.stringify(saved));
+          } catch (_) {}
+        }
+        const remaining = Math.max(0, Math.ceil((nextAt - now) / 1000));
+        const node = this.shadowRoot?.querySelector(`[data-pwm-timer="${floorId}"]`);
+        if (node) node.textContent = `${String(Math.floor(remaining / 60)).padStart(2, "0")}:${String(remaining % 60).padStart(2, "0")}`;
+      }
+    }, 1000);
+  }
   _render() {
     if (!this.shadowRoot || !this._hass || !this._config) return;
     const state = this._hass.states[this._config.entity];
@@ -410,6 +460,9 @@ class HeatingIntelligenceCard extends HTMLElement {
     const rooms = attrs.rooms || {};
     const pumpEntries = Object.entries(attrs.pumps || {});
     const pumps = pumpEntries.map(([id, pump]) => ({id, ...pump})).sort((a,b) => a.name.localeCompare(b.name));
+    const downstairsPwmNextAt = this._pwmTimerState("ground_floor", Boolean(attrs.pumps?.ground_floor?.running));
+    const upstairsPwmNextAt = this._pwmTimerState("upstairs", Boolean(attrs.pumps?.upstairs?.running));
+    this._startPwmCountdownTicker();
     const entries = Object.values(rooms).sort((a,b) => a.name.localeCompare(b.name));
     const downstairsRooms = entries.filter((room) => room.floor === "ground_floor");
     const upstairsRooms = entries.filter((room) => room.floor === "upstairs");
@@ -534,6 +587,8 @@ class HeatingIntelligenceCard extends HTMLElement {
         .simple-floor-sections .simple-section{min-width:0;padding:8px 10px}
         .simple-section{border:1px solid var(--divider-color);border-radius:10px;padding:8px 10px}
         .simple-heading{font-size:.8rem;font-weight:750;margin-bottom:5px}
+        .simple-heading-timer{display:flex;align-items:center;justify-content:space-between;gap:8px}
+        .pwm-countdown{font-size:.82rem;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:.04em;color:var(--primary-color);white-space:nowrap}
         .simple-room{padding:7px 0;border-top:1px solid var(--divider-color)}
         .simple-room-main,.simple-pump{display:flex;align-items:center;justify-content:space-between;gap:8px}
         .simple-room-main strong,.simple-pump strong{font-size:.83rem;min-width:0;overflow-wrap:anywhere}
@@ -624,11 +679,11 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
           <div class="simple-floor-sections">
             <div class="simple-section">
-              <div class="simple-heading">Downstairs rooms</div>
+              <div class="simple-heading simple-heading-timer"><span>Downstairs rooms</span><span class="pwm-countdown" data-pwm-timer="ground_floor">25:00</span></div>
               <div class="simple-room-grid">${roomRenderer(downstairsRooms)}</div>
             </div>
             <div class="simple-section">
-              <div class="simple-heading">Upstairs rooms</div>
+              <div class="simple-heading simple-heading-timer"><span>Upstairs rooms</span><span class="pwm-countdown" data-pwm-timer="upstairs">25:00</span></div>
               <div class="simple-room-grid">${roomRenderer(upstairsRooms)}</div>
             </div>
             ${unassignedRooms.length ? `<div class="simple-section"><div class="simple-heading">Other rooms</div><div class="simple-room-grid">${roomRenderer(unassignedRooms)}</div></div>` : ""}

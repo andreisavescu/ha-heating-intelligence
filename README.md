@@ -1,3 +1,10 @@
+## v0.18.8 — Fix Heating Intelligence card render failure
+
+- Remove the obsolete estimated thermal-output metric from the UFH circuit-flow section. It referenced an undefined `totalPower` variable and caused a JavaScript `ReferenceError` during card rendering.
+- Keep active circuit count, configured active flow, per-manifold flow and individual circuit status.
+- Do not infer thermal output from configured flow.
+- No backend calculations or heating-control behavior changes.
+
 ## v0.18.3 — Use modulation as the sole live boiler-output signal
 
 - Remove the burner binary as a gate for live boiler output, modulation-estimated energy and room exposure; the binary can lag modulation transitions by approximately 30 seconds.

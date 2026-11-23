@@ -27,6 +27,7 @@ async def async_setup_entry(hass, entry) -> bool:
     from .const import CARD_FILENAME, CARD_URL, DOMAIN, PLATFORMS
     from .coordinator import HeatingIntelligenceCoordinator
     from .devices import async_repair_entity_device_associations
+    from homeassistant.helpers import entity_registry as er
 
     static_url = f"{CARD_URL}/{CARD_FILENAME}"
     static_file = Path(__file__).parent / "www" / CARD_FILENAME
@@ -47,6 +48,25 @@ async def async_setup_entry(hass, entry) -> bool:
     await coordinator.async_load_history()
     await coordinator.async_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    registry = er.async_get(hass)
+    for room in entry.options.get("rooms", []):
+        room_id = room.get("id")
+        if not room_id:
+            continue
+        for period in ("daily", "weekly", "monthly", "total", "season"):
+            stale_unique_id = f"{DOMAIN}_{room_id}_modulation_estimated_heat_{period}"
+            stale_entity_id = registry.async_get_entity_id("sensor", DOMAIN, stale_unique_id)
+            if stale_entity_id:
+                registry.async_remove(stale_entity_id)
+        stale_experiment_id = registry.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{room_id}_boiler_experiment_energy")
+        if stale_experiment_id:
+            registry.async_remove(stale_experiment_id)
+        stale_lifetime_id = registry.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{room_id}_thermal_energy_total_kwh")
+        if stale_lifetime_id:
+            registry.async_remove(stale_lifetime_id)
+    stale_boiler_total = registry.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_boiler_modulation_estimated_heat_total")
+    if stale_boiler_total:
+        registry.async_remove(stale_boiler_total)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     async_repair_entity_device_associations(hass, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

@@ -1,3 +1,12 @@
+## v0.19.0 — Separate modulation and gas-reconciled energy periods
+
+- Expose two independent room-energy series: burner-modulation estimates and gas-meter-reconciled useful heat.
+- Add daily, weekly, monthly and heating-season sensors for both methods, allocated by configured active UFH circuit flow.
+- Add matching whole-boiler period totals; do not create instantaneous gas-reconciled power.
+- Retain the existing 66/34 daily modulation calibration and gas-meter reconciliation assumptions.
+- Replace the System tab energy Sankeys with the eight requested room-energy period graphs, retain instant modulation power, and keep System trends.
+- Remove orphaned duplicate modulation entities from the short-lived intermediate unique IDs.
+
 ## v0.18.9 — Restore historical energy Sankey diagrams
 
 - Render daily, weekly, monthly and heating-season gas-reconciled room energy from their recorded kWh allocations, independently of current UFH circuit or pump activity.

@@ -30,11 +30,11 @@ CALCULATION_DETAILS = {
     "boiler_generated_heat_kwh": ("Heating gas input multiplied by the configured boiler-efficiency assumption.", "heating gas input (kWh) × boiler efficiency assumption", "Default boiler efficiency assumption is 0.90; DHW is excluded."),
     "boiler_allocated_heat_kwh": ("Gas-derived useful heat allocated to rooms by burner-on exposure.", "interval useful heat × room exposure ÷ total room exposure", "Room exposure accumulates configured circuit flow × modulation-derived output × burner-on seconds."),
     "boiler_unallocated_heat_kwh": ("Gas-derived useful heat that has no confirmed room exposure.", "max(0, useful heat − allocated heat)", "Only confirmed active UFH room exposure is eligible."),
-    "boiler_modulation_estimated_output_kw": ("Estimated live boiler output from burner modulation.", "if burner is on: max(3.2 kW, 25 kW × modulation % ÷ 100); otherwise 0 kW", "25 kW rated output and 3.2 kW minimum firing output assumptions; not a heat-meter reading."),
+    "boiler_modulation_estimated_output_kw": ("Estimated live boiler output from burner modulation.", "max(3.2 kW, 25 kW × modulation % ÷ 100) when modulation is positive; otherwise 0 kW", "25 kW rated output and 3.2 kW minimum firing output assumptions; modulation is the live firing signal, not a heat-meter reading."),
     "boiler_modulation_calibrated_output_kw": ("Live boiler output estimated from modulation and the smoothed daily gas calibration factor.", "max(3.2 kW, 25 kW × modulation % ÷ 100) × (0.66 × previous factor + 0.34 × previous-day observed factor)", "The previous complete day's gas-reconciled useful heat is divided by its raw modulation estimate; the smoothed factor is applied from the following day. If either daily total is missing, the prior factor is retained."),
     "boiler_calibration_factor": ("Daily smoothed calibration factor applied to live modulation-derived boiler output.", "0.66 × previous factor + 0.34 × (previous-day gas-reconciled useful heat ÷ previous-day raw modulation energy)", "Updated once per completed day when both daily totals are positive; the previous factor is retained when data is missing."),
     "boiler_modulation_room_energy_kwh": ("Modulation-estimated boiler energy apportioned to this room by its share of active configured UFH circuit flow.", "interval modulation energy × room flow weight ÷ sum of all eligible room flow weights", "Only circuits with confirmed active flow and configured flow contribute; shared circuits split their flow equally among served rooms; the smoothed gas-derived calibration factor is applied to modulation output before room allocation."),
-    "boiler_modulation_energy_today_kwh": ("Integrated modulation-estimated boiler output during eligible active-flow intervals today.", "Σ(estimated boiler output (kW) × interval seconds ÷ 3600)", "Burner must be on and at least one configured UFH circuit must have confirmed active flow."),
+    "boiler_modulation_energy_today_kwh": ("Integrated modulation-estimated boiler output during eligible active-flow intervals today.", "Σ(calibrated modulation output (kW) × interval seconds ÷ 3600)", "Modulation must be positive and at least one configured UFH circuit must have confirmed active flow; the delayed burner binary does not gate integration."),
     "boiler_modulation_energy_week_kwh": ("Sum of daily modulation-estimated energy from the current calendar week.", "Σ daily modulation-estimated energy (kWh), Monday–today", "Uses retained daily ledger."),
     "boiler_modulation_energy_month_kwh": ("Sum of daily modulation-estimated energy from the current calendar month.", "Σ daily modulation-estimated energy (kWh), month start–today", "Uses retained daily ledger."),
     "boiler_modulation_energy_total_kwh": ("Lifetime sum of eligible modulation-estimated energy.", "Σ(estimated boiler output (kW) × interval seconds ÷ 3600)", "Lifetime accumulator; only intervals with active configured UFH flow are counted."),
@@ -96,14 +96,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             "boiler_calibration_factor"))
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         for room in entry.options.get(CONF_ROOMS, []):
-            entities.append(RoomBoilerExperimentEnergySensor(coordinator, room["id"], room["name"]))
+            entities.extend(GasReconciledRoomEnergySensor(coordinator, room["id"], room["name"], period)
+                for period in ("daily", "weekly", "monthly", "season"))
     # Whole-boiler modulation-derived energy is independent of gas-meter availability.
     entities.extend(BoilerModulationEnergySensor(coordinator, period)
-        for period in ("daily", "weekly", "monthly", "total"))
+        for period in ("daily", "weekly", "monthly", "season"))
+    if entry.options.get(CONF_HEATING_GAS_ENTITY):
+        entities.extend(GasReconciledEnergySensor(coordinator, period)
+            for period in ("daily", "weekly", "monthly", "season"))
     # Per-room modulation-derived energy is also independent of gas-meter availability.
     for room in entry.options.get(CONF_ROOMS, []):
         entities.extend(ModulationRoomEnergySensor(coordinator, room["id"], room["name"], period)
-            for period in ("daily", "weekly", "monthly", "total"))
+            for period in ("daily", "weekly", "monthly", "season"))
     if entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY):
         entities.append(AtticTemperatureSensor(coordinator))
         entities.extend(AtticThermalMetricSensor(coordinator, metric) for metric in (
@@ -259,7 +263,7 @@ class BoilerModulationEnergySensor(HouseDeviceMixin, CoordinatorEntity, SensorEn
         "daily": ("Today", SensorStateClass.TOTAL, "boiler_modulation_energy_today_kwh"),
         "weekly": ("This Week", SensorStateClass.TOTAL, "boiler_modulation_energy_week_kwh"),
         "monthly": ("This Month", SensorStateClass.TOTAL, "boiler_modulation_energy_month_kwh"),
-        "total": ("Total", SensorStateClass.TOTAL_INCREASING, "boiler_modulation_energy_total_kwh"),
+        "season": ("This Heating Season", SensorStateClass.TOTAL, "boiler_modulation_energy_heating_season_kwh"),
     }
 
     def __init__(self, coordinator, period: str) -> None:
@@ -297,7 +301,7 @@ class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
         "daily": ("Estimated Modulation Thermal Energy Today", SensorStateClass.TOTAL, "boiler_modulation_daily_room_energy_kwh"),
         "weekly": ("Estimated Modulation Thermal Energy This Week", SensorStateClass.TOTAL, "boiler_modulation_weekly_room_energy_kwh"),
         "monthly": ("Estimated Modulation Thermal Energy This Month", SensorStateClass.TOTAL, "boiler_modulation_monthly_room_energy_kwh"),
-        "total": ("Estimated Modulation Thermal Energy Total", SensorStateClass.TOTAL_INCREASING, "boiler_modulation_room_energy_kwh"),
+        "season": ("Estimated Modulation Thermal Energy This Heating Season", SensorStateClass.TOTAL, "boiler_modulation_heating_season_room_energy_kwh"),
     }
 
     def __init__(self, coordinator, room_id: str, room_name: str, period: str) -> None:
@@ -315,7 +319,7 @@ class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
             "daily": "thermal_energy_today_kwh",
             "weekly": "thermal_energy_week_kwh",
             "monthly": "thermal_energy_month_kwh",
-            "total": "thermal_energy_total_kwh",
+            "season": "thermal_energy_season_kwh",
         }
         self._attr_unique_id = f"{DOMAIN}_{room_id}_{legacy_period_ids[period]}"
         self._attr_state_class = state_class
@@ -344,6 +348,69 @@ class ModulationRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntit
             "last_interval_allocation_share": interval.get("allocation_share", 0.0),
             "last_interval_allocated_energy_kwh": interval.get("interval_energy_kwh", 0.0),
             "last_interval_exposure_kw_seconds": interval.get("exposure_kw_seconds", 0.0),
+        }
+
+
+class GasReconciledEnergySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Whole-boiler useful heat reconciled to the cumulative heating-gas meter."""
+
+    _attr_should_poll = False
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:fire"
+    PERIODS = {
+        "daily": ("Today", "boiler_gas_reconciled_energy_today_kwh"),
+        "weekly": ("This Week", "boiler_gas_reconciled_energy_week_kwh"),
+        "monthly": ("This Month", "boiler_gas_reconciled_energy_month_kwh"),
+        "season": ("This Heating Season", "boiler_gas_reconciled_energy_heating_season_kwh"),
+    }
+
+    def __init__(self, coordinator, period: str) -> None:
+        super().__init__(coordinator)
+        label, self.metric = self.PERIODS[period]
+        self._attr_name = f"Boiler Gas-Reconciled Thermal Energy {label}"
+        self._attr_unique_id = f"{DOMAIN}_gas_reconciled_thermal_energy_{period}"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric, 0.0)
+
+
+class GasReconciledRoomEnergySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Gas-meter-reconciled useful heat allocated to a room by UFH flow exposure."""
+
+    _attr_should_poll = False
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:fire"
+    PERIODS = {
+        "daily": ("Today", "boiler_gas_reconciled_daily_room_energy_kwh"),
+        "weekly": ("This Week", "boiler_gas_reconciled_weekly_room_energy_kwh"),
+        "monthly": ("This Month", "boiler_gas_reconciled_monthly_room_energy_kwh"),
+        "season": ("This Heating Season", "boiler_gas_reconciled_heating_season_room_energy_kwh"),
+    }
+
+    def __init__(self, coordinator, room_id: str, room_name: str, period: str) -> None:
+        super().__init__(coordinator)
+        label, self.metric = self.PERIODS[period]
+        self.room_id = room_id
+        self._attr_name = f"{room_name} Gas-Reconciled Thermal Energy {label}"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_gas_reconciled_thermal_energy_{period}"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("boiler_energy_experiment", {}).get(self.metric, {}).get(self.room_id, 0.0)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "source": "cumulative_heating_gas_meter",
+            "method": "Heating-gas meter delta × configured gas conversion × boiler-efficiency assumption; allocated by recorded active UFH flow exposure.",
+            "calculation_description": "Gas-reconciled useful boiler heat allocated to this room using its share of measured-period UFH flow exposure.",
+            "calculation_formula": "Σ(interval gas-derived useful heat × room flow exposure ÷ total eligible room exposure)",
+            "calculation_assumptions": "Heating gas only; DHW excluded. Configured active UFH circuit flow determines room shares. No instantaneous gas-derived room power is calculated.",
         }
 
 

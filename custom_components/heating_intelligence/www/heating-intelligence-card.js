@@ -611,14 +611,6 @@ class HeatingIntelligenceCard extends HTMLElement {
             ${insights.filter(item => item.severity === "warning").slice(0,2).map(item => `<div class="simple-alert-row"><strong>${this._esc(item.title)}</strong><span>${this._esc(item.detail)}</span></div>`).join("")}
           </div>` : ""}
         </div>
-        <div class="overview">
-          <div class="metric"><span>Rooms requesting heat</span><strong>${attrs.heating_rooms ?? entries.filter(r=>r.demand).length} / ${entries.length}</strong></div>
-          <div class="metric"><span>Average room temperature</span><strong>${this._fmt(attrs.average_room_temperature)}</strong></div>
-          <div class="metric"><span>Heating water inlet</span><strong>${this._fmt(attrs.water_temperature)}</strong></div>
-          <div class="metric"><span>Pumps running</span><strong>${attrs.running_pumps ?? pumps.filter(p=>p.running).length} / ${pumps.length}</strong></div>
-          <div class="metric"><span>Total pump power</span><strong>${this._fmt(attrs.total_pump_power, "W")}</strong></div>
-          <div class="metric"><span>Combined energy total</span><strong>${this._fmt(attrs.total_pump_energy, "kWh", 2)}</strong></div>
-        </div>
         <div class="section"><div class="section-title">Whole-house building assessment</div>
           <div class="overview">
             <div class="metric"><span>Profile completeness</span><strong>${attrs.house_assessment?.profile_completeness_percent ?? 0}%</strong><div class="subtle">${attrs.house_assessment?.profile_known_fields ?? 0} / ${attrs.house_assessment?.profile_total_fields ?? 0} characteristics recorded</div></div>

@@ -1,3 +1,7 @@
+## v0.19.1 — Route energy graphs to the System tab
+
+- Ensure instant modulation power and all daily, weekly, monthly and heating-season energy graphs appear in the System tab rather than the Overview tab.
+
 ## v0.19.0 — Separate modulation and gas-reconciled energy periods
 
 - Expose two independent room-energy series: burner-modulation estimates and gas-meter-reconciled useful heat.

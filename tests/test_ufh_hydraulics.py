@@ -46,12 +46,16 @@ def test_pump_timer_resets_when_power_drops_to_seven_or_below():
     assert result["pump_above_threshold_seconds"] == 0
 
 
-def test_thermal_power_uses_assumed_nine_degree_drop():
+def test_confirmed_flow_exposes_configured_flow_without_inventing_heat_output():
     now = datetime(2026, 11, 21, tzinfo=timezone.utc)
     state = {}
     snapshot("on", 8.0, state, now)
     result = snapshot("on", 8.0, state, now + timedelta(seconds=180))
-    assert result["estimated_thermal_power_w"] == 627.9
+    assert result["flow_active"] is True
+    assert result["configured_flow_l_min"] == 1.0
+    assert result["active_configured_flow_l_min"] == 1.0
+    assert "estimated_thermal_power_w" not in result
+    assert "assumed_water_delta_t_c" not in result
 
 
 def test_or_and_demand_logic_preserves_unknowns():

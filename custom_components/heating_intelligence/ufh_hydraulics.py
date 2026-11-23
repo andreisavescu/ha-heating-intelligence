@@ -1,4 +1,4 @@
-"""Pure helpers for timed UFH circuit activation and hydraulic estimates."""
+"""Pure helpers for timed UFH circuit activation and configured-flow status."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -6,9 +6,6 @@ from typing import Any
 
 FLOW_START_POWER_THRESHOLD_W = 7.0
 FLOW_START_DELAY_SECONDS = 180
-WATER_DELTA_T_C = 9.0
-WATER_DENSITY_KG_L = 1.0
-WATER_HEAT_CAPACITY_J_KG_K = 4186.0
 
 
 def evaluate_activation(demand_values: list[bool | None], logic: str = "or") -> bool | None:
@@ -32,10 +29,9 @@ def build_ufh_hydraulic_snapshot(
     circuit_state: dict[str, dict[str, Any]],
     now: datetime,
 ) -> dict[str, Any]:
-    """Apply the 7 W + 3 minute start rule and estimate heat transfer at ΔT=9°C."""
+    """Apply the 7 W + 3 minute start rule without estimating thermal power."""
     circuit_results: dict[str, dict[str, Any]] = {}
     pump_totals: dict[str, float] = {}
-    total_thermal_power_w = 0.0
     now_ts = now.timestamp()
 
     for circuit in circuits:
@@ -92,12 +88,6 @@ def build_ufh_hydraulic_snapshot(
 
         configured_flow = round(max(0.0, min(6.0, float(flow_rates.get(circuit_id, 0.0)))), 2)
         active_flow = configured_flow if flow_active else 0.0
-        thermal_power_w = (
-            active_flow / 60.0 * WATER_DENSITY_KG_L
-            * WATER_HEAT_CAPACITY_J_KG_K * WATER_DELTA_T_C
-        )
-        thermal_power_w = round(thermal_power_w, 1)
-        total_thermal_power_w += thermal_power_w
         if flow_active and pump_id:
             pump_totals[pump_id] = pump_totals.get(pump_id, 0.0) + active_flow
 
@@ -121,8 +111,6 @@ def build_ufh_hydraulic_snapshot(
             "circulation_confirmed": flow_active,
             "configured_flow_l_min": configured_flow,
             "active_configured_flow_l_min": active_flow,
-            "assumed_water_delta_t_c": WATER_DELTA_T_C,
-            "estimated_thermal_power_w": thermal_power_w,
             "flow_is_manual_input": True,
         }
 
@@ -131,14 +119,12 @@ def build_ufh_hydraulic_snapshot(
         "pump_configured_flow_totals_l_min": {
             pump_id: round(value, 2) for pump_id, value in sorted(pump_totals.items())
         },
-        "active_estimated_thermal_power_w": round(total_thermal_power_w, 1),
-        "assumed_water_delta_t_c": WATER_DELTA_T_C,
         "flow_semantics": (
             "The 180-second timer starts when associated pump power first stays above "
             "7 W, independently of demand relay availability. Flow activates once that "
             "timer has elapsed and the configured demand is on. Demand may be a selected "
             "room set or any room on the circuit floor. It stops immediately when either "
             "condition is no longer true. Thermal power is estimated from manual flow "
-            "and an assumed 9°C water temperature drop; it is not measured."
+            "without inferring thermal output from configured flow."
         ),
     }

@@ -33,6 +33,7 @@ from .ufh_calibration import build_ufh_topology_audit, build_heat_delivery_calib
 from .boiler_energy_model import update_boiler_energy_model
 from .system_history import record_system_sample
 from .pump_countdown import start_deadline, timer_snapshot
+from .absolute_thermal_identification import identify_absolute_room_parameters
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
@@ -304,6 +305,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
                 require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
                 max_age_minutes=45,
+            )
+            summary["absolute_parameter_identification"] = identify_absolute_room_parameters(
+                summary["multizone_response_identification"],
+                configured_rooms,
             )
             summary["multi_zone_historical_replay"] = build_multizone_historical_replay(
                 self._calibration_dataset_samples,

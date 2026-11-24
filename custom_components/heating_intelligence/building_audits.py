@@ -59,12 +59,29 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
         for orientation in by_orientation
     ]
     known_references = [value for value in known_references if value is not None]
+    room_area_by_floor = {"ground_floor": 0.0, "upstairs": 0.0, "unassigned": 0.0}
+    rooms_missing_area = []
+    for room in room_list:
+        area = _number(room.get("area_m2", room.get("area")))
+        floor = room.get("floor") if room.get("floor") in ("ground_floor", "upstairs") else "unassigned"
+        if area is None or area <= 0:
+            rooms_missing_area.append(room.get("name", room.get("id")))
+        else:
+            room_area_by_floor[floor] += area
+    discrepancies = [
+        orientation for orientation, values in comparisons.items()
+        if values["gross_difference_m2"] is not None and abs(values["gross_difference_m2"]) > 0.1
+    ]
     return {
-        "status": "needs_window_records" if not windows else "review_required" if incomplete or invalid_room_windows else "configured",
+        "status": "needs_window_records" if not windows else "review_required" if incomplete or invalid_room_windows or discrepancies else "configured",
         "configured_rooms": len(room_list),
+        "rooms_missing_floor_area": rooms_missing_area,
+        "configured_room_area_by_floor_m2": {key: round(value, 2) for key, value in room_area_by_floor.items()},
+        "configured_room_area_total_m2": round(sum(room_area_by_floor.values()), 2),
         "configured_windows": len(windows),
         "windows_missing_geometry_or_orientation": incomplete,
         "windows_with_unknown_room": invalid_room_windows,
+        "orientations_with_over_0_1_m2_reference_difference": discrepancies,
         "window_area_by_orientation": comparisons,
         "individual_windows_glass_total_m2": round(sum(v["glass_m2"] for v in by_orientation.values()), 3),
         "individual_windows_frame_total_m2": round(sum(v["frame_m2"] for v in by_orientation.values()), 3),

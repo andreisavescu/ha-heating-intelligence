@@ -739,6 +739,32 @@ class HeatingIntelligenceCard extends HTMLElement {
           <div class="subtle">Room envelope/inter-zone links awaiting calibration: ${(attrs.thermal_model?.multi_zone?.missing_parameters?.room_envelope_and_interzone_conductances || []).map(id => this._esc(id)).join(", ") || "None"}.</div>
           <div class="subtle">${this._esc(attrs.thermal_model?.multi_zone?.plant?.note || "Plant telemetry is observational; heat output is not inferred from pump electricity.")}</div>
           <div class="subtle">Solar / internal gains: ${this._esc(attrs.thermal_model?.multi_zone?.gain_context?.status || "Not assessed")} · radiation ${this._fmt(attrs.thermal_model?.multi_zone?.gain_context?.solar_radiation_w_m2, "W/m²", 0)} · ${this._esc(attrs.thermal_model?.multi_zone?.gain_context?.note || "")}</div>
+          <div class="subsection-title">Attic thermal network</div>
+          <div class="overview">
+            <div class="metric"><span>Attic-floor path status</span><strong>${this._esc(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.attic_floor_status || "Not assessed")}</strong></div>
+            <div class="metric"><span>Room attic conductance</span><strong>${this._fmt(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.attic_floor_room_conductance_sum_w_per_k, "W/K", 2)}</strong><div class="subtle">Configured room shares</div></div>
+            <div class="metric"><span>Whole attic-floor conductance</span><strong>${this._fmt(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.attic_floor_total_conductance_w_per_k, "W/K", 2)}</strong><div class="subtle">${this._fmt(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.attic_floor_area_m2, "m²", 1)} · U ${this._fmt(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.attic_floor_u_value_w_m2k, "W/m²K", 3)}</div></div>
+            <div class="metric"><span>Attic-to-outdoor roof path</span><strong>${this._esc(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.roof_status || "Not assessed")}</strong><div class="subtle">${this._fmt(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.roof_conductance_w_per_k, "W/K", 2)} · area ${this._fmt(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.roof_area_m2, "m²", 1)}</div></div>
+            <div class="metric"><span>Upstairs room coverage</span><strong>${attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.upstairs_rooms_with_attic_conductance ?? 0} / ${attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.upstairs_rooms_configured ?? 0}</strong></div>
+            <div class="metric"><span>Conductive / ventilation paths</span><strong>${attrs.thermal_model?.multi_zone?.network_diagnostics?.configured_conductive_paths ?? 0} / ${attrs.thermal_model?.multi_zone?.network_diagnostics?.configured_ventilation_paths ?? 0}</strong><div class="subtle">Pending ${attrs.thermal_model?.multi_zone?.network_diagnostics?.pending_paths ?? 0} · unresolved ${attrs.thermal_model?.multi_zone?.network_diagnostics?.unresolved_room_paths ?? 0}</div></div>
+          </div>
+          <div class="subtle">Rooms missing attic-floor conductance: ${(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.rooms_missing_attic_conductance || []).map(id => this._esc(id)).join(", ") || "None"}.</div>
+          <div class="subtle">Attic-floor share check: ${this._esc(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.attic_floor_total_match_status || "Not assessed")} · ${this._esc(attrs.thermal_model?.multi_zone?.attic_thermal_diagnostics?.note || "")}</div>
+          <div class="subsection-title">Multi-zone historical holdout replay</div>
+          <div class="overview">
+            <div class="metric"><span>Replay status</span><strong>${this._esc(attrs.thermal_model?.historical_validation?.multi_zone_historical_replay?.status || "Waiting for Recorder analysis")}</strong></div>
+            <div class="metric"><span>Eligible holdout intervals</span><strong>${attrs.thermal_model?.historical_validation?.multi_zone_historical_replay?.eligible_intervals ?? 0}</strong><div class="subtle">Segments initialized ${attrs.thermal_model?.historical_validation?.multi_zone_historical_replay?.reinitialized_segments ?? 0}</div></div>
+            <div class="metric"><span>Coupled replay MAE</span><strong>${this._fmt(attrs.thermal_model?.historical_validation?.multi_zone_historical_replay?.aggregate_mae_c, "°C", 3)}</strong></div>
+            <div class="metric"><span>Persistence baseline MAE</span><strong>${this._fmt(attrs.thermal_model?.historical_validation?.multi_zone_historical_replay?.persistence_baseline_mae_c, "°C", 3)}</strong></div>
+            <div class="metric"><span>Attic boundary used</span><strong>${attrs.thermal_model?.historical_validation?.multi_zone_historical_replay?.attic_boundary_used ? "Yes" : "No"}</strong></div>
+            <div class="metric"><span>Improved over persistence</span><strong>${attrs.thermal_model?.historical_validation?.multi_zone_historical_replay?.improved_over_persistence == null ? "—" : attrs.thermal_model.historical_validation.multi_zone_historical_replay.improved_over_persistence ? "Yes" : "No"}</strong></div>
+          </div>
+          <div class="pumps">${Object.entries(attrs.thermal_model?.historical_validation?.multi_zone_historical_replay?.rooms || {}).map(([id, item]) => {
+            const room = rooms[id] || {};
+            return `<div class="metric"><span>${this._esc(room.name || id)} · ${item.sample_count ?? 0} samples</span><strong>${this._fmt(item.mae_c, "°C", 3)} MAE · bias ${this._fmt(item.bias_c, "°C", 3)}</strong><div class="subtle">Persistence MAE ${this._fmt(item.persistence_baseline_mae_c, "°C", 3)} · improved ${item.improved_over_persistence == null ? "—" : item.improved_over_persistence ? "yes" : "no"}</div></div>`;
+          }).join("") || '<p class="subtle">Waiting for enough clean, held-out coasting history across all configured rooms.</p>'}</div>
+          <div class="subtle">${this._esc(attrs.thermal_model?.historical_validation?.multi_zone_historical_replay?.interpretation || "The replay is a normalized response diagnostic, not an absolute physical RC simulation.")}</div>
+          <div class="subtle">Network blockers: ${(attrs.thermal_model?.multi_zone?.network_diagnostics?.simulation_blockers || []).map(item => this._esc(item.replaceAll("_", " "))).join(", ") || "None"}.</div>
 
         </div>
         <div class="section"><div class="section-title">Recorder history & calibration</div>

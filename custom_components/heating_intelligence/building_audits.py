@@ -80,6 +80,10 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
         orientation for orientation, values in comparisons.items()
         if values["gross_difference_m2"] is not None and abs(values["gross_difference_m2"]) > 0.1
     ]
+    orientations_without_complete_frame_area = [
+        orientation for orientation, values in comparisons.items()
+        if values["window_count"] and not values["frame_area_complete"]
+    ]
     return {
         "status": "needs_window_records" if not windows else "review_required" if incomplete or invalid_room_windows or discrepancies else "configured",
         "configured_rooms": len(room_list),
@@ -90,7 +94,17 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
         "windows_missing_geometry_or_orientation": incomplete,
         "windows_with_unknown_room": invalid_room_windows,
         "orientations_with_over_0_1_m2_reference_difference": discrepancies,
+        "orientations_without_complete_frame_area": orientations_without_complete_frame_area,
         "window_area_by_orientation": comparisons,
+        "individual_windows": [
+            {key: item.get(key) for key in (
+                "id", "name", "room_id", "orientation", "glass_area_m2",
+                "frame_area_m2", "glazing", "frame_material", "shading",
+                "shading_behaviour",
+            )}
+            for item in windows
+        ],
+        "building_profile": dict(profile),
         "individual_windows_glass_total_m2": round(sum(v["glass_m2"] for v in by_orientation.values()), 3),
         "individual_windows_known_frame_area_total_m2": round(sum(v["known_frame_m2"] for v in by_orientation.values()), 3),
         "individual_windows_frame_area_complete": sum(v["window_count"] for v in by_orientation.values()) == sum(v["frame_area_known_count"] for v in by_orientation.values()),
@@ -130,13 +144,14 @@ def build_thermal_readiness_audit(options: dict, rooms: dict, house_audit: dict,
     attic_shares = profile.get("attic_floor_room_conductances_w_per_k", {}) or {}
     missing_envelope = [rid for rid, item in room_parameters.items() if item["envelope_conductance_w_per_k"] is None]
     upstairs_ids = [room.get("id") for room in room_list if room.get("floor") == "upstairs"]
+    missing_attic = [rid for rid in upstairs_ids if rid not in attic_shares]
     return {
-        "status": "incomplete" if missing_envelope or not connections or not attic_shares else "configured",
+        "status": "incomplete" if missing_envelope or missing_attic or not connections else "configured",
         "room_parameters": room_parameters,
         "rooms_missing_envelope_conductance": missing_envelope,
         "configured_inter_room_connections": connections,
         "configured_attic_floor_conductances_w_per_k": attic_shares,
-        "upstairs_rooms_without_attic_conductance": [rid for rid in upstairs_ids if rid not in attic_shares],
+        "upstairs_rooms_without_attic_conductance": missing_attic,
         "attic_measurements": {
             "temperature_sensor_configured": bool(options.get(CONF_ATTIC_TEMPERATURE_ENTITY)),
             "humidity_sensor_configured": bool(options.get(CONF_ATTIC_HUMIDITY_ENTITY)),

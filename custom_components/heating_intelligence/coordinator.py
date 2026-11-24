@@ -321,26 +321,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
                 require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
             )
-            # All three experimental workflows share the physical RC solver.
-            # Bathroom values are scenario-only fallbacks, never Recorder observations.
-            current_room_snapshot = {
-                room_id: {"temperature": room_data.get("temperature")}
-                for room_id, room_data in (self.data.get("rooms") or {}).items()
-            }
-            outdoor_now = self.data.get("weather", {}).get("outdoor_temperature")
-            if isinstance(outdoor_now, dict):
-                outdoor_now = outdoor_now.get("value")
+            # Physical validation is based only on chronological Recorder samples.
+            # Forecasts and what-if scenarios are recalculated from live inputs
+            # when the results are merged into the current coordinator snapshot.
             summary["physical_model_validation"] = build_physical_model_validation(
                 self._calibration_dataset_samples, configured_rooms,
                 summary["absolute_parameter_identification"],
-            )
-            summary["predictive_forecast"] = build_predictive_forecast(
-                current_room_snapshot, configured_rooms,
-                summary["absolute_parameter_identification"], outdoor_now,
-            )
-            summary["what_if_simulator"] = build_what_if_simulator(
-                current_room_snapshot, configured_rooms,
-                summary["absolute_parameter_identification"], outdoor_now,
             )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None

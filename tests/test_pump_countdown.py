@@ -1,12 +1,20 @@
 """Tests for backend-owned manifold countdown timing."""
+import importlib.util
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from custom_components.heating_intelligence.pump_countdown import (
-    COUNTDOWN_SECONDS,
-    advance_deadline,
-    remaining_seconds,
-    start_deadline,
+ROOT = Path(__file__).parents[1]
+SPEC = importlib.util.spec_from_file_location(
+    "pump_countdown",
+    ROOT / "custom_components" / "heating_intelligence" / "pump_countdown.py",
 )
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+
+COUNTDOWN_SECONDS = MODULE.COUNTDOWN_SECONDS
+advance_deadline = MODULE.advance_deadline
+remaining_seconds = MODULE.remaining_seconds
+start_deadline = MODULE.start_deadline
 
 
 def test_new_pump_cycle_starts_a_full_25_minute_countdown():

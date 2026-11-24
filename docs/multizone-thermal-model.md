@@ -287,3 +287,35 @@ conductance; the free-cooling estimator returns only H/C. No automatic fitting
 or solver activation occurs. The next extension is multi-node replay with
 identified room, slab and attic states once their parameters are supported by
 independent measurements.
+
+
+## v0.20.0 completion: explicit room paths and UFH mapping
+
+Room configuration can now carry an explicit external-envelope conductance in
+W/K. The value represents the room's opaque external walls plus glazing as one
+room-to-outdoors path; it is not a learned estimate. The thermal-topology
+options flow also accepts explicit upstairs-room-to-attic conductance shares
+and optional room-to-room conductances. These paths are retained in the
+observation graph and shown in room diagnostic entities and the Home card.
+
+An explicit attic-floor room share is retained even when the whole-house
+attic-floor U-value/area pair is not configured. When the aggregate pair is
+available, the sum of configured room shares is compared with its U×A total;
+a mismatch is reported as a pending diagnostic rather than silently scaled.
+
+The 25-minute manifold countdown is owned by the Home Assistant coordinator.
+A detected pump OFF-to-ON transition writes an absolute expiry timestamp to
+the existing persistent pump history. The countdown continues independently
+of Lovelace card lifecycle. The card only formats the backend deadline; it
+does not use browser storage or restart the timer. Expired deadlines advance
+by whole 25-minute periods so a restart or a long gap does not shift the
+timer's phase.
+
+Configured W/K paths improve the topology and parameter-readiness report, but
+they do not by themselves make the physical RC simulation ready. Effective
+room/slab capacities, defensible room-level heat input, and the remaining
+required links still need independent evidence and holdout validation. The
+free-cooling H/C and historical replay helpers remain explicit analysis
+primitives: H/C identifies a ratio only, and a historical replay must be
+scored on a separate holdout window without resetting the simulated state to
+observations.

@@ -28,6 +28,7 @@ from .thermal_storage import build_thermal_storage_response_analysis
 from .ufh_hydraulics import build_ufh_hydraulic_snapshot
 from .boiler_energy_model import update_boiler_energy_model
 from .system_history import record_system_sample
+from .pump_countdown import advance_deadline, remaining_seconds, start_deadline
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
@@ -117,6 +118,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "thermal_model": {},
             "weather": {},
             "attic_thermal": {},
+            "pwm_timers": {},
         }
 
     def set_ufh_flow_rate(self, circuit_id: str, value: float) -> None:
@@ -505,6 +507,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 history["running"] = True
                 history["cycle_start"] = now.isoformat()
                 history["last_cycle_start"] = now.isoformat()
+                # The 25-minute manifold countdown is owned by the coordinator,
+                # not the Lovelace card, so it continues while no dashboard is open.
+                history["pwm_timer_next_at"] = start_deadline(now).isoformat()
                 history["cycle_count"] = int(history.get("cycle_count", 0)) + 1
                 history["daily_cycle_count"] = int(history.get("daily_cycle_count", 0)) + 1
                 changed = True
@@ -582,6 +587,35 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "daily_cycle_count": int(history.get("daily_cycle_count", 0)),
                 "daily_energy_kwh": round(float(history.get("daily_energy_kwh", 0)), 4),
             }
+
+        # Keep the manifold countdown deadline in persisted coordinator history.
+        # Advance by whole 25-minute periods after expiry so HA downtime does not
+        # restart the timer from the next card opening or shift its phase.
+        pwm_timers = {}
+        for floor_id in ("ground_floor", "upstairs"):
+            pump_history = self._history.get("pumps", {}).get(floor_id, {})
+            next_at = dt_util.parse_datetime(pump_history.get("pwm_timer_next_at") or "")
+            if next_at is not None:
+                advanced_deadline = advance_deadline(next_at, now)
+                if advanced_deadline != next_at:
+                    next_at = advanced_deadline
+                    pump_history["pwm_timer_next_at"] = next_at.isoformat()
+                    changed = True
+                remaining = remaining_seconds(next_at, now)
+                pwm_timers[floor_id] = {
+                    "next_at": next_at.isoformat(),
+                    "remaining_seconds": remaining,
+                    "status": "available",
+                    "duration_seconds": 1500,
+                }
+            else:
+                pwm_timers[floor_id] = {
+                    "next_at": None,
+                    "remaining_seconds": None,
+                    "status": "waiting_for_pump_start",
+                    "duration_seconds": 1500,
+                }
+        result["pwm_timers"] = pwm_timers
 
         result["sync"] = {
             "status": self._history.get("last_sync_result", "unknown"),
@@ -685,6 +719,12 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result["rooms"][room_id] = {
                 "floor": floor,
                 "area_m2": _as_float(room.get("area_m2")),
+                "envelope_conductance_w_per_k": _as_float(room.get("envelope_conductance_w_per_k")),
+                "attic_floor_conductance_w_per_k": _as_float(
+                    (self.entry.options.get("house_assessment", {}).get(
+                        "attic_floor_room_conductances_w_per_k", {}
+                    ) or {}).get(room_id)
+                ),
                 "volume_m3": _as_float(room.get("volume_m3")),
                 "air_changes_per_hour": _as_float(room.get(CONF_ACH)),
                 "floor_label": {"ground_floor": "Downstairs", "upstairs": "Upstairs", "unassigned": "Unassigned"}.get(floor, floor),

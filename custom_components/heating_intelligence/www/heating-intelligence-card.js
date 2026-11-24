@@ -403,55 +403,24 @@ class HeatingIntelligenceCard extends HTMLElement {
     }).join("");
     return `<div class="chart-wrap"><div class="chart-heading"><strong>Daily energy · last ${rows.length} days</strong><span>kWh</span></div><svg viewBox="0 0 400 128" role="img" aria-label="Daily gas and electricity consumption"><line x1="34" y1="20" x2="394" y2="20" class="chart-grid"/><line x1="34" y1="59" x2="394" y2="59" class="chart-grid"/><line x1="34" y1="98" x2="394" y2="98" class="chart-grid"/>${bars}</svg><div class="chart-legend"><span><i class="legend-gas"></i>Gas</span><span><i class="legend-electric"></i>Electricity</span></div></div>`;
   }
-  _pwmTimerState(floorId, pumpRunning) {
-    const key = `heating-intelligence-pwm-${floorId}`;
-    const now = Date.now();
-    let saved = null;
-    try {
-      saved = JSON.parse(localStorage.getItem(key) || "null");
-    } catch (_) {
-      saved = null;
-    }
-    if (!saved || !Number.isFinite(Number(saved.nextAt))) {
-      saved = { running: Boolean(pumpRunning), nextAt: now + 25 * 60 * 1000 };
-    } else {
-      if (pumpRunning && !saved.running) {
-        saved.nextAt = now + 25 * 60 * 1000;
-      }
-      if (now >= Number(saved.nextAt)) {
-        saved.nextAt = now + 25 * 60 * 1000;
-      }
-      saved.running = Boolean(pumpRunning);
-    }
-    this._pwmNextAt = this._pwmNextAt || {};
-    this._pwmNextAt[floorId] = Number(saved.nextAt);
-    try {
-      localStorage.setItem(key, JSON.stringify(saved));
-    } catch (_) {}
-    return Number(saved.nextAt);
-  }
   _startPwmCountdownTicker() {
     if (this._pwmTicker) return;
-    this._pwmTicker = setInterval(() => {
+    const update = () => {
       const now = Date.now();
       for (const floorId of ["ground_floor", "upstairs"]) {
-        let nextAt = this._pwmNextAt?.[floorId];
-        if (!Number.isFinite(nextAt)) continue;
-        if (now >= nextAt) {
-          nextAt = now + 25 * 60 * 1000;
-          this._pwmNextAt[floorId] = nextAt;
-          try {
-            const key = `heating-intelligence-pwm-${floorId}`;
-            const saved = JSON.parse(localStorage.getItem(key) || "{}");
-            saved.nextAt = nextAt;
-            localStorage.setItem(key, JSON.stringify(saved));
-          } catch (_) {}
+        const nextAt = this._pwmNextAt?.[floorId];
+        const node = this.shadowRoot?.querySelector(`[data-pwm-timer="${floorId}"]`);
+        if (!node) continue;
+        if (!Number.isFinite(nextAt)) {
+          node.textContent = "—";
+          continue;
         }
         const remaining = Math.max(0, Math.ceil((nextAt - now) / 1000));
-        const node = this.shadowRoot?.querySelector(`[data-pwm-timer="${floorId}"]`);
-        if (node) node.textContent = `${String(Math.floor(remaining / 60)).padStart(2, "0")}:${String(remaining % 60).padStart(2, "0")}`;
+        node.textContent = `${String(Math.floor(remaining / 60)).padStart(2, "0")}:${String(remaining % 60).padStart(2, "0")}`;
       }
-    }, 1000);
+    };
+    update();
+    this._pwmTicker = setInterval(update, 1000);
   }
   _render() {
     if (!this.shadowRoot || !this._hass || !this._config) return;
@@ -460,8 +429,13 @@ class HeatingIntelligenceCard extends HTMLElement {
     const rooms = attrs.rooms || {};
     const pumpEntries = Object.entries(attrs.pumps || {});
     const pumps = pumpEntries.map(([id, pump]) => ({id, ...pump})).sort((a,b) => a.name.localeCompare(b.name));
-    const downstairsPwmNextAt = this._pwmTimerState("ground_floor", Boolean(attrs.pumps?.ground_floor?.running));
-    const upstairsPwmNextAt = this._pwmTimerState("upstairs", Boolean(attrs.pumps?.upstairs?.running));
+    // Countdown deadlines come from the backend coordinator. The card only
+    // formats them; it never creates, persists, or restarts a pump timer.
+    this._pwmNextAt = this._pwmNextAt || {};
+    for (const floorId of ["ground_floor", "upstairs"]) {
+      const deadline = attrs.pwm_timers?.[floorId]?.next_at;
+      this._pwmNextAt[floorId] = deadline ? Date.parse(deadline) : null;
+    }
     this._startPwmCountdownTicker();
     const entries = Object.values(rooms).sort((a,b) => a.name.localeCompare(b.name));
     const downstairsRooms = entries.filter((room) => room.floor === "ground_floor");
@@ -503,6 +477,10 @@ class HeatingIntelligenceCard extends HTMLElement {
         ${room.window_entity && room.window_state_known && room.window_open ? '<span class="simple-alert">Window open</span>' : ""}
         ${room.window_entity && !room.window_state_known ? '<span class="simple-muted">Window unavailable</span>' : ""}
         <span class="simple-muted">Heat ${this._entityValue(room.name + " Estimated Modulation Heating Power", hasModulationAllocation ? this._fmt(roomModulationPowerW[room.id] || 0, "W", 0) : "—")}</span>
+      </div>
+      <div class="simple-room-meta">
+        <span class="simple-muted">Envelope ${this._entityValue(room.name + " External Envelope Conductance", this._fmt(room.envelope_conductance_w_per_k, "W/K", 2))}</span>
+        ${room.floor === "upstairs" ? `<span class="simple-muted">Attic ${this._entityValue(room.name + " Attic-Floor Conductance", this._fmt(room.attic_floor_conductance_w_per_k, "W/K", 2))}</span>` : ""}
       </div>
     </div>`).join("") : '<p class="simple-muted">No rooms configured.</p>';
     const thermalRanking = entries.filter((r) => r.heat_retention_hours_per_degree != null)

@@ -27,6 +27,7 @@ from .multizone_historical_replay import build_multizone_historical_replay
 from .validated_learning import build_validated_learning_state, validated_learning_diagnostics
 from .thermal_storage import build_thermal_storage_response_analysis
 from .ufh_hydraulics import build_ufh_hydraulic_snapshot
+from .ufh_calibration import build_ufh_topology_audit, build_heat_delivery_calibration
 from .boiler_energy_model import update_boiler_energy_model
 from .system_history import record_system_sample
 from .pump_countdown import start_deadline, timer_snapshot
@@ -1045,6 +1046,20 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
             now_local,
+        )
+        result["ufh_topology_audit"] = build_ufh_topology_audit(
+            self.entry.options.get("ufh_circuits", []),
+            result.get("rooms", {}),
+            result.get("pumps", {}),
+            result.get("ufh_hydraulics", {}),
+        )
+        result["heat_delivery_calibration"] = build_heat_delivery_calibration(
+            result["boiler_energy_experiment"].get("boiler_daily_generated_heat_kwh", {}),
+            result["boiler_energy_experiment"].get("boiler_daily_modulation_generated_heat_kwh", {}),
+            result["ufh_topology_audit"],
+            result.get("water_return_temperature") is not None,
+            result.get("water_temperature") is not None,
+            bool(self.entry.options.get(CONF_WATER_FLOW_RATE_ENTITY)),
         )
         # Keep the modulation and gas-reconciled daily comparison. The retired
         # hydraulic estimate is intentionally no longer calculated or recorded.

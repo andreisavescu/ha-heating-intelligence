@@ -3052,8 +3052,9 @@ def build_multizone_response_identification(
     Fits dT_i/dt = b_envelope*(T_out-T_i) +
     sum_j b_ij*(T_j-T_i) + intercept. Coefficients have units 1/hour:
     without independently identified room capacities they are G/C ratios,
-    never physical W/K conductances. Only clean free-coasting intervals are
-    eligible, and the final chronological segment is held out.
+    never physical W/K conductances. Each target room must be free-coasting with a confirmed closed window;
+    other rooms contribute measured temperature predictors. The final
+    chronological segment is held out.
     """
     if interval_minutes <= 0 or not 0 < train_fraction < 1:
         raise ValueError("Invalid multi-zone identification cadence or split")
@@ -3162,24 +3163,28 @@ def build_multizone_response_identification(
             def fresh_room_state(room_data, field):
                 age = numeric(room_data.get(field + "_age_minutes"))
                 return (age is None or age <= max_age_minutes) and state_off(room_data.get(field))
+            # Free-coasting and closed-window requirements apply to the
+            # target room being fitted. Other rooms contribute measured
+            # temperatures as predictors; their own heating demand must not
+            # invalidate this room's interval.
+            target_first = first_rooms.get(room_id, {})
+            target_second = second_rooms.get(room_id, {})
             stale_room_states = any(
-                (numeric(data.get(field + "_age_minutes")) is not None
-                 and numeric(data.get(field + "_age_minutes")) > max_age_minutes)
-                for rid in room_ids
-                for data in (first_rooms.get(rid, {}), second_rooms.get(rid, {}))
+                numeric(data.get(field + "_age_minutes")) is not None
+                and numeric(data.get(field + "_age_minutes")) > max_age_minutes
+                for data in (target_first, target_second)
                 for field in ("demand", "window")
             )
             if stale_room_states:
                 exclusions["stale_room_state"] += 1
-            clean_states = all(
-                fresh_room_state(first_rooms.get(rid, {}), "demand")
-                and fresh_room_state(second_rooms.get(rid, {}), "demand")
-                and fresh_room_state(first_rooms.get(rid, {}), "window")
-                and fresh_room_state(second_rooms.get(rid, {}), "window")
-                for rid in room_ids
+            clean_states = (
+                fresh_room_state(target_first, "demand")
+                and fresh_room_state(target_second, "demand")
+                and fresh_room_state(target_first, "window")
+                and fresh_room_state(target_second, "window")
             )
             if not clean_states:
-                exclusions["demand_or_window_not_confirmed_off_closed"] += 1
+                exclusions["target_demand_or_window_not_confirmed_off_closed"] += 1
                 continue
             first_channels, second_channels = first.get("channels", {}), second.get("channels", {})
             solar0 = numeric(first_channels.get("solar_radiation"))
@@ -3851,8 +3856,9 @@ def build_multizone_response_identification(
         "global_interval_counts": all_interval_counts,
         "units": "1/hour normalized conductance-to-capacity ratios (G/C), not W/K",
         "note": (
-            "This is an initial directional multi-zone identification. It requires all configured rooms "
-            "to be coasting with confirmed closed windows and low measured solar radiation. It does not "
+            "This is an initial directional multi-zone identification. Each target room "
+            "must be coasting with a confirmed closed window and low measured solar radiation; "
+            "other rooms need measured temperatures but need not be coasting. It does not "
             "identify absolute capacities or conductances, and unmeasured internal gains or plant heat "
             "can still bias the fit."
         ),

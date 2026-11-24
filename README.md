@@ -1,3 +1,14 @@
+## v0.20.0 — Room-level thermal topology and persistent manifold timers
+
+- Add a room-level UFH topology inventory: each configured room has a room-air node and a latent UFH slab node; each configured circuit retains its own identity and explicit served-room mapping.
+- Add explicit room-to-outdoors envelope, room-to-room and upstairs-to-attic conductance inputs in W/K. These configured paths are shown separately from learned/identified parameters.
+- Expose room envelope and attic-floor W/K values as diagnostic entities and in the Home card; keep unknown values unavailable rather than inventing defaults.
+- Add free-cooling H/C identification and single-room historical replay/holdout-scoring primitives with explicit limitations; candidate H/C remains a ratio, not an absolute W/K or capacity estimate.
+- Move the 25-minute upstairs/downstairs manifold countdown deadlines into persistent coordinator history. Pump start events create deadlines; dashboard refreshes only display them and cannot restart them.
+- Expose independent countdown diagnostic entities and preserve timer phase across Home Assistant restarts and missed periods.
+- Set the integration manifest version to 0.20.0.
+- Physical RC simulation remains withheld while effective room/slab capacities and other required conductances or measured room heat inputs are unidentified.
+
 ## v0.19.1 — Route energy graphs to the System tab
 
 - Ensure instant modulation power and all daily, weekly, monthly and heating-season energy graphs appear in the System tab rather than the Overview tab.

@@ -321,12 +321,26 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
                 require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
             )
-            # Physical validation is based only on chronological Recorder samples.
-            # Forecasts and what-if scenarios are recalculated from live inputs
-            # when the results are merged into the current coordinator snapshot.
+            # All three experimental workflows share the physical RC solver.
+            # Bathroom values are scenario-only fallbacks, never Recorder observations.
+            current_room_snapshot = {
+                room_id: {"temperature": room_data.get("temperature")}
+                for room_id, room_data in (self.data.get("rooms") or {}).items()
+            }
+            outdoor_now = self.data.get("weather", {}).get("outdoor_temperature")
+            if isinstance(outdoor_now, dict):
+                outdoor_now = outdoor_now.get("value")
             summary["physical_model_validation"] = build_physical_model_validation(
                 self._calibration_dataset_samples, configured_rooms,
                 summary["absolute_parameter_identification"],
+            )
+            summary["predictive_forecast"] = build_predictive_forecast(
+                current_room_snapshot, configured_rooms,
+                summary["absolute_parameter_identification"], outdoor_now,
+            )
+            summary["what_if_simulator"] = build_what_if_simulator(
+                current_room_snapshot, configured_rooms,
+                summary["absolute_parameter_identification"], outdoor_now,
             )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
@@ -385,35 +399,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         self._history["recorder_history_summary"] = summary
         return summary
 
-    def _apply_physical_model_experiments(self, snapshot: dict, validation: dict) -> None:
-        """Expose physical experiments on the coordinator snapshot using live inputs."""
-        absolute_parameters = validation.get("absolute_parameter_identification") or {}
-        configured_rooms = self.entry.options.get(CONF_ROOMS, [])
-        current_room_snapshot = {
-            room_id: {"temperature": room_data.get("temperature")}
-            for room_id, room_data in (snapshot.get("rooms") or {}).items()
-        }
-        outdoor = (snapshot.get("weather") or {}).get("outdoor_temperature")
-        if isinstance(outdoor, dict):
-            outdoor = outdoor.get("value")
-
-        physical_validation = validation.get("physical_model_validation")
-        if not isinstance(physical_validation, dict):
-            physical_validation = {
-                "status": "awaiting_recorder_history_refresh",
-                "rooms_scored": 0,
-                "rooms_configured": len(configured_rooms),
-                "rooms": {},
-                "note": "A Recorder history pass is required to calculate chronological one-step scores.",
-            }
-        snapshot["physical_model_validation"] = physical_validation
-        snapshot["predictive_forecast"] = build_predictive_forecast(
-            current_room_snapshot, configured_rooms, absolute_parameters, outdoor,
-        )
-        snapshot["what_if_simulator"] = build_what_if_simulator(
-            current_room_snapshot, configured_rooms, absolute_parameters, outdoor,
-        )
-
     async def _async_refresh_historical_validation(self) -> None:
         """Run expensive Recorder analysis after live data is already available."""
         try:
@@ -466,7 +451,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 self.entry.options.get("ufh_circuits", []),
             )
             current["thermal_model"] = thermal_model
-            self._apply_physical_model_experiments(current, validation)
             self.async_set_updated_data(current)
             await self._store.async_save(self._history)
         except Exception:
@@ -1198,8 +1182,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "rooms": result.get("rooms", {}),
         })
         result["system_history"] = self._history.get("system_samples", [])
-        cached_validation = self._history.get("recorder_history_summary") or {}
-        self._apply_physical_model_experiments(result, cached_validation)
         await self._store.async_save(self._history)
         self._schedule_historical_validation(now)
         return result

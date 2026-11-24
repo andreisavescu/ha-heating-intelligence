@@ -34,6 +34,7 @@ from .boiler_energy_model import update_boiler_energy_model
 from .system_history import record_system_sample
 from .pump_countdown import start_deadline, timer_snapshot
 from .absolute_thermal_identification import identify_absolute_room_parameters
+from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
@@ -319,6 +320,27 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
                 require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
                 require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
+            )
+            # All three experimental workflows share the physical RC solver.
+            # Bathroom values are scenario-only fallbacks, never Recorder observations.
+            current_room_snapshot = {
+                room_id: {"temperature": room_data.get("temperature")}
+                for room_id, room_data in (self.data.get("rooms") or {}).items()
+            }
+            outdoor_now = self.data.get("weather", {}).get("outdoor_temperature")
+            if isinstance(outdoor_now, dict):
+                outdoor_now = outdoor_now.get("value")
+            summary["physical_model_validation"] = build_physical_model_validation(
+                self._calibration_dataset_samples, configured_rooms,
+                summary["absolute_parameter_identification"],
+            )
+            summary["predictive_forecast"] = build_predictive_forecast(
+                current_room_snapshot, configured_rooms,
+                summary["absolute_parameter_identification"], outdoor_now,
+            )
+            summary["what_if_simulator"] = build_what_if_simulator(
+                current_room_snapshot, configured_rooms,
+                summary["absolute_parameter_identification"], outdoor_now,
             )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None

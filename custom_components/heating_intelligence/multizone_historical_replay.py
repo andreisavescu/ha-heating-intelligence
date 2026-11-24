@@ -194,6 +194,7 @@ def build_multizone_historical_replay(
     errors = {room_id: [] for room_id in room_ids}
     baseline_errors = {room_id: [] for room_id in room_ids}
     predicted_state: dict[str, float] | None = None
+    previous_observed: dict[str, float] | None = None
     previous_row = None
     previous_stamp = None
     first_replay_stamp = None
@@ -205,11 +206,13 @@ def build_multizone_historical_replay(
         if not is_clean:
             exclusions[reason] += 1
             predicted_state = None
+            previous_observed = None
             previous_row = None
             previous_stamp = None
             continue
         if predicted_state is None:
             predicted_state = {room_id: observed[room_id] for room_id in room_ids}
+            previous_observed = dict(observed)
             previous_row = sample
             previous_stamp = stamp
             reinitialized_segments += 1
@@ -222,6 +225,7 @@ def build_multizone_historical_replay(
         if abs(elapsed_minutes - interval_minutes) > 1:
             exclusions["invalid_interval"] += 1
             predicted_state = {room_id: observed[room_id] for room_id in room_ids}
+            previous_observed = dict(observed)
             previous_row = sample
             previous_stamp = stamp
             reinitialized_segments += 1
@@ -246,6 +250,7 @@ def build_multizone_historical_replay(
             if attic0 is None or attic1 is None:
                 exclusions["attic_missing_or_stale"] += 1
                 predicted_state = None
+                previous_observed = None
                 previous_row = None
                 previous_stamp = None
                 continue
@@ -275,8 +280,9 @@ def build_multizone_historical_replay(
         for room_id in room_ids:
             error = next_state[room_id] - observed[room_id]
             errors[room_id].append(error)
-            baseline_errors[room_id].append(predicted_state[room_id] - observed[room_id])
+            baseline_errors[room_id].append(previous_observed[room_id] - observed[room_id])
         predicted_state = next_state
+        previous_observed = dict(observed)
         previous_row = sample
         previous_stamp = stamp
         eligible_intervals += 1

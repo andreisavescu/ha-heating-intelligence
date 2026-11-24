@@ -3063,8 +3063,25 @@ def build_multizone_response_identification(
         raise ValueError("Maximum predictor condition number must be finite and greater than 1")
     if not math.isfinite(max_age_minutes) or max_age_minutes < 0:
         raise ValueError("Maximum sensor age must be finite and non-negative")
-    room_ids = [str(room.get("id", "unknown")) for room in rooms]
+    configured_room_ids = [str(room.get("id", "unknown")) for room in rooms]
     room_by_id = {str(room.get("id", "unknown")): room for room in rooms}
+    # A room without any numeric Recorder temperature observation cannot be
+    # a thermal node in this regression. Exclude it from both the target set
+    # and predictor matrix so one unmonitored room cannot block every fit.
+    observed_room_ids = {
+        room_id
+        for room_id in configured_room_ids
+        if any(
+            _finite_number_or_none(
+                (sample.get("rooms") or {}).get(room_id, {}).get("temperature")
+            ) is not None
+            for sample in samples
+        )
+    }
+    room_ids = [room_id for room_id in configured_room_ids if room_id in observed_room_ids]
+    excluded_unobserved_rooms = [
+        room_id for room_id in configured_room_ids if room_id not in observed_room_ids
+    ]
     attic_predictor_available = any(
         _finite_number_or_none((sample.get("channels") or {}).get("attic_temperature")) is not None
         for sample in samples
@@ -3073,7 +3090,10 @@ def build_multizone_response_identification(
         return {
             "status": "insufficient_zones",
             "rooms": {},
-            "note": "At least two configured rooms are required to identify inter-zone response.",
+            "configured_rooms": len(configured_room_ids),
+            "observed_rooms": len(room_ids),
+            "excluded_unobserved_rooms": excluded_unobserved_rooms,
+            "note": "At least two rooms with numeric Recorder temperature observations are required to identify inter-zone response.",
         }
 
     def numeric(value):
@@ -3759,6 +3779,19 @@ def build_multizone_response_identification(
         and item.get("holdout_rmse_c") is not None
         and item.get("holdout_intervals", 0) > 0
     ]
+    for room_id in excluded_unobserved_rooms:
+        room_results[room_id] = {
+            "status": "excluded_no_recorded_temperature",
+            "normalized_rates_per_hour": None,
+            "eligible_intervals": 0,
+            "training_intervals": 0,
+            "holdout_intervals": 0,
+            "excluded_intervals": {"no_recorded_temperature": len(parsed)},
+            "interpretation": (
+                "Excluded from multi-zone identification because no numeric room-temperature "
+                "observations were present in the Recorder dataset."
+            ),
+        }
     holdout_count = sum(item["holdout_intervals"] for item in validated_rooms)
     aggregate_holdout_mae = (
         sum(item["holdout_mae_c"] * item["holdout_intervals"] for item in validated_rooms) / holdout_count
@@ -3781,7 +3814,9 @@ def build_multizone_response_identification(
             if aggregate_holdout_mae is not None else "insufficient_validated_rooms"
         ),
         "rooms_validated": len(validated_rooms),
-        "configured_rooms": len(room_ids),
+        "configured_rooms": len(configured_room_ids),
+        "observed_rooms": len(room_ids),
+        "excluded_unobserved_rooms": excluded_unobserved_rooms,
         "holdout_room_intervals": holdout_count,
         "rooms_better_than_persistence": sum(
             1 for item in validated_rooms if item.get("status") == "holdout_better_than_persistence"
@@ -3809,6 +3844,9 @@ def build_multizone_response_identification(
         "train_fraction": train_fraction,
         "max_predictor_correlation_threshold": max_predictor_correlation,
         "identifiability_method": "pairwise_correlation_and_full_standardized_training_matrix_condition_number",
+        "configured_rooms": len(configured_room_ids),
+        "observed_rooms": len(room_ids),
+        "excluded_unobserved_rooms": excluded_unobserved_rooms,
         "rooms": room_results,
         "global_interval_counts": all_interval_counts,
         "units": "1/hour normalized conductance-to-capacity ratios (G/C), not W/K",

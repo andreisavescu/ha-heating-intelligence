@@ -3,15 +3,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from .const import (
-    CONF_ROOMS, CONF_PUMPS, CONF_HOUSE_ASSESSMENT, CONF_WINDOWS,
-    CONF_OUTDOOR_TEMPERATURE_ENTITY, CONF_SOLAR_RADIATION_ENTITY,
-    CONF_ATTIC_TEMPERATURE_ENTITY, CONF_ATTIC_HUMIDITY_ENTITY,
-    CONF_WATER_TEMPERATURE_ENTITY, CONF_RETURN_WATER_TEMPERATURE_ENTITY,
-    CONF_WATER_FLOW_RATE_ENTITY, CONF_HEATING_GAS_ENTITY,
-    CONF_BOILER_BURNER_ENTITY, CONF_BOILER_MODULATION_ENTITY,
-    CONF_AC_POWER_ENTITY, CONF_AC_ENERGY_ENTITY, CONF_DELTA_T_ENTITY,
-)
+# Keep these audit builders independent of Home Assistant imports so their
+# deterministic calculations can be unit-tested in a lightweight Python env.
+CONF_ROOMS = "rooms"
+CONF_HOUSE_ASSESSMENT = "house_assessment"
+CONF_WINDOWS = "windows"
+CONF_OUTDOOR_TEMPERATURE_ENTITY = "outdoor_temperature_entity"
+CONF_SOLAR_RADIATION_ENTITY = "solar_radiation_entity"
+CONF_ATTIC_TEMPERATURE_ENTITY = "attic_temperature_entity"
+CONF_ATTIC_HUMIDITY_ENTITY = "attic_humidity_entity"
+CONF_WATER_TEMPERATURE_ENTITY = "water_temperature_entity"
+CONF_RETURN_WATER_TEMPERATURE_ENTITY = "return_water_temperature_entity"
+CONF_WATER_FLOW_RATE_ENTITY = "water_flow_rate_entity"
+CONF_HEATING_GAS_ENTITY = "heating_gas_entity"
+CONF_BOILER_BURNER_ENTITY = "boiler_burner_entity"
+CONF_BOILER_MODULATION_ENTITY = "boiler_modulation_entity"
+CONF_AC_POWER_ENTITY = "ac_power_entity"
+CONF_AC_ENERGY_ENTITY = "ac_energy_entity"
+CONF_DELTA_T_ENTITY = "delta_t_entity"
 
 
 def _number(value: Any) -> float | None:

@@ -59,6 +59,7 @@ CONF_COMFORT_TARGET_C = "comfort_target_c"
 
 # Optional editable building and heating-system assessment.
 CONF_HOUSE_ASSESSMENT = "house_assessment"
+CONF_WINDOWS = "windows"
 
 CONF_BOILER_BURNER_ENTITY = "boiler_burner_entity"
 CONF_BOILER_MODULATION_ENTITY = "boiler_modulation_entity"

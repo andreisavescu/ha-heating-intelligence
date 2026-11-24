@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -1162,3 +1162,72 @@ class RoomAirQualitySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
             "co2_ppm": room.get("co2_ppm"),
             "relative_humidity_percent": room.get("humidity"),
         }
+
+
+
+class HouseAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Whole-house geometry and configuration cross-check."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "issues"
+    _attr_icon = "mdi:home-search"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "House Audit"
+        self._attr_unique_id = f"{DOMAIN}_house_audit"
+
+    @property
+    def native_value(self):
+        audit = self.coordinator.data.get("house_audit", {})
+        return (len(audit.get("windows_missing_geometry_or_orientation", [])) + len(audit.get("windows_with_unknown_room", [])) + len(audit.get("orientations_with_over_0_1_m2_reference_difference", [])) + len(audit.get("orientations_without_complete_frame_area", [])) + len(audit.get("rooms_missing_floor_area", [])))
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("house_audit", {})
+
+
+class ThermalReadinessAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Thermal boundary and physical model parameter readiness."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "gaps"
+    _attr_icon = "mdi:thermometer-lines"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Thermal Readiness Audit"
+        self._attr_unique_id = f"{DOMAIN}_thermal_readiness_audit"
+
+    @property
+    def native_value(self):
+        audit = self.coordinator.data.get("thermal_readiness_audit", {})
+        return len(audit.get("rooms_missing_envelope_conductance", [])) + len(audit.get("upstairs_rooms_without_attic_conductance", [])) + len(audit.get("rooms_missing_area_or_volume", []))
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("thermal_readiness_audit", {})
+
+
+class MeasurementAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Configured measurement source and room sensor coverage inventory."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "sources"
+    _attr_icon = "mdi:database-search"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Measurement Audit"
+        self._attr_unique_id = f"{DOMAIN}_measurement_audit"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("measurement_audit", {}).get("configured_global_source_count", 0)
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("measurement_audit", {})

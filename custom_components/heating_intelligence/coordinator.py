@@ -19,6 +19,7 @@ from .prediction_engine import build_predictions
 from .floor_efficiency import build_floor_performance, weather_normalised_efficiency
 from .advanced_heating import update_advanced_history
 from .house_assessment import build_house_assessment
+from .building_audits import build_house_audit, build_thermal_readiness_audit, build_measurement_audit
 from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
@@ -78,6 +79,7 @@ from .const import (
     CONF_WINDOW_ENTITY,
     CONF_HUMIDITY_ENTITY,
     CONF_CO2_ENTITY,
+    CONF_WINDOWS,
     DOMAIN,
 )
 
@@ -973,6 +975,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "thermal_model_rooms": result["thermal_model"].get("rooms_modelled", 0),
             "measured_performance_status": result["house_assessment"].get("performance_status"),
         }
+        result["house_audit"] = build_house_audit(
+            self.entry.options, result.get("rooms", {}),
+            self.entry.options.get(CONF_WINDOWS, []),
+        )
+        result["thermal_readiness_audit"] = build_thermal_readiness_audit(
+            self.entry.options, result.get("rooms", {}),
+            result["house_audit"], result.get("attic_thermal", {}),
+        )
         normalised_by_date = {
             item["date"]: item for item in weather_model.get("recent_days", [])
         }
@@ -1066,6 +1076,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             result.get("water_return_temperature") is not None,
             result.get("water_temperature") is not None,
             bool(self.entry.options.get(CONF_WATER_FLOW_RATE_ENTITY)),
+        )
+        result["measurement_audit"] = build_measurement_audit(
+            self.entry.options, result.get("rooms", {}), result,
         )
         # Keep the modulation and gas-reconciled daily comparison. The retired
         # hydraulic estimate is intentionally no longer calculated or recorded.

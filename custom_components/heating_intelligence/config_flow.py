@@ -105,6 +105,15 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             if not windows:
                 return self.async_abort(reason="no_windows")
             self._window_edit_id = user_input.get("window")
+            if not self._window_edit_id or self._window_edit_id not in {item.get("id") for item in windows}:
+                return self.async_show_form(
+                    step_id="windows",
+                    data_schema=vol.Schema({
+                        vol.Required("action", default=action): vol.In({"add": "Add a window", "edit": "Edit a window", "remove": "Remove a window"}),
+                        vol.Required("window"): vol.In({item["id"]: item.get("name", item["id"]) for item in windows}),
+                    }),
+                    errors={"window": "required"},
+                )
             if action == "remove":
                 data = dict(self.config_entry.options)
                 data[CONF_WINDOWS] = [item for item in windows if item.get("id") != self._window_edit_id]
@@ -158,7 +167,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Required("room_id", default=existing.get("room_id", rooms[0]["id"])): vol.In({item["id"]: item["name"] for item in rooms}),
             vol.Required("orientation", default=existing.get("orientation", "south")): vol.In({"north": "North", "east": "East", "south": "South", "west": "West"}),
             vol.Required("glass_area_m2", default=existing.get("glass_area_m2", 1.0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
-            vol.Optional("frame_area_m2", default=existing.get("frame_area_m2")): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=30, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
+            (vol.Optional("frame_area_m2", default=existing["frame_area_m2"]) if existing.get("frame_area_m2") is not None else vol.Optional("frame_area_m2")): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=30, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional("glazing", default=existing.get("glazing", "unknown")): vol.In({"unknown": "Unknown", "double": "Double", "triple": "Triple"}),
             vol.Optional("frame_material", default=existing.get("frame_material", "unknown")): vol.In({"unknown": "Unknown", "uPVC": "uPVC", "wood": "Wood", "aluminium": "Aluminium", "composite": "Composite"}),
             vol.Optional("shading", default=existing.get("shading", "unknown")): vol.In({"unknown": "Unknown", "none": "None", "blinds": "Blinds", "shutters": "Shutters", "external": "External shading", "mixed": "Mixed"}),

@@ -25,7 +25,7 @@
           "house_assessment": "House assessment",
           "edit_rooms": "Edit rooms",
           "ufh_circuits": "Configure UFH circuits",
-          "thermal_topology": "Configure room thermal paths (W/K)",
+          "thermal_topology": "Configure room thermal paths (W/K)"
         }
       },
       "thermal_topology": {

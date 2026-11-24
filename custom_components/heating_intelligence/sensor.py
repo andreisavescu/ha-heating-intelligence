@@ -121,6 +121,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if room.get("temperature_entity"):
             entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
         entities.append(RoomModulationPowerSensor(coordinator, room["id"], room["name"]))
+        entities.extend(
+            RoomConductanceSensor(coordinator, room["id"], room["name"], metric)
+            for metric in ("envelope_conductance_w_per_k", "attic_floor_conductance_w_per_k")
+        )
         if room.get("humidity_entity"):
             entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "humidity"))
         if room.get("co2_entity"):
@@ -154,6 +158,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         ])
     if len(entry.options.get(CONF_PUMPS, [])) == 2:
         entities.append(PumpSynchronizationSensor(coordinator))
+        entities.extend(
+            PumpCountdownSensor(coordinator, floor_id, label)
+            for floor_id, label in (
+                ("ground_floor", "Downstairs"),
+                ("upstairs", "Upstairs"),
+            )
+        )
     boiler_energy_configured = (
         entry.options.get(CONF_ELECTRICITY_BOILER_ENERGY_ENTITY)
         or entry.options.get(CONF_ELECTRICITY_BOILER_ENTITY)
@@ -482,6 +493,7 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "water_return_temperature_entity": data.get("water_return_temperature_entity"),
             "advanced_heating": data.get("advanced_heating", {}),
             "pumps": pumps,
+            "pwm_timers": data.get("pwm_timers", {}),
             "running_pumps": sum(1 for pump in pumps.values() if pump.get("running")),
             "total_pump_power": round(sum(p["power"] for p in pumps.values() if p.get("power") is not None), 1),
             "total_pump_energy": round(sum(p["energy"] for p in pumps.values() if p.get("energy") is not None), 3),
@@ -752,6 +764,42 @@ ROOM_THERMAL_METRICS = {
 }
 
 
+class RoomConductanceSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Explicitly configured room envelope or attic-floor conductance."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "W/K"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    METRICS = {
+        "envelope_conductance_w_per_k": "External Envelope Conductance",
+        "attic_floor_conductance_w_per_k": "Attic-Floor Conductance",
+    }
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.metric = metric
+        self._attr_name = f"{room_name} {self.METRICS[metric]}"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+        self._attr_icon = "mdi:home-thermometer"
+
+    @property
+    def native_value(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        value = room.get(self.metric)
+        return round(float(value), 3) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "unit": "W/K",
+            "source": "explicit_room_configuration",
+            "note": "Configured conductance, not an automatically identified physical parameter.",
+        }
+
+
 class RoomThermalAnalyticsSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     """Room thermal response and window impact metric."""
 
@@ -929,6 +977,31 @@ class PumpRuntimeSensor(PumpDeviceMixin, CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         return _calculation_attributes("pump_runtime")
+
+
+class PumpCountdownSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Backend-owned fixed 25-minute manifold countdown."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "s"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:timer-sand"
+
+    def __init__(self, coordinator, floor_id: str, floor_label: str) -> None:
+        super().__init__(coordinator)
+        self.floor_id = floor_id
+        self._attr_name = f"{floor_label} Manifold Countdown"
+        self._attr_unique_id = f"{DOMAIN}_{floor_id}_manifold_countdown"
+
+    @property
+    def native_value(self):
+        timer = self.coordinator.data.get("pwm_timers", {}).get(self.floor_id, {})
+        return timer.get("remaining_seconds")
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("pwm_timers", {}).get(self.floor_id, {})
 
 
 class PumpSynchronizationSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):

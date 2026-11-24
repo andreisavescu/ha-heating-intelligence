@@ -25,7 +25,8 @@
           "house_assessment": "House assessment",
           "edit_rooms": "Edit rooms",
           "ufh_circuits": "Configure UFH circuits",
-          "thermal_topology": "Configure room thermal paths (W/K)"
+          "thermal_topology": "Configure room thermal paths (W/K)",
+          "windows": "Configure individual windows"
         }
       },
       "thermal_topology": {
@@ -204,10 +205,34 @@
         "data": {
           "demand_entity": "Room heating-demand entity"
         }
+      },
+      "windows": {
+        "title": "Individual windows",
+        "description": "Maintain measured physical window records separately from the room's open-window contact sensor. Enter glass area and, when known, frame area; house-level orientation totals remain a cross-check.",
+        "data": {
+          "action": "Action",
+          "window": "Window"
+        }
+      },
+      "window_details": {
+        "title": "Window geometry and shading",
+        "description": "Record measured geometry and known optical metadata. Unknown values can remain unknown; no dimensions are inferred.",
+        "data": {
+          "name": "Window name",
+          "room_id": "Room",
+          "orientation": "Orientation",
+          "glass_area_m2": "Glass area (m²)",
+          "frame_area_m2": "Frame area (m²)",
+          "glazing": "Glazing",
+          "frame_material": "Frame material",
+          "shading": "Shading type",
+          "shading_behaviour": "Typical shading behaviour"
+        }
       }
     },
     "abort": {
-      "no_rooms": "There are no rooms configured."
+      "no_rooms": "There are no rooms configured.",
+      "no_windows": "There are no individual windows configured."
     }
   }
 }

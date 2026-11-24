@@ -472,6 +472,48 @@ def test_multizone_identification_recovers_normalized_passive_response_and_holds
         assert "not physical conductances" in room["interpretation"]
 
 
+def test_multizone_identification_excludes_rooms_without_temperature_history():
+    samples = []
+    room_a, room_b = 22.0, 19.0
+    for index in range(151):
+        outside = 5.0 + 4.0 * math.sin(index * 0.19) + 1.5 * math.sin(index * 0.047)
+        samples.append({
+            "timestamp": (datetime(2026, 11, 1, tzinfo=timezone.utc) + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "outdoor_temperature": outside,
+                "solar_radiation": 0.0,
+                "ac_power": 0.0,
+            },
+            "rooms": {
+                "living": {"temperature": room_a, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": room_b, "demand": "off", "window": "off"},
+                "bathroom": {"temperature": None, "demand": "off", "window": "off"},
+            },
+        })
+        if index < 150:
+            next_a = room_a + 0.5 * (0.035 * (outside - room_a) + 0.018 * (room_b - room_a))
+            next_b = room_b + 0.5 * (0.028 * (outside - room_b) + 0.012 * (room_a - room_b))
+            room_a, room_b = next_a, next_b
+
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}, {"id": "bathroom"}],
+        interval_minutes=30,
+        minimum_train_intervals=24,
+        minimum_holdout_intervals=8,
+    )
+
+    assert result["status"] == "room_response_identification_available"
+    assert result["configured_rooms"] == 3
+    assert result["observed_rooms"] == 2
+    assert result["excluded_unobserved_rooms"] == ["bathroom"]
+    assert result["rooms"]["bathroom"]["status"] == "excluded_no_recorded_temperature"
+    assert result["rooms"]["living"]["normalized_rates_per_hour"] is not None
+    assert result["rooms"]["bedroom"]["normalized_rates_per_hour"] is not None
+    assert "bathroom" not in result["rooms"]["living"]["predictors"]
+    assert "bathroom" not in result["rooms"]["bedroom"]["predictors"]
+
+
 def test_multizone_identification_withholds_when_solar_or_room_state_is_unavailable():
     samples = []
     start = datetime(2026, 11, 1, tzinfo=timezone.utc)

@@ -3064,6 +3064,11 @@ def build_multizone_response_identification(
     if not math.isfinite(max_age_minutes) or max_age_minutes < 0:
         raise ValueError("Maximum sensor age must be finite and non-negative")
     room_ids = [str(room.get("id", "unknown")) for room in rooms]
+    room_by_id = {str(room.get("id", "unknown")): room for room in rooms}
+    attic_predictor_available = any(
+        _finite_number_or_none((sample.get("channels") or {}).get("attic_temperature")) is not None
+        for sample in samples
+    )
     if len(room_ids) < 2:
         return {
             "status": "insufficient_zones",
@@ -3095,6 +3100,8 @@ def build_multizone_response_identification(
     all_interval_counts = {"candidate": max(0, len(parsed) - 1), "eligible": 0, "excluded": {}}
     for room_id in room_ids:
         predictors = ["envelope"] + [other for other in room_ids if other != room_id]
+        if room_by_id.get(room_id, {}).get("floor") == "upstairs" and attic_predictor_available:
+            predictors.append("attic")
         rows = []
         exclusions = {
             "non_contiguous_or_missing_temperature": 0,
@@ -3108,6 +3115,7 @@ def build_multizone_response_identification(
             "stale_solar_or_outdoor": 0,
             "stale_ac_or_boiler_telemetry": 0,
             "unsupported_solar_unit": 0,
+            "attic_missing_or_stale": 0,
             "invalid_interval": 0,
         }
         for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
@@ -3232,6 +3240,18 @@ def build_multizone_response_identification(
                 (temps0[other] + temps1[other] - temps0[room_id] - temps1[room_id]) / 2
                 for other in room_ids if other != room_id
             )
+            if "attic" in predictors:
+                attic0 = numeric(first_channels.get("attic_temperature"))
+                attic1 = numeric(second_channels.get("attic_temperature"))
+                attic_ages = (
+                    numeric(first_channels.get("attic_temperature_age_minutes")),
+                    numeric(second_channels.get("attic_temperature_age_minutes")),
+                )
+                if (attic0 is None or attic1 is None
+                        or any(age is not None and age > max_age_minutes for age in attic_ages)):
+                    exclusions["attic_missing_or_stale"] += 1
+                    continue
+                x.append((attic0 + attic1 - temps0[room_id] - temps1[room_id]) / 2)
             y = (temps1[room_id] - temps0[room_id]) / dt_hours
             rows.append((stamp1, x, y))
         all_interval_counts["eligible"] += len(rows)
@@ -3239,6 +3259,9 @@ def build_multizone_response_identification(
         split = int(len(rows) * train_fraction)
         train, holdout = rows[:split], rows[split:]
         result = {
+            "training_end": train[-1][0].isoformat() if train else None,
+            "holdout_start": holdout[0][0].isoformat() if holdout else None,
+            "holdout_end": holdout[-1][0].isoformat() if holdout else None,
             "status": "insufficient_clean_intervals",
             "candidate_intervals": len(parsed) - 1,
             "eligible_intervals": len(rows),
@@ -3288,8 +3311,9 @@ def build_multizone_response_identification(
                 }
             room_link_excitation = {
                 key: value["bidirectional_excitation"]
-                for key, value in predictor_excitation.items() if key != "envelope"
+                for key, value in predictor_excitation.items() if key not in ("envelope", "attic")
             }
+            result["attic_predictor_excitation"] = predictor_excitation.get("attic")
             result["predictor_excitation"] = predictor_excitation
             result["bidirectionally_excited_room_links"] = [
                 key for key, excited in room_link_excitation.items() if excited

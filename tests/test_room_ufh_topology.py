@@ -220,3 +220,28 @@ def test_attic_floor_path_requires_explicit_room_conductance_allocation():
     )
     assert result["attic_floor_paths"][0]["to"] == "room:bedroom"
     assert result["attic_floor_paths"][0]["conductance_w_per_k"] == 22.2
+
+
+
+def test_explicit_room_envelope_and_attic_conductances_are_reported_as_configured():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "eve": {
+                "name": "Eve",
+                "floor": "upstairs",
+                "temperature": 20.5,
+                "envelope_conductance_w_per_k": 4.704,
+                "attic_floor_conductance_w_per_k": 2.352,
+            },
+        },
+        attic={"attic_temperature": 10.0},
+        profile={
+            "attic_floor_u_value": 0.183,
+            "attic_floor_area_m2": 12.85,
+            "attic_floor_room_conductances_w_per_k": {"eve": 2.352},
+        },
+    )
+    readiness = result["simulation_readiness"]["rooms"]["room:eve"]
+    assert readiness["envelope_conductance_w_per_k"] == 4.704
+    assert readiness["envelope_conductance_status"] == "explicitly_configured"
+    assert readiness["attic_floor_conductance_w_per_k"] == 2.352

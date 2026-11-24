@@ -35,6 +35,7 @@ from .system_history import record_system_sample
 from .pump_countdown import start_deadline, timer_snapshot
 from .absolute_thermal_identification import identify_absolute_room_parameters
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator
+from .recorder_diagnostics import build_recorder_failure_summary, recorder_history_cache_ttl
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
@@ -146,7 +147,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         last_value = self._history.get("recorder_history_checked_at")
         last_check = dt_util.parse_datetime(last_value) if last_value else None
         cached = self._history.get("recorder_history_summary")
-        if last_check and cached and self._recorder_history_attempted and (now - last_check).total_seconds() < 6 * 3600:
+        cache_ttl = recorder_history_cache_ttl(cached) if cached else 0
+        if last_check and cached and self._recorder_history_attempted and (now - last_check).total_seconds() < cache_ttl:
             return cached
 
         self._recorder_history_attempted = True
@@ -192,6 +194,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         history_days = int(self.entry.options.get(CONF_CALIBRATION_HISTORY_DAYS, DEFAULT_CALIBRATION_HISTORY_DAYS))
         history_days = max(7, min(365, history_days))
         start = now - timedelta(days=history_days)
+        failed_stage = "recorder_query"
         try:
             from homeassistant.components.recorder import get_instance
             from homeassistant.components.recorder.history import get_significant_states
@@ -202,6 +205,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 self.hass, start, now, sorted(entity_ids), None,
                 True, False, True, True,
             )
+            failed_stage = "history_processing"
             summary = build_recorder_history_summary(history, start, now)
             summary["requested_history_days"] = history_days
             summary["control_event_resolution"] = "native_recorder_timestamps"
@@ -369,18 +373,18 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 summary["floor_room_demand_lag_analysis"],
                 summary["solar_room_response_analysis"],
             )
-        except Exception:
-            _LOGGER.exception("Unable to read Recorder history for thermal validation")
-            summary = {
-                "status": "recorder_query_failed",
-                "source": "home_assistant_recorder",
-                "entity_count": len(entity_ids),
-                "entities_with_history": 0,
-                "total_samples": 0,
-                "entities": {},
-                "raw_history_retained": False,
-                "note": "Recorder history could not be queried; live operation is unaffected.",
-            }
+        except Exception as err:
+            _LOGGER.exception(
+                "Recorder thermal validation failed during %s",
+                failed_stage,
+            )
+            summary = build_recorder_failure_summary(
+                failed_stage=failed_stage,
+                error=err,
+                entity_count=len(entity_ids),
+                history_days=history_days,
+                attempted_at=now.isoformat(),
+            )
         self._history["recorder_history_checked_at"] = now.isoformat()
         self._history["recorder_history_summary"] = summary
         return summary
@@ -407,6 +411,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "note": "A Recorder history pass is required to calculate chronological one-step scores.",
             }
         snapshot["physical_model_validation"] = physical_validation
+        diagnostic_keys = (
+            "status", "failed_stage", "exception_type", "exception_message",
+            "attempted_at", "requested_history_days", "entity_count",
+            "entities_with_history", "total_samples", "retry_after_seconds", "note",
+        )
+        snapshot["recorder_diagnostics"] = {
+            key: validation[key] for key in diagnostic_keys if key in validation
+        }
         snapshot["predictive_forecast"] = build_predictive_forecast(
             current_room_snapshot, configured_rooms, absolute_parameters, outdoor,
         )
@@ -479,9 +491,10 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         last_value = self._history.get("recorder_history_checked_at")
         last_check = dt_util.parse_datetime(last_value) if last_value else None
         cached = self._history.get("recorder_history_summary")
+        cache_ttl = recorder_history_cache_ttl(cached) if cached else 0
         fresh = bool(
             last_check and cached
-            and (now - last_check).total_seconds() < 6 * 3600
+            and (now - last_check).total_seconds() < cache_ttl
         )
         if not fresh and self._historical_validation_task is None:
             self._historical_validation_task = self.hass.async_create_task(

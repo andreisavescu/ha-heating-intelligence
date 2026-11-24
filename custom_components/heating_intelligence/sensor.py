@@ -1232,6 +1232,7 @@ class PhysicalModelExperimentsSensor(HouseDeviceMixin, CoordinatorEntity, Sensor
     def extra_state_attributes(self):
         return {
             "physical_model_validation": self.coordinator.data.get("physical_model_validation", {}),
+            "recorder_diagnostics": self.coordinator.data.get("recorder_diagnostics", {}),
             "predictive_forecast": self.coordinator.data.get("predictive_forecast", {}),
             "what_if_simulator": self.coordinator.data.get("what_if_simulator", {}),
             "fixed_scenario_temperatures_c": {"baie_matr": 22.0, "baie_parter": 20.5},

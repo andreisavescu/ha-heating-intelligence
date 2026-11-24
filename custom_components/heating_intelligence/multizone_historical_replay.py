@@ -239,6 +239,7 @@ def build_multizone_historical_replay(
         if outside0 is None or outside1 is None:
             exclusions["outdoor_missing_or_stale"] += 1
             predicted_state = None
+            previous_observed = None
             previous_row = None
             previous_stamp = None
             continue

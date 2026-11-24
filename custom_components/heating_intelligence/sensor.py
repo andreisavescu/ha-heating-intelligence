@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -455,6 +455,31 @@ class RoomBoilerExperimentEnergySensor(RoomDeviceMixin, CoordinatorEntity, Senso
             "calculation_assumptions": "Heating gas only; DHW excluded. Exposure is configured circuit flow × modulation-derived output × burner-on seconds.",
         }
 
+class UFHHydraulicAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Diagnostic summary of configured UFH circuit topology."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "issues"
+    _attr_icon = "mdi:pipe"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "UFH Hydraulic Audit"
+        self._attr_unique_id = f"{DOMAIN}_ufh_hydraulic_audit"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("ufh_topology_audit", {}).get("issue_count", 0)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "audit": self.coordinator.data.get("ufh_topology_audit", {}),
+            "heat_delivery_calibration": self.coordinator.data.get("heat_delivery_calibration", {}),
+        }
+
+
 class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     """Master sensor used by the Lovelace overview card."""
 
@@ -501,6 +526,8 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "boiler_context": data.get("boiler_context", {}),
             "pump_sequence": data.get("pump_sequence", {}),
             "ufh_hydraulics": data.get("ufh_hydraulics", {}),
+            "ufh_topology_audit": data.get("ufh_topology_audit", {}),
+            "heat_delivery_calibration": data.get("heat_delivery_calibration", {}),
             "boiler_energy_experiment": data.get("boiler_energy_experiment", {}),
             "algorithm_daily_comparison": data.get("algorithm_daily_comparison", []),
             "daily_heating": data.get("daily", {}),

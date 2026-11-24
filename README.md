@@ -1,3 +1,11 @@
+## v0.21.1 — Solar and internal-gain diagnostic foundation
+
+- Add a diagnostic-only solar and internal-gain report using the existing Recorder-aligned historical dataset.
+- Summarise configured window areas by orientation, glazing/shading metadata and solar-radiation history coverage; do not convert global irradiance into façade irradiance or invent solar watts.
+- Report room-specific CO₂, humidity and temperature history coverage and trends as indirect internal-gain evidence; do not infer occupancy or watts from these signals.
+- Keep solar and internal-gain outputs out of the multi-zone RC solver and room thermal-learning adjustments until coefficients and evidence are validated.
+- Preserve existing heating control, pump timing, demand handling and energy-allocation calculations.
+
 ## v0.20.0 — Room-level thermal topology and persistent manifold timers
 
 - Add a room-level UFH topology inventory: each configured room has a room-air node and a latent UFH slab node; each configured circuit retains its own identity and explicit served-room mapping.

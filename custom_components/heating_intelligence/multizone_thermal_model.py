@@ -622,10 +622,6 @@ def build_multizone_observation_model(
         if node.get("kind") == "room_air"
         and (_finite_or_none(node.get("envelope_conductance_w_per_k")) or 0) <= 0
     ]
-    missing_links = list(missing_envelope) + [
-        f"{pair['from']}<->{pair['to']}"
-        for pair in interzone_pairs if pair["status"] != "configured"
-    ]
     room_node_ids = [node_id for node_id, node in nodes.items() if node["kind"] == "room_air"]
     configured_interzone = {
         frozenset((item["from"], item["to"])): item["conductance_w_per_k"]
@@ -641,6 +637,10 @@ def build_multizone_observation_model(
                 "conductance_w_per_k": conductance,
                 "status": "configured" if conductance is not None else "conductance_not_identified",
             })
+    missing_links = list(missing_envelope) + [
+        f"{pair['from']}<->{pair['to']}"
+        for pair in interzone_pairs if pair["status"] != "configured"
+    ]
     room_parameter_readiness = {}
     for node_id in room_node_ids:
         node = nodes[node_id]

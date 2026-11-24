@@ -2284,3 +2284,84 @@ def test_multizone_identification_adds_measured_attic_boundary_for_upstairs_only
     )
     assert "attic" in result["rooms"]["upstairs"]["predictors"]
     assert "attic" not in result["rooms"]["living"]["predictors"]
+
+
+def test_absolute_room_parameters_use_configured_envelope_anchor_and_holdout_gate():
+    spec = importlib.util.spec_from_file_location(
+        "absolute_thermal_identification",
+        ROOT / "custom_components" / "heating_intelligence" / "absolute_thermal_identification.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    response = {
+        "rooms": {
+            "living": {
+                "normalized_rates_per_hour": {
+                    "envelope": 0.02,
+                    "bedroom": 0.01,
+                },
+                "coefficient_uncertainty": {
+                    "envelope": {
+                        "successful_replicates": 50,
+                        "lower_90_percentile_1_per_hour": 0.018,
+                        "upper_90_percentile_1_per_hour": 0.022,
+                    },
+                    "bedroom": {
+                        "lower_90_percentile_1_per_hour": 0.008,
+                        "upper_90_percentile_1_per_hour": 0.012,
+                    },
+                },
+                "holdout_mae_c": 0.12,
+                "persistence_baseline_mae_c": 0.2,
+                "training_intervals": 40,
+                "holdout_intervals": 12,
+            }
+        }
+    }
+    result = module.identify_absolute_room_parameters(
+        response,
+        [{"id": "living", "envelope_conductance_w_per_k": 7.4}],
+    )
+    living = result["rooms"]["living"]
+    assert living["status"] == "anchored_absolute_estimate_provisional"
+    assert living["effective_room_capacity_wh_per_k"] == 370.0
+    assert living["effective_room_capacity_range_wh_per_k"] == {
+        "lower": 336.36, "upper": 411.11,
+    }
+    assert living["absolute_conductances"]["bedroom"]["conductance_w_per_k"] == 3.7
+    assert result["solver_parameter_promotion"] == "withheld_pending_independent_physical_validation"
+    assert result["ufh_slab_capacities"]["ground_floor"]["capacity_wh_per_k"] is None
+
+
+def test_absolute_room_parameters_withhold_without_independent_envelope_anchor():
+    spec = importlib.util.spec_from_file_location(
+        "absolute_thermal_identification",
+        ROOT / "custom_components" / "heating_intelligence" / "absolute_thermal_identification.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    response = {
+        "rooms": {
+            "living": {
+                "normalized_rates_per_hour": {"envelope": 0.02},
+                "coefficient_uncertainty": {
+                    "envelope": {
+                        "successful_replicates": 50,
+                        "lower_90_percentile_1_per_hour": 0.018,
+                        "upper_90_percentile_1_per_hour": 0.022,
+                    }
+                },
+                "holdout_mae_c": 0.12,
+                "persistence_baseline_mae_c": 0.2,
+                "training_intervals": 40,
+                "holdout_intervals": 12,
+            }
+        }
+    }
+    result = module.identify_absolute_room_parameters(
+        response, [{"id": "living"}],
+    )
+    living = result["rooms"]["living"]
+    assert living["status"] == "absolute_parameters_withheld"
+    assert living["effective_room_capacity_wh_per_k"] is None
+    assert living["absolute_conductances"] == {}

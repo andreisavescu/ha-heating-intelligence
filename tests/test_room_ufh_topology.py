@@ -245,3 +245,16 @@ def test_explicit_room_envelope_and_attic_conductances_are_reported_as_configure
     assert readiness["envelope_conductance_w_per_k"] == 4.704
     assert readiness["envelope_conductance_status"] == "explicitly_configured"
     assert readiness["attic_floor_conductance_w_per_k"] == 2.352
+
+
+
+def test_explicit_attic_room_share_does_not_require_house_wide_u_value_and_area():
+    result = MODEL.build_multizone_observation_model(
+        {"eve": {"name": "Eve", "floor": "upstairs", "temperature": 20.0}},
+        attic={"attic_temperature": 9.0},
+        profile={
+            "attic_floor_room_conductances_w_per_k": {"eve": 2.352},
+        },
+    )
+    assert result["attic_floor_paths"][0]["to"] == "room:eve"
+    assert result["attic_floor_paths"][0]["conductance_w_per_k"] == 2.352

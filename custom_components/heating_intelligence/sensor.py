@@ -1181,7 +1181,7 @@ class HouseAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         audit = self.coordinator.data.get("house_audit", {})
-        return len(audit.get("windows_missing_geometry_or_orientation", [])) + len(audit.get("windows_with_unknown_room", []))
+        return (len(audit.get("windows_missing_geometry_or_orientation", [])) + len(audit.get("windows_with_unknown_room", [])) + len(audit.get("orientations_with_over_0_1_m2_reference_difference", [])) + len(audit.get("rooms_missing_floor_area", [])))
 
     @property
     def extra_state_attributes(self):

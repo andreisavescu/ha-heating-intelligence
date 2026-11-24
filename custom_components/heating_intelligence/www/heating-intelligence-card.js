@@ -403,18 +403,16 @@ class HeatingIntelligenceCard extends HTMLElement {
     }).join("");
     return `<div class="chart-wrap"><div class="chart-heading"><strong>Daily energy · last ${rows.length} days</strong><span>kWh</span></div><svg viewBox="0 0 400 128" role="img" aria-label="Daily gas and electricity consumption"><line x1="34" y1="20" x2="394" y2="20" class="chart-grid"/><line x1="34" y1="59" x2="394" y2="59" class="chart-grid"/><line x1="34" y1="98" x2="394" y2="98" class="chart-grid"/>${bars}</svg><div class="chart-legend"><span><i class="legend-gas"></i>Gas</span><span><i class="legend-electric"></i>Electricity</span></div></div>`;
   }
+  _pwmCountdownText(floorId, now = Date.now()) {
+    const nextAt = this._pwmNextAt?.[floorId];
+    if (!Number.isFinite(nextAt)) return "—";
+    const remaining = Math.max(0, Math.ceil((nextAt - now) / 1000));
+    return `${String(Math.floor(remaining / 60)).padStart(2, "0")}:${String(remaining % 60).padStart(2, "0")}`;
+  }
   _updatePwmCountdownDisplay() {
-    const now = Date.now();
     for (const floorId of ["ground_floor", "upstairs"]) {
-      const nextAt = this._pwmNextAt?.[floorId];
       const node = this.shadowRoot?.querySelector(`[data-pwm-timer="${floorId}"]`);
-      if (!node) continue;
-      if (!Number.isFinite(nextAt)) {
-        node.textContent = "—";
-        continue;
-      }
-      const remaining = Math.max(0, Math.ceil((nextAt - now) / 1000));
-      node.textContent = `${String(Math.floor(remaining / 60)).padStart(2, "0")}:${String(remaining % 60).padStart(2, "0")}`;
+      if (node) node.textContent = this._pwmCountdownText(floorId);
     }
   }
   _startPwmCountdownTicker() {
@@ -657,11 +655,11 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
           <div class="simple-floor-sections">
             <div class="simple-section">
-              <div class="simple-heading simple-heading-timer"><span>Downstairs rooms</span><span class="pwm-countdown" data-pwm-timer="ground_floor">25:00</span></div>
+              <div class="simple-heading simple-heading-timer"><span>Downstairs rooms</span><span class="pwm-countdown" data-pwm-timer="ground_floor">${this._pwmCountdownText("ground_floor")}</span></div>
               <div class="simple-room-grid">${roomRenderer(downstairsRooms)}</div>
             </div>
             <div class="simple-section">
-              <div class="simple-heading simple-heading-timer"><span>Upstairs rooms</span><span class="pwm-countdown" data-pwm-timer="upstairs">25:00</span></div>
+              <div class="simple-heading simple-heading-timer"><span>Upstairs rooms</span><span class="pwm-countdown" data-pwm-timer="upstairs">${this._pwmCountdownText("upstairs")}</span></div>
               <div class="simple-room-grid">${roomRenderer(upstairsRooms)}</div>
             </div>
             ${unassignedRooms.length ? `<div class="simple-section"><div class="simple-heading">Other rooms</div><div class="simple-room-grid">${roomRenderer(unassignedRooms)}</div></div>` : ""}

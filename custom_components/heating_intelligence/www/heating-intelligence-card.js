@@ -403,24 +403,24 @@ class HeatingIntelligenceCard extends HTMLElement {
     }).join("");
     return `<div class="chart-wrap"><div class="chart-heading"><strong>Daily energy · last ${rows.length} days</strong><span>kWh</span></div><svg viewBox="0 0 400 128" role="img" aria-label="Daily gas and electricity consumption"><line x1="34" y1="20" x2="394" y2="20" class="chart-grid"/><line x1="34" y1="59" x2="394" y2="59" class="chart-grid"/><line x1="34" y1="98" x2="394" y2="98" class="chart-grid"/>${bars}</svg><div class="chart-legend"><span><i class="legend-gas"></i>Gas</span><span><i class="legend-electric"></i>Electricity</span></div></div>`;
   }
+  _updatePwmCountdownDisplay() {
+    const now = Date.now();
+    for (const floorId of ["ground_floor", "upstairs"]) {
+      const nextAt = this._pwmNextAt?.[floorId];
+      const node = this.shadowRoot?.querySelector(`[data-pwm-timer="${floorId}"]`);
+      if (!node) continue;
+      if (!Number.isFinite(nextAt)) {
+        node.textContent = "—";
+        continue;
+      }
+      const remaining = Math.max(0, Math.ceil((nextAt - now) / 1000));
+      node.textContent = `${String(Math.floor(remaining / 60)).padStart(2, "0")}:${String(remaining % 60).padStart(2, "0")}`;
+    }
+  }
   _startPwmCountdownTicker() {
     if (this._pwmTicker) return;
-    const update = () => {
-      const now = Date.now();
-      for (const floorId of ["ground_floor", "upstairs"]) {
-        const nextAt = this._pwmNextAt?.[floorId];
-        const node = this.shadowRoot?.querySelector(`[data-pwm-timer="${floorId}"]`);
-        if (!node) continue;
-        if (!Number.isFinite(nextAt)) {
-          node.textContent = "—";
-          continue;
-        }
-        const remaining = Math.max(0, Math.ceil((nextAt - now) / 1000));
-        node.textContent = `${String(Math.floor(remaining / 60)).padStart(2, "0")}:${String(remaining % 60).padStart(2, "0")}`;
-      }
-    };
-    update();
-    this._pwmTicker = setInterval(update, 1000);
+    this._updatePwmCountdownDisplay();
+    this._pwmTicker = setInterval(() => this._updatePwmCountdownDisplay(), 1000);
   }
   _render() {
     if (!this.shadowRoot || !this._hass || !this._config) return;
@@ -980,6 +980,10 @@ class HeatingIntelligenceCard extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-system-range]").forEach(b=>b.addEventListener("click",()=>{this._systemRange=Number(b.dataset.systemRange);this._render();}));
     const select = this.shadowRoot.querySelector("select");
     if (select) select.addEventListener("change", (event) => { this._selectedRoom = event.target.value; this._render(); });
+    // _render() replaces the shadow DOM, so refresh the countdown text after
+    // the new timer nodes exist instead of showing the markup's 25:00 default
+    // until the next one-second ticker tick.
+    this._updatePwmCountdownDisplay();
   }
   static getStubConfig() { return { entity:"sensor.heating_intelligence_overview", title:"Heating Intelligence" }; }
 }

@@ -15,6 +15,7 @@ COUNTDOWN_SECONDS = MODULE.COUNTDOWN_SECONDS
 advance_deadline = MODULE.advance_deadline
 remaining_seconds = MODULE.remaining_seconds
 start_deadline = MODULE.start_deadline
+timer_snapshot = MODULE.timer_snapshot
 
 
 def test_new_pump_cycle_starts_a_full_25_minute_countdown():
@@ -48,3 +49,31 @@ def test_long_home_assistant_gap_skips_elapsed_periods_instead_of_restarting_now
     advanced = advance_deadline(deadline, after_three_cycles)
     assert advanced == deadline + timedelta(seconds=COUNTDOWN_SECONDS * 4)
     assert remaining_seconds(advanced, after_three_cycles) == COUNTDOWN_SECONDS - 7
+
+
+def test_manifold_deadlines_are_independent():
+    now = datetime(2026, 11, 24, 10, 0, tzinfo=timezone.utc)
+    downstairs = {"pwm_timer_next_at": start_deadline(now).isoformat()}
+    upstairs_start = now + timedelta(minutes=7)
+    upstairs = {"pwm_timer_next_at": start_deadline(upstairs_start).isoformat()}
+
+    check_at = now + timedelta(minutes=26)
+    downstairs_snapshot, downstairs_changed = timer_snapshot(downstairs, check_at)
+    upstairs_snapshot, upstairs_changed = timer_snapshot(upstairs, check_at)
+
+    assert downstairs_changed is True
+    assert downstairs_snapshot["remaining_seconds"] == COUNTDOWN_SECONDS - 60
+    assert upstairs_changed is False
+    assert upstairs_snapshot["remaining_seconds"] == COUNTDOWN_SECONDS - (19 * 60)
+    assert downstairs["pwm_timer_next_at"] != upstairs["pwm_timer_next_at"]
+
+
+def test_starting_one_manifold_does_not_change_the_other_deadline():
+    now = datetime(2026, 11, 24, 10, 0, tzinfo=timezone.utc)
+    downstairs = {"pwm_timer_next_at": start_deadline(now).isoformat()}
+    upstairs = {"pwm_timer_next_at": start_deadline(now + timedelta(minutes=4)).isoformat()}
+    upstairs_deadline = upstairs["pwm_timer_next_at"]
+
+    downstairs["pwm_timer_next_at"] = start_deadline(now + timedelta(minutes=10)).isoformat()
+
+    assert upstairs["pwm_timer_next_at"] == upstairs_deadline

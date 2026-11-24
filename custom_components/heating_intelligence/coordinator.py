@@ -23,6 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
+from .multizone_historical_replay import build_multizone_historical_replay
 from .validated_learning import build_validated_learning_state, validated_learning_diagnostics
 from .thermal_storage import build_thermal_storage_response_analysis
 from .ufh_hydraulics import build_ufh_hydraulic_snapshot
@@ -294,6 +295,16 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
                 require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
                 max_age_minutes=45,
+            )
+            summary["multi_zone_historical_replay"] = build_multizone_historical_replay(
+                self._calibration_dataset_samples,
+                configured_rooms,
+                summary["multizone_response_identification"],
+                interval_minutes=30,
+                max_age_minutes=45,
+                require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
+                require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
+                require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
             )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None

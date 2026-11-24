@@ -319,3 +319,44 @@ free-cooling H/C and historical replay helpers remain explicit analysis
 primitives: H/C identifies a ratio only, and a historical replay must be
 scored on a separate holdout window without resetting the simulated state to
 observations.
+
+
+## v0.20.2 — attic network diagnostics and coupled historical replay
+
+The attic topology now reports a room-by-room audit of the configured
+upstairs-to-attic conductances. When an aggregate attic-floor U-value and area
+are configured, the model also calculates the aggregate W/K value and checks
+whether the sum of explicit room shares is within 5% of that total. Missing
+room shares are listed by room ID; the total is never divided among rooms
+automatically.
+
+The attic-to-outdoor roof path remains separate. It is created only from an
+explicit roof U-value and roof area. Attic-floor insulation data is not treated
+as roof insulation, and roof geometry or thermal resistance is not inferred
+from construction descriptions.
+
+The network diagnostics expose per-room envelope, attic-floor and ventilation
+paths, the count of configured and pending paths, unresolved room references,
+and the blockers preventing physical simulation. Only dynamic thermal nodes
+(room air, attic air, UFH slab and explicit storage nodes) require a thermal
+capacity. Boiler/pump telemetry is context, not a dynamic heat-storage node.
+
+The Recorder calibration pass now adds measured attic temperature as an
+additional boundary predictor for upstairs rooms when that history is
+available. The fitted coefficients remain normalized G/C rates in 1/hour;
+they are not converted to W/K without independently identified room capacity.
+
+A coupled historical holdout replay uses the room response fits from the
+chronological training segment and predicts every configured room recursively
+over the later clean coasting period. Predicted room temperatures feed the
+other rooms' equations during each continuous segment; the replay does not
+reset predictions to measured temperatures at every interval. It reports
+per-room and aggregate MAE, RMSE, bias, persistence-baseline comparison,
+eligible intervals, exclusions and segment reinitializations. A data gap or
+excluded operating period starts a new segment from observed temperatures.
+
+This replay is a normalized passive-response diagnostic, not an absolute
+physical RC simulation. It does not infer room capacities, UFH slab capacity,
+water-side heat output or room-level useful heat delivery. Physical simulation
+remains gated until the missing absolute parameters are independently
+available and validated.

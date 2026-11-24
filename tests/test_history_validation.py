@@ -2250,3 +2250,37 @@ def test_control_event_inventory_does_not_infer_cycles_from_on_unavailable_only(
     assert zone["complete_on_intervals"] == 0
     assert zone["complete_on_off_cycles"] == 0
     assert zone["on_duration_seconds"]["median"] is None
+
+
+def test_multizone_identification_adds_measured_attic_boundary_for_upstairs_only():
+    from datetime import datetime, timedelta, timezone
+
+    start = datetime(2026, 11, 24, 0, 0, tzinfo=timezone.utc)
+    samples = []
+    for index in range(2):
+        stamp = start + timedelta(minutes=30 * index)
+        samples.append({
+            "timestamp": stamp.isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0,
+                "solar_radiation": 0.0,
+                "solar_radiation_unit": "W/m²",
+                "attic_temperature": 12.0 + index * 0.1,
+            },
+            "rooms": {
+                "upstairs": {"temperature": 20.0 + index * 0.1, "demand": "off", "window": "off"},
+                "living": {"temperature": 21.0 + index * 0.1, "demand": "off", "window": "off"},
+            },
+        })
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [
+            {"id": "upstairs", "floor": "upstairs"},
+            {"id": "living", "floor": "ground_floor"},
+        ],
+        interval_minutes=30,
+        minimum_train_intervals=1,
+        minimum_holdout_intervals=1,
+    )
+    assert "attic" in result["rooms"]["upstairs"]["predictors"]
+    assert "attic" not in result["rooms"]["living"]["predictors"]

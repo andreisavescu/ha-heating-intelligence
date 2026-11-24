@@ -85,7 +85,12 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
         if values["window_count"] and not values["frame_area_complete"]
     ]
     return {
-        "status": "needs_window_records" if not windows else "review_required" if incomplete or invalid_room_windows or discrepancies else "configured",
+        "status": (
+            "needs_window_records" if not windows
+            else "review_required" if incomplete or invalid_room_windows or discrepancies
+            else "frame_areas_incomplete" if orientations_without_complete_frame_area
+            else "configured"
+        ),
         "configured_rooms": len(room_list),
         "rooms_missing_floor_area": rooms_missing_area,
         "configured_room_area_by_floor_m2": {key: round(value, 2) for key, value in room_area_by_floor.items()},
@@ -146,9 +151,10 @@ def build_thermal_readiness_audit(options: dict, rooms: dict, house_audit: dict,
     upstairs_ids = [room.get("id") for room in room_list if room.get("floor") == "upstairs"]
     missing_attic = [rid for rid in upstairs_ids if rid not in attic_shares]
     return {
-        "status": "incomplete" if missing_envelope or missing_attic or not connections else "configured",
+        "status": "incomplete" if missing_envelope or missing_attic or not connections or any(item["missing"] for item in room_parameters.values()) else "configured",
         "room_parameters": room_parameters,
         "rooms_missing_envelope_conductance": missing_envelope,
+        "rooms_missing_area_or_volume": [rid for rid, item in room_parameters.items() if item["missing"]],
         "configured_inter_room_connections": connections,
         "configured_attic_floor_conductances_w_per_k": attic_shares,
         "upstairs_rooms_without_attic_conductance": missing_attic,

@@ -478,6 +478,10 @@ class HeatingIntelligenceCard extends HTMLElement {
         ${room.window_entity && !room.window_state_known ? '<span class="simple-muted">Window unavailable</span>' : ""}
         <span class="simple-muted">Heat ${this._entityValue(room.name + " Estimated Modulation Heating Power", hasModulationAllocation ? this._fmt(roomModulationPowerW[room.id] || 0, "W", 0) : "—")}</span>
       </div>
+      <div class="simple-room-meta">
+        <span class="simple-muted">Envelope ${this._entityValue(room.name + " External Envelope Conductance", this._fmt(room.envelope_conductance_w_per_k, "W/K", 2))}</span>
+        ${room.floor === "upstairs" ? `<span class="simple-muted">Attic ${this._entityValue(room.name + " Attic-Floor Conductance", this._fmt(room.attic_floor_conductance_w_per_k, "W/K", 2))}</span>` : ""}
+      </div>
     </div>`).join("") : '<p class="simple-muted">No rooms configured.</p>';
     const thermalRanking = entries.filter((r) => r.heat_retention_hours_per_degree != null)
       .sort((a,b) => b.heat_retention_hours_per_degree - a.heat_retention_hours_per_degree);

@@ -23,6 +23,7 @@ from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
 from .multizone_thermal_model import build_multizone_observation_model
+from .gain_diagnostics import build_gain_diagnostics
 from .multizone_historical_replay import build_multizone_historical_replay
 from .validated_learning import build_validated_learning_state, validated_learning_diagnostics
 from .thermal_storage import build_thermal_storage_response_analysis
@@ -268,6 +269,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 self._calibration_dataset_samples, configured_rooms,
                 interval_minutes=30, max_age_minutes=45,
                 maximum_lag_intervals=4, minimum_pairs=32,
+            )
+            summary["solar_internal_gain_diagnostics"] = build_gain_diagnostics(
+                self._calibration_dataset_samples,
+                configured_rooms,
+                self.entry.options.get("house_assessment", {}),
             )
             summary["floor_thermal_output_observability"] = build_floor_thermal_output_observability(
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,

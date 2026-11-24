@@ -505,6 +505,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 history["running"] = True
                 history["cycle_start"] = now.isoformat()
                 history["last_cycle_start"] = now.isoformat()
+                # The 25-minute manifold countdown is owned by the coordinator,
+                # not the Lovelace card, so it continues while no dashboard is open.
+                history["pwm_timer_next_at"] = (now + timedelta(minutes=25)).isoformat()
                 history["cycle_count"] = int(history.get("cycle_count", 0)) + 1
                 history["daily_cycle_count"] = int(history.get("daily_cycle_count", 0)) + 1
                 changed = True
@@ -582,6 +585,35 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "daily_cycle_count": int(history.get("daily_cycle_count", 0)),
                 "daily_energy_kwh": round(float(history.get("daily_energy_kwh", 0)), 4),
             }
+
+        # Keep the manifold countdown deadline in persisted coordinator history.
+        # Advance by whole 25-minute periods after expiry so HA downtime does not
+        # restart the timer from the next card opening or shift its phase.
+        pwm_timers = {}
+        for floor_id in ("ground_floor", "upstairs"):
+            pump_history = self._history.get("pumps", {}).get(floor_id, {})
+            next_at = dt_util.parse_datetime(pump_history.get("pwm_timer_next_at") or "")
+            if next_at is not None:
+                if now >= next_at:
+                    elapsed_periods = int((now - next_at).total_seconds() // 1500) + 1
+                    next_at += timedelta(seconds=elapsed_periods * 1500)
+                    pump_history["pwm_timer_next_at"] = next_at.isoformat()
+                    changed = True
+                remaining = max(0, math.ceil((next_at - now).total_seconds()))
+                pwm_timers[floor_id] = {
+                    "next_at": next_at.isoformat(),
+                    "remaining_seconds": remaining,
+                    "status": "available",
+                    "duration_seconds": 1500,
+                }
+            else:
+                pwm_timers[floor_id] = {
+                    "next_at": None,
+                    "remaining_seconds": None,
+                    "status": "waiting_for_pump_start",
+                    "duration_seconds": 1500,
+                }
+        result["pwm_timers"] = pwm_timers
 
         result["sync"] = {
             "status": self._history.get("last_sync_result", "unknown"),

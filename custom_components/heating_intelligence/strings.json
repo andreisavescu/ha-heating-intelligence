@@ -24,7 +24,21 @@
           "room_air_quality": "Configure room air quality",
           "house_assessment": "House assessment",
           "edit_rooms": "Edit rooms",
-          "ufh_circuits": "Configure UFH circuits"
+          "ufh_circuits": "Configure UFH circuits",
+          "thermal_topology": "Configure room thermal paths (W/K)",
+        }
+      },
+      "thermal_topology": {
+        "title": "Room thermal conductances",
+        "description": "Enter explicit room-to-outdoors envelope, room-to-room and upstairs-to-attic conductances. Use the calculated W/K values for each room. These are configured physical inputs, not automatically learned values. Configure one room or connection at a time, save, then reopen to add another.",
+        "data": {
+          "envelope_room": "Room for external envelope conductance",
+          "room_envelope_conductance": "External walls + windows to outdoors (W/K)",
+          "from_room": "First room",
+          "to_room": "Adjacent room",
+          "inter_room_conductance": "Inter-room conductance (W/K)",
+          "attic_floor_room": "Upstairs room",
+          "attic_floor_conductance": "Room-to-attic ceiling conductance (W/K)"
         }
       },
       "global_settings": {

@@ -27,8 +27,8 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
     profile = options.get(CONF_HOUSE_ASSESSMENT, {}) or {}
     room_list = options.get(CONF_ROOMS, []) or []
     room_ids = {room.get("id") for room in room_list}
-    by_orientation: dict[str, dict[str, float]] = {
-        key: {"glass_m2": 0.0, "frame_m2": 0.0, "gross_m2": 0.0}
+    by_orientation: dict[str, dict[str, Any]] = {
+        key: {"glass_m2": 0.0, "known_frame_m2": 0.0, "gross_m2": 0.0, "window_count": 0, "frame_area_known_count": 0}
         for key in ("north", "east", "south", "west")
     }
     invalid_room_windows = []
@@ -36,23 +36,31 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
     for item in windows:
         orientation = item.get("orientation")
         glass = _number(item.get("glass_area_m2"))
-        frame = _number(item.get("frame_area_m2")) or 0.0
+        frame = _number(item.get("frame_area_m2"))
         if item.get("room_id") not in room_ids:
             invalid_room_windows.append(item.get("name", item.get("id")))
         if orientation not in by_orientation or glass is None or glass <= 0:
             incomplete.append(item.get("name", item.get("id")))
             continue
         by_orientation[orientation]["glass_m2"] += glass
-        by_orientation[orientation]["frame_m2"] += frame
-        by_orientation[orientation]["gross_m2"] += glass + frame
+        by_orientation[orientation]["window_count"] += 1
+        if frame is not None:
+            by_orientation[orientation]["known_frame_m2"] += frame
+            by_orientation[orientation]["frame_area_known_count"] += 1
+            by_orientation[orientation]["gross_m2"] += glass + frame
 
     comparisons = {}
     for orientation, values in by_orientation.items():
         reference = _number(profile.get(f"window_area_{orientation}_m2"))
         comparisons[orientation] = {
-            **{key: round(value, 3) for key, value in values.items()},
+            "glass_m2": round(values["glass_m2"], 3),
+            "known_frame_area_m2": round(values["known_frame_m2"], 3),
+            "gross_m2": round(values["gross_m2"], 3) if values["window_count"] == values["frame_area_known_count"] else None,
+            "window_count": values["window_count"],
+            "frame_area_known_count": values["frame_area_known_count"],
+            "frame_area_complete": values["window_count"] == values["frame_area_known_count"],
             "house_assessment_reference_m2": reference,
-            "gross_difference_m2": round(values["gross_m2"] - reference, 3) if reference is not None else None,
+            "gross_difference_m2": round(values["gross_m2"] - reference, 3) if reference is not None and values["window_count"] == values["frame_area_known_count"] else None,
         }
     known_references = [
         _number(profile.get(f"window_area_{orientation}_m2"))
@@ -84,8 +92,13 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
         "orientations_with_over_0_1_m2_reference_difference": discrepancies,
         "window_area_by_orientation": comparisons,
         "individual_windows_glass_total_m2": round(sum(v["glass_m2"] for v in by_orientation.values()), 3),
-        "individual_windows_frame_total_m2": round(sum(v["frame_m2"] for v in by_orientation.values()), 3),
-        "individual_windows_gross_total_m2": round(sum(v["gross_m2"] for v in by_orientation.values()), 3),
+        "individual_windows_known_frame_area_total_m2": round(sum(v["known_frame_m2"] for v in by_orientation.values()), 3),
+        "individual_windows_frame_area_complete": sum(v["window_count"] for v in by_orientation.values()) == sum(v["frame_area_known_count"] for v in by_orientation.values()),
+        "individual_windows_gross_total_m2": (
+            round(sum(v["gross_m2"] for v in by_orientation.values()), 3)
+            if sum(v["window_count"] for v in by_orientation.values()) == sum(v["frame_area_known_count"] for v in by_orientation.values())
+            else None
+        ),
         "house_assessment_reference_total_m2": round(sum(known_references), 3) if len(known_references) == 4 else None,
         "reference_semantics": "Existing house-assessment orientation totals are treated as gross/frame-inclusive reference areas; individual records separately report glass and frame areas. Differences are diagnostic only.",
     }

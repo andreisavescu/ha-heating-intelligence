@@ -17,7 +17,7 @@ def test_house_audit_keeps_glass_frame_and_gross_areas_separate():
     result = build_house_audit(options, {}, windows)
 
     assert result["individual_windows_glass_total_m2"] == 2.5
-    assert result["individual_windows_frame_total_m2"] == 0.5
+    assert result["individual_windows_known_frame_area_total_m2"] == 0.5
     assert result["individual_windows_gross_total_m2"] == 3.0
     assert result["window_area_by_orientation"]["east"]["gross_difference_m2"] == 0.0
 
@@ -50,3 +50,16 @@ def test_measurement_audit_treats_return_temperature_as_optional_gap():
     assert result["water_side_measurement"]["supply_temperature_configured"] is True
     assert result["water_side_measurement"]["return_temperature_configured"] is False
     assert "not treated as prerequisites" in result["measurement_interpretation"]
+
+
+
+def test_missing_frame_area_is_unknown_not_zero():
+    result = build_house_audit(
+        {"rooms": [{"id": "living"}], "house_assessment": {"window_area_east_m2": 3.0}},
+        {},
+        [{"id": "east_1", "room_id": "living", "orientation": "east", "glass_area_m2": 2.5}],
+    )
+    east = result["window_area_by_orientation"]["east"]
+    assert east["gross_m2"] is None
+    assert east["gross_difference_m2"] is None
+    assert result["individual_windows_gross_total_m2"] is None

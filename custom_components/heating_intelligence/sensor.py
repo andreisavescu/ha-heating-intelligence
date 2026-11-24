@@ -1175,8 +1175,8 @@ class HouseAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = "House Configuration Audit"
-        self._attr_unique_id = f"{DOMAIN}_house_configuration_audit"
+        self._attr_name = "House Audit"
+        self._attr_unique_id = f"{DOMAIN}_house_audit"
 
     @property
     def native_value(self):
@@ -1198,8 +1198,8 @@ class ThermalReadinessAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEnt
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = "Thermal Boundary Readiness Audit"
-        self._attr_unique_id = f"{DOMAIN}_thermal_boundary_readiness_audit"
+        self._attr_name = "Thermal Readiness Audit"
+        self._attr_unique_id = f"{DOMAIN}_thermal_readiness_audit"
 
     @property
     def native_value(self):
@@ -1221,8 +1221,8 @@ class MeasurementAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = "Measurement Coverage Audit"
-        self._attr_unique_id = f"{DOMAIN}_measurement_coverage_audit"
+        self._attr_name = "Measurement Audit"
+        self._attr_unique_id = f"{DOMAIN}_measurement_audit"
 
     @property
     def native_value(self):

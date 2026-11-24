@@ -212,6 +212,7 @@ def build_multizone_observation_model(
                 if _finite_or_none(room.get("volume_m3")) is not None
                 and _finite_or_none(room.get("volume_m3")) > 0 else None
             ),
+            "envelope_conductance_w_per_k": _finite_or_none(room.get("envelope_conductance_w_per_k")),
             "co2_ppm": _finite_or_none(room.get("co2_ppm")),
             "humidity_percent": _finite_or_none(room.get("humidity")),
             "thermal_capacity_wh_per_k": None,
@@ -554,14 +555,28 @@ def build_multizone_observation_model(
         if node["kind"] == "room_air"
     ]
     room_node_ids = [node_id for node_id, node in nodes.items() if node["kind"] == "room_air"]
-    interzone_pairs = [
-        {"from": left, "to": right, "status": "conductance_not_identified"}
-        for index, left in enumerate(room_node_ids)
-        for right in room_node_ids[index + 1:]
-    ]
+    configured_interzone = {
+        frozenset((item["from"], item["to"])): item["conductance_w_per_k"]
+        for item in inter_room_paths
+    }
+    interzone_pairs = []
+    for index, left in enumerate(room_node_ids):
+        for right in room_node_ids[index + 1:]:
+            conductance = configured_interzone.get(frozenset((left, right)))
+            interzone_pairs.append({
+                "from": left,
+                "to": right,
+                "conductance_w_per_k": conductance,
+                "status": "configured" if conductance is not None else "conductance_not_identified",
+            })
     room_parameter_readiness = {}
     for node_id in room_node_ids:
         node = nodes[node_id]
+        envelope_conductance = node.get("envelope_conductance_w_per_k")
+        attic_conductance = next(
+            (item["conductance_w_per_k"] for item in attic_floor_paths if item["to"] == node_id),
+            None,
+        )
         room_parameter_readiness[node_id] = {
             "air_only_capacity_wh_per_k": node.get("air_thermal_capacity_wh_per_k"),
             "effective_room_capacity_wh_per_k": node.get("thermal_capacity_wh_per_k"),
@@ -572,8 +587,12 @@ def build_multizone_observation_model(
                 if node.get("air_thermal_capacity_wh_per_k") is not None
                 else "capacity_unavailable"
             ),
-            "envelope_conductance_w_per_k": None,
-            "envelope_conductance_status": "not_identified_or_not_distributed",
+            "envelope_conductance_w_per_k": envelope_conductance,
+            "envelope_conductance_status": (
+                "explicitly_configured" if envelope_conductance is not None and envelope_conductance > 0
+                else "not_configured"
+            ),
+            "attic_floor_conductance_w_per_k": attic_conductance,
             "interzone_links": [
                 pair for pair in interzone_pairs
                 if pair["from"] == node_id or pair["to"] == node_id
@@ -582,9 +601,12 @@ def build_multizone_observation_model(
     simulation_blockers = []
     if missing_capacity:
         simulation_blockers.append("effective_thermal_capacity_missing")
-    if room_node_ids:
+    if any(
+        item["envelope_conductance_status"] != "explicitly_configured"
+        for item in room_parameter_readiness.values()
+    ):
         simulation_blockers.append("room_envelope_conductances_not_identified")
-    if interzone_pairs:
+    if any(item["status"] != "configured" for item in interzone_pairs):
         simulation_blockers.append("interzone_conductances_not_identified")
     simulation_readiness = {
         "status": "withheld_missing_physical_parameters" if simulation_blockers else "physical_parameters_available",

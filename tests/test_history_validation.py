@@ -2407,3 +2407,39 @@ def test_absolute_room_parameters_withhold_without_independent_envelope_anchor()
     assert living["status"] == "absolute_parameters_withheld"
     assert living["effective_room_capacity_wh_per_k"] is None
     assert living["absolute_conductances"] == {}
+
+
+def test_multizone_identification_fits_coasting_room_while_other_room_is_heating():
+    samples = []
+    room_a, room_b = 22.0, 19.0
+    for index in range(151):
+        outside = 5.0 + 4.0 * math.sin(index * 0.19) + 1.5 * math.sin(index * 0.047)
+        samples.append({
+            "timestamp": (datetime(2026, 11, 1, tzinfo=timezone.utc) + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {
+                "outdoor_temperature": outside,
+                "solar_radiation": 0.0,
+                "ac_power": 0.0,
+            },
+            "rooms": {
+                "living": {"temperature": room_a, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": room_b, "demand": "on", "window": "off"},
+            },
+        })
+        if index < 150:
+            next_a = room_a + 0.5 * (0.035 * (outside - room_a) + 0.018 * (room_b - room_a))
+            next_b = room_b + 0.5 * (0.028 * (outside - room_b) + 0.012 * (room_a - room_b))
+            room_a, room_b = next_a, next_b
+
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}],
+        interval_minutes=30,
+        minimum_train_intervals=24,
+        minimum_holdout_intervals=8,
+    )
+
+    assert result["rooms"]["living"]["normalized_rates_per_hour"] is not None
+    assert result["rooms"]["living"]["eligible_intervals"] >= 32
+    assert result["rooms"]["bedroom"]["eligible_intervals"] == 0
+    assert result["rooms"]["bedroom"]["excluded_intervals"]["target_demand_or_window_not_confirmed_off_closed"] > 0

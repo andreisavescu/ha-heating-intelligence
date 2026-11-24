@@ -344,57 +344,62 @@ def build_multizone_observation_model(
     ):
         if node_id not in nodes:
             continue
-        if label == "roof" and "boundary:outdoors" not in nodes:
+        u_value = _finite_or_none(profile.get(u_key))
+        area = _finite_or_none(profile.get(area_key))
+        has_total = u_value is not None and u_value > 0 and area is not None and area > 0
+
+        if label == "roof":
+            if "boundary:outdoors" not in nodes or not has_total:
+                continue
+            connections.append({
+                "from": node_id,
+                "to": "boundary:outdoors",
+                "path": label,
+                "conductance_w_per_k": round(u_value * area, 4),
+                "source": "configured_u_value_times_area",
+                "status": "configured",
+            })
             continue
-        try:
-            u_value = float(profile.get(u_key))
-            area = float(profile.get(area_key))
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(u_value) and math.isfinite(area) and u_value > 0 and area > 0:
-            if label == "roof":
-                connections.append({
-                    "from": node_id,
-                    "to": "boundary:outdoors",
-                    "path": label,
-                    "conductance_w_per_k": round(u_value * area, 4),
-                    "source": "configured_u_value_times_area",
+
+        # Explicit room-level attic shares are valid topology even when the
+        # optional whole-attic U-value/area pair has not been configured.
+        configured_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
+        valid_shares = []
+        if isinstance(configured_shares, dict):
+            for room_id, room_conductance in configured_shares.items():
+                numeric = _finite_or_none(room_conductance)
+                if (
+                    room_id in rooms
+                    and rooms[room_id].get("floor") == "upstairs"
+                    and numeric is not None
+                    and numeric > 0
+                ):
+                    valid_shares.append((room_id, numeric))
+        if valid_shares:
+            for room_id, room_conductance in valid_shares:
+                attic_floor_paths.append({
+                    "from": "attic:air",
+                    "to": "room:" + room_id,
+                    "path": "attic_floor",
+                    "conductance_w_per_k": round(room_conductance, 4),
+                    "source": "explicit_room_level_attic_floor_conductance",
                     "status": "configured",
                 })
-            else:
-                # The total ceiling conductance is known, but its allocation
-                # across rooms is not. Accept only explicit room-level shares.
-                configured_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
-                valid_shares = []
-                for room_id, room_conductance in configured_shares.items():
-                    numeric = _finite_or_none(room_conductance)
-                    if room_id in rooms and rooms[room_id].get("floor") == "upstairs" and numeric is not None and numeric > 0:
-                        valid_shares.append((room_id, numeric))
-                if valid_shares:
-                    for room_id, room_conductance in valid_shares:
-                        attic_floor_paths.append({
-                            "from": "attic:air",
-                            "to": "room:" + room_id,
-                            "path": "attic_floor",
-                            "conductance_w_per_k": round(room_conductance, 4),
-                            "source": "explicit_room_level_attic_floor_conductance",
-                            "status": "configured",
-                        })
-                    if abs(sum(value for _, value in valid_shares) - u_value * area) > max(0.1, u_value * area * 0.05):
-                        pending_paths.append({
-                            "path": "attic_floor",
-                            "conductance_w_per_k": round(u_value * area, 4),
-                            "status": "configured_room_shares_do_not_match_total",
-                            "configured_room_conductance_w_per_k": round(sum(value for _, value in valid_shares), 4),
-                        })
-                else:
-                    pending_paths.append({
-                        "path": label,
-                        "conductance_w_per_k": round(u_value * area, 4),
-                        "source": "configured_u_value_times_area",
-                        "status": "awaiting_upstairs_zone_coupling",
-                        "detail": "Room-level allocation requires explicit attic_floor_room_conductances_w_per_k entries.",
-                    })
+            if has_total and abs(sum(value for _, value in valid_shares) - u_value * area) > max(0.1, u_value * area * 0.05):
+                pending_paths.append({
+                    "path": "attic_floor",
+                    "conductance_w_per_k": round(u_value * area, 4),
+                    "status": "configured_room_shares_do_not_match_total",
+                    "configured_room_conductance_w_per_k": round(sum(value for _, value in valid_shares), 4),
+                })
+        elif has_total:
+            pending_paths.append({
+                "path": label,
+                "conductance_w_per_k": round(u_value * area, 4),
+                "source": "configured_u_value_times_area",
+                "status": "awaiting_upstairs_zone_coupling",
+                "detail": "Room-level allocation requires explicit attic_floor_room_conductances_w_per_k entries.",
+            })
 
     # Only explicit conductances create room-to-room or room-to-outdoor links.
     inter_room_paths = []

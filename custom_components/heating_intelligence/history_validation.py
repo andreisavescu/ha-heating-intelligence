@@ -3126,7 +3126,7 @@ def build_multizone_response_identification(
         rows = []
         exclusions = {
             "non_contiguous_or_missing_temperature": 0,
-            "demand_or_window_not_confirmed_off_closed": 0,
+            "target_demand_or_window_not_confirmed_off_closed": 0,
             "solar_missing_or_high": 0,
             "ac_heating_active_or_unavailable": 0,
             "unsupported_ac_power_unit": 0,

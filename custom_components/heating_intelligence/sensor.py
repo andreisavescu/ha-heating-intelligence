@@ -795,7 +795,11 @@ class RoomConductanceSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         return {
             "unit": "W/K",
-            "source": "explicit_room_configuration",
+            "source": (
+                "explicit_room_configuration"
+                if self.metric == "envelope_conductance_w_per_k"
+                else "explicit_house_assessment_room_share"
+            ),
             "note": "Configured conductance, not an automatically identified physical parameter.",
         }
 

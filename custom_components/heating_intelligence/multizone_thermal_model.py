@@ -446,13 +446,13 @@ def build_multizone_observation_model(
         if room.get("floor") == "upstairs"
     ]
     configured_attic_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
-    valid_attic_shares = {
-        room_id: numeric
-        for room_id, raw in configured_attic_shares.items()
-        if isinstance(configured_attic_shares, dict)
-        for numeric in [_finite_or_none(raw)]
-        if room_id in upstairs_room_ids and numeric is not None and numeric > 0
-    } if isinstance(configured_attic_shares, dict) else {}
+    if not isinstance(configured_attic_shares, dict):
+        configured_attic_shares = {}
+    valid_attic_shares = {}
+    for room_id, raw in configured_attic_shares.items():
+        numeric = _finite_or_none(raw)
+        if room_id in upstairs_room_ids and numeric is not None and numeric > 0:
+            valid_attic_shares[room_id] = numeric
     attic_floor_total_g = (
         _finite_or_none(profile.get("attic_floor_u_value"))
         * _finite_or_none(profile.get("attic_floor_area_m2"))
@@ -622,7 +622,10 @@ def build_multizone_observation_model(
         if node.get("kind") == "room_air"
         and (_finite_or_none(node.get("envelope_conductance_w_per_k")) or 0) <= 0
     ]
-    missing_links = list(missing_envelope)
+    missing_links = list(missing_envelope) + [
+        f"{pair['from']}<->{pair['to']}"
+        for pair in interzone_pairs if pair["status"] != "configured"
+    ]
     room_node_ids = [node_id for node_id, node in nodes.items() if node["kind"] == "room_air"]
     configured_interzone = {
         frozenset((item["from"], item["to"])): item["conductance_w_per_k"]

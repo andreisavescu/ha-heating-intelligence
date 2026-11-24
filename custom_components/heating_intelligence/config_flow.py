@@ -59,7 +59,7 @@ from .const import (
     CONF_HUMIDITY_ENTITY,
     CONF_CO2_ENTITY,
     CONF_ENABLE_CO2,
-    CONF_HOUSE_ASSESSMENT,
+    CONF_HOUSE_ASSESSMENT,\n    CONF_WINDOWS,
     CONF_BOILER_BURNER_ENTITY,
     CONF_BOILER_MODULATION_ENTITY,
     DOMAIN,
@@ -90,8 +90,80 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["house_assessment", "thermal_topology", "add_room", "edit_rooms", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
+            menu_options=["house_assessment", "windows", "thermal_topology", "add_room", "edit_rooms", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
         )
+
+    async def async_step_windows(self, user_input=None):
+        """Add, edit or remove individual physical window records."""
+        windows = list(self.config_entry.options.get(CONF_WINDOWS, []))
+        if user_input is not None:
+            action = user_input["action"]
+            if action == "add":
+                self._window_edit_id = None
+                return await self.async_step_window_details()
+            if not windows:
+                return self.async_abort(reason="no_windows")
+            self._window_edit_id = user_input.get("window")
+            if action == "remove":
+                data = dict(self.config_entry.options)
+                data[CONF_WINDOWS] = [item for item in windows if item.get("id") != self._window_edit_id]
+                return self.async_create_entry(title="", data=data)
+            return await self.async_step_window_details()
+        choices = {item["id"]: item.get("name", item["id"]) for item in windows}
+        fields = {vol.Required("action", default="add"): vol.In({"add": "Add a window", "edit": "Edit a window", "remove": "Remove a window"})}
+        if choices:
+            fields[vol.Optional("window")] = vol.In(choices)
+        return self.async_show_form(step_id="windows", data_schema=vol.Schema(fields))
+
+    async def async_step_window_details(self, user_input=None):
+        """Store measured per-window geometry and descriptive optical metadata."""
+        windows = list(self.config_entry.options.get(CONF_WINDOWS, []))
+        existing = next((item for item in windows if item.get("id") == self._window_edit_id), {}) if self._window_edit_id else {}
+        rooms = self.config_entry.options.get(CONF_ROOMS, [])
+        if not rooms:
+            return self.async_abort(reason="no_rooms")
+        if user_input is not None:
+            name = str(user_input["name"]).strip()
+            slug = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_") or "window"
+            window_id = self._window_edit_id or slug
+            if not self._window_edit_id:
+                base, suffix = slug, 2
+                existing_ids = {item.get("id") for item in windows}
+                while window_id in existing_ids:
+                    window_id = f"{base}_{suffix}"
+                    suffix += 1
+            record = {
+                "id": window_id,
+                "name": name,
+                "room_id": user_input["room_id"],
+                "orientation": user_input["orientation"],
+                "glass_area_m2": float(user_input["glass_area_m2"]),
+                "frame_area_m2": float(user_input["frame_area_m2"]) if user_input.get("frame_area_m2") not in (None, "") else None,
+                "glazing": user_input.get("glazing", "unknown"),
+                "frame_material": user_input.get("frame_material", "unknown"),
+                "shading": user_input.get("shading", "unknown"),
+                "shading_behaviour": user_input.get("shading_behaviour", "unknown"),
+            }
+            data = dict(self.config_entry.options)
+            data[CONF_WINDOWS] = [item for item in windows if item.get("id") != window_id] + [record]
+            return self.async_create_entry(title="", data=data)
+
+        def optional_number(key, minimum, maximum, unit):
+            saved = existing.get(key)
+            marker = vol.Optional(key, default=saved) if saved is not None else vol.Optional(key)
+            return marker, selector.NumberSelector(selector.NumberSelectorConfig(min=minimum, max=maximum, step=0.01, unit_of_measurement=unit, mode=selector.NumberSelectorMode.BOX))
+        fields = {
+            vol.Required("name", default=existing.get("name", "")): str,
+            vol.Required("room_id", default=existing.get("room_id", rooms[0]["id"])): vol.In({item["id"]: item["name"] for item in rooms}),
+            vol.Required("orientation", default=existing.get("orientation", "south")): vol.In({"north": "North", "east": "East", "south": "South", "west": "West"}),
+            vol.Required("glass_area_m2", default=existing.get("glass_area_m2", 1.0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("frame_area_m2", default=existing.get("frame_area_m2")): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=30, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("glazing", default=existing.get("glazing", "unknown")): vol.In({"unknown": "Unknown", "double": "Double", "triple": "Triple"}),
+            vol.Optional("frame_material", default=existing.get("frame_material", "unknown")): vol.In({"unknown": "Unknown", "uPVC": "uPVC", "wood": "Wood", "aluminium": "Aluminium", "composite": "Composite"}),
+            vol.Optional("shading", default=existing.get("shading", "unknown")): vol.In({"unknown": "Unknown", "none": "None", "blinds": "Blinds", "shutters": "Shutters", "external": "External shading", "mixed": "Mixed"}),
+            vol.Optional("shading_behaviour", default=existing.get("shading_behaviour", "unknown")): vol.In({"unknown": "Unknown", "raised_when_sunny": "Generally raised when sunny", "usually_closed": "Usually closed", "manual_variable": "Manually variable", "fixed": "Fixed"}),
+        }
+        return self.async_show_form(step_id="window_details", data_schema=vol.Schema(fields))
 
     async def async_step_thermal_topology(self, user_input=None):
         """Configure explicit room and attic thermal conductances."""

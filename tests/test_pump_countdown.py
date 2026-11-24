@@ -59,7 +59,7 @@ def test_manifold_deadlines_are_independent():
 
     check_at = now + timedelta(minutes=26)
     downstairs_snapshot, downstairs_changed = timer_snapshot(downstairs, check_at)
-    upstairs_snapshot, upstairs_changed = MODULE.timer_snapshot(upstairs, check_at)
+    upstairs_snapshot, upstairs_changed = timer_snapshot(upstairs, check_at)
 
     assert downstairs_changed is True
     assert downstairs_snapshot["remaining_seconds"] == COUNTDOWN_SECONDS - 60

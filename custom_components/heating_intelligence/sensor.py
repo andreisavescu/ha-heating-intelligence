@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -1209,6 +1209,34 @@ class ThermalReadinessAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEnt
     @property
     def extra_state_attributes(self):
         return self.coordinator.data.get("thermal_readiness_audit", {})
+
+
+class PhysicalModelExperimentsSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Physical replay validation, experimental forecasts and isolated scenarios."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "rooms"
+    _attr_icon = "mdi:chart-timeline-variant"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Physical Model Experiments"
+        self._attr_unique_id = f"{DOMAIN}_physical_model_experiments"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("physical_model_validation", {}).get("rooms_scored", 0)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "physical_model_validation": self.coordinator.data.get("physical_model_validation", {}),
+            "predictive_forecast": self.coordinator.data.get("predictive_forecast", {}),
+            "what_if_simulator": self.coordinator.data.get("what_if_simulator", {}),
+            "fixed_scenario_temperatures_c": {"baie_matr": 22.0, "baie_parter": 20.5},
+            "fixed_temperature_policy": "scenario_initial_conditions_only_never_historical_measurements",
+        }
 
 
 class MeasurementAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):

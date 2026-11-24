@@ -440,6 +440,63 @@ def build_multizone_observation_model(
             "status": "observed" if outdoor_c is not None else "temperature_unavailable",
         }
 
+    # Summarise attic paths without inferring any missing building values.
+    upstairs_room_ids = [
+        room_id for room_id, room in rooms.items()
+        if room.get("floor") == "upstairs"
+    ]
+    configured_attic_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
+    valid_attic_shares = {
+        room_id: numeric
+        for room_id, raw in configured_attic_shares.items()
+        if isinstance(configured_attic_shares, dict)
+        for numeric in [_finite_or_none(raw)]
+        if room_id in upstairs_room_ids and numeric is not None and numeric > 0
+    } if isinstance(configured_attic_shares, dict) else {}
+    attic_floor_total_g = (
+        _finite_or_none(profile.get("attic_floor_u_value"))
+        * _finite_or_none(profile.get("attic_floor_area_m2"))
+        if _finite_or_none(profile.get("attic_floor_u_value")) is not None
+        and _finite_or_none(profile.get("attic_floor_area_m2")) is not None
+        and _finite_or_none(profile.get("attic_floor_u_value")) > 0
+        and _finite_or_none(profile.get("attic_floor_area_m2")) > 0
+        else None
+    )
+    attic_share_sum = sum(valid_attic_shares.values()) if valid_attic_shares else None
+    missing_attic_rooms = [room_id for room_id in upstairs_room_ids if room_id not in valid_attic_shares]
+    roof_connection = next((item for item in connections if item.get("path") == "roof"), None)
+    attic_thermal_diagnostics = {
+        "attic_sensor_available": attic_c is not None,
+        "upstairs_rooms_configured": len(upstairs_room_ids),
+        "upstairs_rooms_with_attic_conductance": len(valid_attic_shares),
+        "rooms_missing_attic_conductance": missing_attic_rooms,
+        "attic_floor_area_m2": _finite_or_none(profile.get("attic_floor_area_m2")),
+        "attic_floor_u_value_w_m2k": _finite_or_none(profile.get("attic_floor_u_value")),
+        "attic_floor_total_conductance_w_per_k": round(attic_floor_total_g, 4) if attic_floor_total_g is not None else None,
+        "attic_floor_room_conductance_sum_w_per_k": round(attic_share_sum, 4) if attic_share_sum is not None else None,
+        "attic_floor_status": (
+            "attic_sensor_unavailable" if "attic:air" not in nodes
+            else "no_upstairs_rooms" if not upstairs_room_ids
+            else "room_shares_complete" if not missing_attic_rooms
+            else "partial_room_shares" if valid_attic_shares
+            else "awaiting_room_shares"
+        ),
+        "attic_floor_total_match_status": (
+            "not_comparable_without_total_u_and_area" if attic_floor_total_g is None or attic_share_sum is None
+            else "matches_within_5_percent" if abs(attic_share_sum - attic_floor_total_g) <= max(0.1, attic_floor_total_g * 0.05)
+            else "room_shares_differ_from_configured_total"
+        ),
+        "roof_area_m2": _finite_or_none(profile.get("roof_area_m2")),
+        "roof_u_value_w_m2k": _finite_or_none(profile.get("roof_u_value")),
+        "roof_conductance_w_per_k": roof_connection.get("conductance_w_per_k") if roof_connection else None,
+        "roof_status": (
+            "attic_sensor_unavailable" if "attic:air" not in nodes
+            else "configured" if roof_connection
+            else "awaiting_explicit_roof_u_value_and_area"
+        ),
+        "note": "Room-to-attic links use explicit per-room W/K values. Attic-to-outdoor requires explicit roof U-value and area. No roof insulation or geometry is inferred from the floor build-up.",
+    }
+
     solar_record = weather.get("solar_radiation")
     solar_w_m2 = value(solar_record)
     window_areas = {direction: _finite_or_none(profile.get("window_area_" + direction + "_m2")) for direction in ("north", "south", "east", "west")}
@@ -554,11 +611,18 @@ def build_multizone_observation_model(
         envelope_decomposition["residual_envelope_heat_loss_coefficient_w_k"] = round(
             house_heat_loss - total_ventilation_conductance, 3
         )
-    missing_capacity = [node_id for node_id, node in nodes.items() if node["kind"] != "fixed_boundary" and node.get("thermal_capacity_wh_per_k") is None]
-    missing_links = [
+    dynamic_node_kinds = {"room_air", "attic_air", "ufh_slab", "thermal_mass", "buffer", "dhw"}
+    missing_capacity = [
         node_id for node_id, node in nodes.items()
-        if node["kind"] == "room_air"
+        if node.get("kind") in dynamic_node_kinds
+        and node.get("thermal_capacity_wh_per_k") is None
     ]
+    missing_envelope = [
+        node_id for node_id, node in nodes.items()
+        if node.get("kind") == "room_air"
+        and (_finite_or_none(node.get("envelope_conductance_w_per_k")) or 0) <= 0
+    ]
+    missing_links = list(missing_envelope)
     room_node_ids = [node_id for node_id, node in nodes.items() if node["kind"] == "room_air"]
     configured_interzone = {
         frozenset((item["from"], item["to"])): item["conductance_w_per_k"]
@@ -606,13 +670,14 @@ def build_multizone_observation_model(
     simulation_blockers = []
     if missing_capacity:
         simulation_blockers.append("effective_thermal_capacity_missing")
-    if any(
-        item["envelope_conductance_status"] != "explicitly_configured"
-        for item in room_parameter_readiness.values()
-    ):
+    if missing_envelope:
         simulation_blockers.append("room_envelope_conductances_not_identified")
     if any(item["status"] != "configured" for item in interzone_pairs):
         simulation_blockers.append("interzone_conductances_not_identified")
+    if "attic:air" in nodes and upstairs_room_ids and missing_attic_rooms:
+        simulation_blockers.append("attic_floor_room_conductances_incomplete")
+    if "attic:air" in nodes and roof_connection is None:
+        simulation_blockers.append("attic_roof_conductance_unavailable")
     simulation_readiness = {
         "status": "withheld_missing_physical_parameters" if simulation_blockers else "physical_parameters_available",
         "blockers": simulation_blockers,
@@ -634,6 +699,25 @@ def build_multizone_observation_model(
         "inter_room_paths": inter_room_paths,
         "room_envelope_paths": room_envelope_paths,
         "attic_floor_paths": attic_floor_paths,
+        "attic_thermal_diagnostics": attic_thermal_diagnostics,
+        "room_path_diagnostics": {
+            room_id: {
+                "envelope_w_per_k": room.get("envelope_conductance_w_per_k"),
+                "attic_floor_w_per_k": valid_attic_shares.get(room_id),
+                "ventilation_w_per_k": next((item["conductance_w_per_k"] for item in ventilation_paths if item["from"] == "room:" + room_id), None),
+                "inter_room_links": sum(1 for item in inter_room_paths if item["from"] == "room:" + room_id or item["to"] == "room:" + room_id),
+                "status": "configured" if (_finite_or_none(room.get("envelope_conductance_w_per_k")) or 0) > 0 else "envelope_conductance_missing",
+            }
+            for room_id, room in rooms.items()
+        },
+        "network_diagnostics": {
+            "configured_conductive_paths": len(connections) + len(attic_floor_paths) + len(inter_room_paths) + len(room_envelope_paths),
+            "configured_ventilation_paths": len(ventilation_paths),
+            "pending_paths": len(pending_paths),
+            "unresolved_room_paths": len(unresolved_room_paths),
+            "simulation_blockers": list(simulation_blockers),
+            "physical_simulation_enabled": not simulation_blockers,
+        },
         "unresolved_room_paths": unresolved_room_paths,
         "room_ufh_topology": room_ufh_topology,
         "ventilation_paths": ventilation_paths,

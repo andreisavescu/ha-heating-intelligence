@@ -411,6 +411,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "note": "A Recorder history pass is required to calculate chronological one-step scores.",
             }
         snapshot["physical_model_validation"] = physical_validation
+        diagnostic_keys = (
+            "status", "failed_stage", "exception_type", "exception_message",
+            "attempted_at", "requested_history_days", "entity_count",
+            "entities_with_history", "total_samples", "retry_after_seconds", "note",
+        )
+        snapshot["recorder_diagnostics"] = {
+            key: validation[key] for key in diagnostic_keys if key in validation
+        }
         snapshot["predictive_forecast"] = build_predictive_forecast(
             current_room_snapshot, configured_rooms, absolute_parameters, outdoor,
         )

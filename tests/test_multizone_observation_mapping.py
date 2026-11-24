@@ -208,3 +208,41 @@ def test_room_response_without_learning_remains_unavailable():
     assert evidence["status"] == "not_available"
     assert evidence["heating_rate_c_per_hour"] is None
     assert evidence["coasting_rate_c_per_hour"] is None
+
+
+def test_attic_room_paths_and_network_diagnostics_are_explicit_and_complete():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "upstairs_bedroom": {
+                "name": "Upstairs bedroom",
+                "floor": "upstairs",
+                "temperature": 21.0,
+                "envelope_conductance_w_per_k": 7.0,
+            },
+            "living": {
+                "name": "Living room",
+                "floor": "ground_floor",
+                "temperature": 21.5,
+                "envelope_conductance_w_per_k": 7.42,
+            },
+        },
+        {"outdoor_temperature": {"value": 5.0}},
+        {"attic_temperature": 15.0, "temperature_entity": "sensor.attic"},
+        {
+            "attic_floor_area_m2": 74.0,
+            "attic_floor_u_value": 0.183,
+            "attic_floor_room_conductances_w_per_k": {"upstairs_bedroom": 13.542},
+        },
+        {},
+    )
+    attic = result["attic_thermal_diagnostics"]
+    assert attic["attic_floor_area_m2"] == 74.0
+    assert attic["attic_floor_total_conductance_w_per_k"] == 13.542
+    assert attic["attic_floor_room_conductance_sum_w_per_k"] == 13.542
+    assert attic["attic_floor_status"] == "room_shares_complete"
+    assert attic["attic_floor_total_match_status"] == "matches_within_5_percent"
+    assert attic["roof_status"] == "awaiting_explicit_roof_u_value_and_area"
+    assert result["attic_floor_paths"][0]["to"] == "room:upstairs_bedroom"
+    assert result["room_path_diagnostics"]["upstairs_bedroom"]["attic_floor_w_per_k"] == 13.542
+    assert "plant:heating" not in result["missing_parameters"]["thermal_capacities"]
+    assert "attic_roof_conductance_unavailable" in result["network_diagnostics"]["simulation_blockers"]

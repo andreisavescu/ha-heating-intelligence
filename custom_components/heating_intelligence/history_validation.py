@@ -3120,7 +3120,28 @@ def build_multizone_response_identification(
     room_results = {}
     all_interval_counts = {"candidate": max(0, len(parsed) - 1), "eligible": 0, "excluded": {}}
     for room_id in room_ids:
-        predictors = ["envelope"] + [other for other in room_ids if other != room_id]
+        # Keep a stable predictor set per target room, but do not require
+        # every configured/observed room to have perfect Recorder coverage.
+        # Other rooms with sparse or stale histories are omitted as predictors;
+        # the target room remains independently eligible for its own fit.
+        def fresh_temperature(room_data):
+            value = numeric(room_data.get("temperature"))
+            age = numeric(room_data.get("temperature_age_minutes"))
+            return value is not None and (age is None or age <= max_age_minutes)
+
+        other_predictors = []
+        candidate_pairs = max(0, len(parsed) - 1)
+        for other in room_ids:
+            if other == room_id or candidate_pairs == 0:
+                continue
+            covered = sum(
+                fresh_temperature((first.get("rooms") or {}).get(other, {}))
+                and fresh_temperature((second.get("rooms") or {}).get(other, {}))
+                for (_, first), (_, second) in zip(parsed, parsed[1:])
+            )
+            if covered / candidate_pairs >= 0.8:
+                other_predictors.append(other)
+        predictors = ["envelope"] + other_predictors
         if room_by_id.get(room_id, {}).get("floor") == "upstairs" and attic_predictor_available:
             predictors.append("attic")
         rows = []
@@ -3147,21 +3168,30 @@ def build_multizone_response_identification(
                 exclusions["invalid_interval"] += 1
                 continue
             first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
-            temps0 = {rid: numeric(first_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
-            temps1 = {rid: numeric(second_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
-            stale_temperature = any(
-                (numeric(first_rooms.get(rid, {}).get("temperature_age_minutes")) is not None
-                 and numeric(first_rooms.get(rid, {}).get("temperature_age_minutes")) > max_age_minutes)
-                or (numeric(second_rooms.get(rid, {}).get("temperature_age_minutes")) is not None
-                    and numeric(second_rooms.get(rid, {}).get("temperature_age_minutes")) > max_age_minutes)
-                for rid in room_ids
-            )
-            if stale_temperature:
-                exclusions["stale_room_temperature"] += 1
+            target_first = first_rooms.get(room_id, {})
+            target_second = second_rooms.get(room_id, {})
+            if not fresh_temperature(target_first) or not fresh_temperature(target_second):
+                age0 = numeric(target_first.get("temperature_age_minutes"))
+                age1 = numeric(target_second.get("temperature_age_minutes"))
+                if ((age0 is not None and age0 > max_age_minutes)
+                        or (age1 is not None and age1 > max_age_minutes)):
+                    exclusions["stale_room_temperature"] += 1
+                else:
+                    exclusions["non_contiguous_or_missing_temperature"] += 1
                 continue
-            if any(temps0[rid] is None or temps1[rid] is None for rid in room_ids):
+            # Only the target and the stable, well-covered predictor subset
+            # are required for this room's regression. A missing reading in
+            # an unrelated room must not discard this target interval.
+            required_room_ids = [room_id] + other_predictors
+            if any(
+                not fresh_temperature(first_rooms.get(rid, {}))
+                or not fresh_temperature(second_rooms.get(rid, {}))
+                for rid in required_room_ids if rid != room_id
+            ):
                 exclusions["non_contiguous_or_missing_temperature"] += 1
                 continue
+            temps0 = {rid: numeric(first_rooms.get(rid, {}).get("temperature")) for rid in required_room_ids}
+            temps1 = {rid: numeric(second_rooms.get(rid, {}).get("temperature")) for rid in required_room_ids}
             def fresh_room_state(room_data, field):
                 age = numeric(room_data.get(field + "_age_minutes"))
                 return (age is None or age <= max_age_minutes) and state_off(room_data.get(field))

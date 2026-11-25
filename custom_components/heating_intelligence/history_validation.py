@@ -3240,14 +3240,30 @@ def build_multizone_response_identification(
                 numeric(first_channels.get("boiler_modulation_age_minutes")),
                 numeric(second_channels.get("boiler_modulation_age_minutes")),
             )
-            if any(age is not None and age > max_age_minutes for age in boiler_ages):
+            # Boiler telemetry is diagnostic by default, not a house-wide
+            # exclusion gate. A different room can be heating while this
+            # target room is coasting. Callers may still explicitly require
+            # burner-off/modulation-zero for strict passive experiments.
+            if (require_boiler_burner_off or require_boiler_modulation_zero) and any(
+                age is not None and age > max_age_minutes for age in boiler_ages
+            ):
                 exclusions["stale_ac_or_boiler_telemetry"] += 1
-                continue
-            if require_boiler_burner_off and not (state_off(burner0) and state_off(burner1)):
-                exclusions["boiler_active_or_unavailable"] += 1
                 continue
             modulation0 = numeric(first_channels.get("boiler_modulation"))
             modulation1 = numeric(second_channels.get("boiler_modulation"))
+            boiler_active = (
+                str(burner0).strip().lower() in {"on", "true", "1"}
+                or str(burner1).strip().lower() in {"on", "true", "1"}
+                or (modulation0 is not None and modulation0 > 0.1)
+                or (modulation1 is not None and modulation1 > 0.1)
+            )
+            if boiler_active:
+                exclusions["boiler_active_intervals_retained"] += 1
+            elif burner0 is None or burner1 is None or modulation0 is None or modulation1 is None:
+                exclusions["boiler_telemetry_missing_intervals_retained"] += 1
+            if require_boiler_burner_off and not (state_off(burner0) and state_off(burner1)):
+                exclusions["boiler_active_or_unavailable"] += 1
+                continue
             if require_boiler_modulation_zero and (
                 modulation0 is None or modulation1 is None
                 or modulation0 > 0.1 or modulation1 > 0.1

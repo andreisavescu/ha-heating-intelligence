@@ -748,7 +748,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_FLOOR: user_input[CONF_FLOOR],
             CONF_AREA: float(user_input[CONF_AREA]) if user_input.get(CONF_AREA) not in (None, "") else None,
             "volume_m3": float(user_input["volume_m3"]) if user_input.get("volume_m3") not in (None, "") else None,
-            CONF_ACH: float(user_input[CONF_ACH]) if user_input.get(CONF_ACH) not in (None, "") else None,
+            CONF_ACH: float(user_input[CONF_ACH]) if user_input.get(CONF_ACH) not in (None, "") else None,\n            CONF_UFH_SCREED_THICKNESS_CM: float(user_input.get(CONF_UFH_SCREED_THICKNESS_CM, 4.5) or 4.5),
             **({CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY]} if user_input.get(CONF_DEMAND_ENTITY) else {}),
             **({CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY]} if user_input.get(CONF_TEMPERATURE_ENTITY) else {}),
             CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),

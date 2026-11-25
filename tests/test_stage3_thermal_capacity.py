@@ -1,12 +1,29 @@
 """Tests for Stage 3 effective room and UFH screed capacity estimates."""
-from custom_components.heating_intelligence.stage3_thermal_capacity import (
-    DEFAULT_UFH_SCREED_THICKNESS_CM,
-    build_stage3_thermal_capacity,
-)
+import importlib.util
+import sys
+import types
+from pathlib import Path
+
+ROOT = Path(__file__).parents[1]
+PACKAGE = "_heating_intelligence_stage3_test"
+package = types.ModuleType(PACKAGE)
+package.__path__ = []
+sys.modules[PACKAGE] = package
+
+for module_name in ("absolute_thermal_identification", "stage3_thermal_capacity"):
+    spec = importlib.util.spec_from_file_location(
+        f"{PACKAGE}.{module_name}",
+        ROOT / "custom_components" / "heating_intelligence" / f"{module_name}.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+MODULE = sys.modules[f"{PACKAGE}.stage3_thermal_capacity"]
 
 
 def test_stage3_uses_per_room_screed_thickness_and_computes_material_prior():
-    result = build_stage3_thermal_capacity(
+    result = MODULE.build_stage3_thermal_capacity(
         {},
         [{"id": "living", "name": "Living", "area_m2": 35.66,
           "ufh_screed_thickness_cm": 6.0}],
@@ -22,19 +39,19 @@ def test_stage3_uses_per_room_screed_thickness_and_computes_material_prior():
 
 
 def test_stage3_defaults_missing_room_screed_thickness_to_4_5_cm():
-    result = build_stage3_thermal_capacity(
+    result = MODULE.build_stage3_thermal_capacity(
         {},
         [{"id": "bedroom", "name": "Bedroom", "area_m2": 11.2}],
     )
     slab = result["rooms"]["bedroom"]["ufh_screed"]
-    assert DEFAULT_UFH_SCREED_THICKNESS_CM == 4.5
+    assert MODULE.DEFAULT_UFH_SCREED_THICKNESS_CM == 4.5
     assert slab["thickness_cm"] == 4.5
     assert slab["thickness_source"] == "default_4.5_cm"
     assert slab["estimated_capacity_wh_per_k"] == 277.2
 
 
 def test_stage3_uses_explicit_outdoor_ua_not_other_boundaries_as_anchor():
-    result = build_stage3_thermal_capacity(
+    result = MODULE.build_stage3_thermal_capacity(
         {},
         [{"id": "room", "area_m2": 10, "envelope_conductance_w_per_k": 9.0}],
         {"rooms": {"room": {"conductance_by_boundary_w_per_k": {
@@ -49,7 +66,7 @@ def test_stage3_uses_explicit_outdoor_ua_not_other_boundaries_as_anchor():
 
 
 def test_stage3_withholds_screed_capacity_without_room_area():
-    result = build_stage3_thermal_capacity({}, [{"id": "unknown"}])
+    result = MODULE.build_stage3_thermal_capacity({}, [{"id": "unknown"}])
     slab = result["rooms"]["unknown"]["ufh_screed"]
     assert slab["status"] == "withheld_missing_room_area"
     assert slab["estimated_capacity_wh_per_k"] is None

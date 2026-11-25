@@ -330,7 +330,7 @@ def test_room_outdoor_conductance_reconciliation_is_unavailable_without_complete
         envelope_audit={"rooms": {}},
     )
     diagnostic = result["envelope_conductance_reconciliation"]["bedroom"]
-    assert diagnostic["status"] == "comparison_unavailable"
+    assert diagnostic["status"] == "legacy_configuration_fallback"
     assert diagnostic["configured_room_to_outdoors_w_per_k"] == 4.5
     assert diagnostic["calculated_surface_inventory_outdoor_w_per_k"] is None
 

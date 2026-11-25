@@ -366,18 +366,7 @@ def build_multizone_observation_model(
 
         # Explicit room-level attic shares are valid topology even when the
         # optional whole-attic U-value/area pair has not been configured.
-        configured_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
-        valid_shares = []
-        if isinstance(configured_shares, dict):
-            for room_id, room_conductance in configured_shares.items():
-                numeric = _finite_or_none(room_conductance)
-                if (
-                    room_id in rooms
-                    and rooms[room_id].get("floor") == "upstairs"
-                    and numeric is not None
-                    and numeric > 0
-                ):
-                    valid_shares.append((room_id, numeric))
+        valid_shares = list(valid_attic_shares.items())
         if valid_shares:
             for room_id, room_conductance in valid_shares:
                 inventory = calculated_envelope_rooms.get(room_id, {}) or {}

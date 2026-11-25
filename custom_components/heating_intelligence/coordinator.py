@@ -37,6 +37,7 @@ from .pump_countdown import start_deadline, timer_snapshot
 from .absolute_thermal_identification import identify_absolute_room_parameters
 from .stage3_thermal_capacity import build_stage3_thermal_capacity
 from .stage5_ufh_slab_model import build_stage5_ufh_slab_model
+from .stage6_gain_model import build_stage6_gain_model
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator
 from .recorder_diagnostics import build_recorder_failure_summary, recorder_history_cache_ttl
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
@@ -331,6 +332,11 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             summary["absolute_parameter_identification"] = identify_absolute_room_parameters(
                 summary["multizone_response_identification"],
                 configured_rooms,
+            )
+            summary["stage6_gain_model"] = build_stage6_gain_model(
+                self._calibration_dataset_samples,
+                configured_rooms,
+                summary["absolute_parameter_identification"],
             )
             summary["multi_zone_historical_replay"] = build_multizone_historical_replay(
                 self._calibration_dataset_samples,

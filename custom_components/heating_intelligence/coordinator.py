@@ -20,6 +20,7 @@ from .floor_efficiency import build_floor_performance, weather_normalised_effici
 from .advanced_heating import update_advanced_history
 from .house_assessment import build_house_assessment
 from .building_audits import build_house_audit, build_thermal_readiness_audit, build_measurement_audit
+from .envelope_conductance import build_envelope_conductance
 from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
@@ -1048,6 +1049,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "thermal_model_rooms": result["thermal_model"].get("rooms_modelled", 0),
             "measured_performance_status": result["house_assessment"].get("performance_status"),
         }
+        result["envelope_conductance"] = build_envelope_conductance(self.entry.options)
         result["house_audit"] = build_house_audit(
             self.entry.options, result.get("rooms", {}),
             self.entry.options.get(CONF_WINDOWS, []),

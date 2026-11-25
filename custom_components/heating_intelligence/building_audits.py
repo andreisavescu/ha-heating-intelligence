@@ -69,6 +69,7 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
             "frame_area_known_count": values["frame_area_known_count"],
             "frame_area_complete": values["window_count"] == values["frame_area_known_count"],
             "house_assessment_reference_m2": reference,
+            "glass_difference_m2": round(values["glass_m2"] - reference, 3) if reference is not None else None,
             "gross_difference_m2": round(values["gross_m2"] - reference, 3) if reference is not None and values["window_count"] == values["frame_area_known_count"] else None,
         }
     known_references = [
@@ -87,7 +88,7 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
             room_area_by_floor[floor] += area
     discrepancies = [
         orientation for orientation, values in comparisons.items()
-        if values["gross_difference_m2"] is not None and abs(values["gross_difference_m2"]) > 0.1
+        if values["glass_difference_m2"] is not None and abs(values["glass_difference_m2"]) > 0.1
     ]
     orientations_without_complete_frame_area = [
         orientation for orientation, values in comparisons.items()
@@ -128,7 +129,7 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
             else None
         ),
         "house_assessment_reference_total_m2": round(sum(known_references), 3) if len(known_references) == 4 else None,
-        "reference_semantics": "Existing house-assessment orientation totals are treated as gross/frame-inclusive reference areas; individual records separately report glass and frame areas. Differences are diagnostic only.",
+        "reference_semantics": "House-assessment orientation totals are compared against individual-window glass area. Gross glass-plus-frame area is reported separately; whole-window Uw calculations use gross area. Differences are diagnostic only.",
     }
 
 

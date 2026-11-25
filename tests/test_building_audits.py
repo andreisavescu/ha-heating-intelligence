@@ -19,6 +19,7 @@ def test_house_audit_keeps_glass_frame_and_gross_areas_separate():
     assert result["individual_windows_glass_total_m2"] == 2.5
     assert result["individual_windows_known_frame_area_total_m2"] == 0.5
     assert result["individual_windows_gross_total_m2"] == 3.0
+    assert result["window_area_by_orientation"]["east"]["glass_difference_m2"] == -0.5
     assert result["window_area_by_orientation"]["east"]["gross_difference_m2"] == 0.0
 
 
@@ -63,3 +64,22 @@ def test_missing_frame_area_is_unknown_not_zero():
     assert east["gross_m2"] is None
     assert east["gross_difference_m2"] is None
     assert result["individual_windows_gross_total_m2"] is None
+
+
+
+def test_house_audit_compares_assessment_reference_to_glass_not_gross_area():
+    result = build_house_audit(
+        {
+            "rooms": [{"id": "living", "name": "Living"}],
+            "house_assessment": {"window_area_east_m2": 2.5},
+        },
+        {},
+        [{
+            "id": "east_1", "name": "East living", "room_id": "living",
+            "orientation": "east", "glass_area_m2": 2.5, "frame_area_m2": 0.5,
+        }],
+    )
+    east = result["window_area_by_orientation"]["east"]
+    assert east["glass_difference_m2"] == 0.0
+    assert east["gross_m2"] == 3.0
+    assert result["orientations_with_over_0_1_m2_reference_difference"] == []

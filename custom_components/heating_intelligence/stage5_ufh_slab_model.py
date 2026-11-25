@@ -87,6 +87,7 @@ def build_stage5_ufh_slab_model(
             }
 
         floor_flow = 0.0
+        floor_configured_flow = 0.0
         circuit_records = []
         floor_circuits = [
             circuit for circuit in circuits
@@ -95,17 +96,23 @@ def build_stage5_ufh_slab_model(
         for circuit in floor_circuits:
             cid = str(circuit.get("id", ""))
             live = circuit_live.get(cid) or {}
-            flow = _positive(live.get("active_configured_flow_l_min"))
-            if flow is None:
-                flow = 0.0
-            floor_flow += flow
+            configured_flow = _positive(live.get("configured_flow_l_min"))
+            active_flow = _positive(live.get("active_configured_flow_l_min")) or 0.0
+            # Manual analog flowmeter settings remain configured allocation
+            # weights while pumps are stopped; only active flow enters the
+            # water-side return-temperature calculation.
+            floor_configured_flow += configured_flow or 0.0
+            floor_flow += active_flow
             length = _positive(circuit.get("pipe_length_m"))
             served = list(circuit.get("served_rooms") or circuit.get("demand_rooms") or [])
             circuit_records.append({
                 "id": cid,
                 "name": circuit.get("name", cid),
                 "pipe_length_m": length,
-                "flow_l_min": round(flow, 3),
+                "flow_l_min": round(active_flow, 3),
+                "configured_flow_l_min": round(configured_flow, 3) if configured_flow is not None else None,
+                "active_flow_l_min": round(active_flow, 3),
+                "flow_is_manual_input": bool(live.get("flow_is_manual_input", configured_flow is not None)),
                 "circulation_confirmed": bool(live.get("circulation_confirmed")),
                 "served_rooms": served,
                 "water_volume_l_assuming_12mm_internal_diameter": (
@@ -150,6 +157,7 @@ def build_stage5_ufh_slab_model(
             "slab_to_room_conductance_w_per_k": None,
             "slab_to_lower_boundary_conductance_w_per_k": None,
             "transfer_coefficients_status": "not_identifiable_without_slab_temperature_or_independent_heat_input",
+            "configured_total_flow_l_min": round(floor_configured_flow, 3),
             "active_total_flow_l_min": round(floor_flow, 3),
             "allocated_useful_heat_power_w": round(floor_power_kw * 1000.0, 1) if floor_power_kw else None,
             "estimated_supply_return_delta_t_c": round(delta_t, 3) if delta_t is not None else None,
@@ -176,7 +184,7 @@ def build_stage5_ufh_slab_model(
         ),
         "limitations": [
             "Existing flow number entities hold user-entered readings from the analog manifold flowmeters; they are not automatically sampled analog sensors.",
-            "Only circuits currently marked circulation_confirmed contribute active flow.",
+            "Configured manual flow is preserved as an allocation weight even while pumps are stopped; only confirmed active flow contributes to return-temperature estimates.",
             "Boiler modulation output is calibrated but remains an inferred useful-output estimate; transient boiler and pipe losses may bias return temperature.",
             "No individual circuit return temperatures are claimed because circuit-level heat absorption is not independently known.",
             "The 12 mm pipe internal diameter is an explicit volume/delay assumption, not a measured pipe dimension.",

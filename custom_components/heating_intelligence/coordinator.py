@@ -425,6 +425,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "note": "A Recorder history pass is required to calculate chronological one-step scores.",
             }
         snapshot["physical_model_validation"] = physical_validation
+        snapshot["multizone_identification_dataset"] = validation.get("multizone_identification_dataset", {})
+        snapshot["multizone_response_identification"] = validation.get("multizone_response_identification", {})
+        snapshot["absolute_parameter_identification"] = absolute_parameters
         diagnostic_keys = (
             "status", "failed_stage", "exception_type", "exception_message",
             "attempted_at", "requested_history_days", "entity_count",

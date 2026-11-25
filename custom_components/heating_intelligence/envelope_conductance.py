@@ -14,6 +14,14 @@ def _positive(value: Any) -> float | None:
     return number if number > 0 and number < float("inf") else None
 
 
+def _nonnegative(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 and number < float("inf") else None
+
+
 def build_envelope_conductance(options: dict) -> dict:
     """Calculate UA by room and boundary; unknown geometry stays unknown."""
     rooms = options.get("rooms", []) or []
@@ -45,13 +53,12 @@ def build_envelope_conductance(options: dict) -> dict:
         rid = item.get("room_id")
         glass, frame = _positive(item.get("glass_area_m2")), item.get("frame_area_m2")
         uw = _positive(item.get("whole_window_u_value_w_m2k"))
-        frame = _positive(frame) if frame not in (None, "") else None
+        frame = _nonnegative(frame) if frame not in (None, "") else None
         if rid not in room_ids:
             invalid.append(item.get("name", item.get("id")))
             continue
         if glass is None or frame is None or uw is None:
-            if uw is not None or item.get("whole_window_u_value_w_m2k") is not None:
-                incomplete.append(item.get("name", item.get("id")))
+            incomplete.append(item.get("name", item.get("id")))
             continue
         gross = glass + frame
         ua = gross * uw

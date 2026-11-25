@@ -91,8 +91,71 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["house_assessment", "windows", "thermal_topology", "add_room", "edit_rooms", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
+            menu_options=["house_assessment", "windows", "envelope_surfaces", "thermal_topology", "add_room", "edit_rooms", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
         )
+
+    async def async_step_envelope_surfaces(self, user_input=None):
+        """Add, edit or remove explicit opaque envelope surface records."""
+        surfaces = list(self.config_entry.options.get("envelope_surfaces", []))
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        if not rooms:
+            return self.async_abort(reason="no_rooms")
+        actions = {"add": "Add a surface", "edit": "Edit a surface", "remove": "Remove a surface"}
+        if user_input is not None:
+            action = user_input["action"]
+            if action == "add":
+                self._surface_edit_id = None
+                return await self.async_step_envelope_surface_details()
+            self._surface_edit_id = user_input.get("surface")
+            if not self._surface_edit_id or self._surface_edit_id not in {x.get("id") for x in surfaces}:
+                return self.async_show_form(step_id="envelope_surfaces", data_schema=vol.Schema({
+                    vol.Required("action", default=action): vol.In(actions),
+                    vol.Required("surface"): vol.In({x["id"]: x.get("name", x["id"]) for x in surfaces}),
+                }), errors={"surface": "required"})
+            if action == "remove":
+                data = dict(self.config_entry.options)
+                data["envelope_surfaces"] = [x for x in surfaces if x.get("id") != self._surface_edit_id]
+                return self.async_create_entry(title="", data=data)
+            return await self.async_step_envelope_surface_details()
+        fields = {vol.Required("action", default="add"): vol.In(actions)}
+        if surfaces:
+            fields[vol.Optional("surface")] = vol.In({x["id"]: x.get("name", x["id"]) for x in surfaces})
+        return self.async_show_form(step_id="envelope_surfaces", data_schema=vol.Schema(fields))
+
+    async def async_step_envelope_surface_details(self, user_input=None):
+        """Store one measured surface with an explicit whole-assembly U-value."""
+        surfaces = list(self.config_entry.options.get("envelope_surfaces", []))
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        existing = next((x for x in surfaces if x.get("id") == self._surface_edit_id), {}) if self._surface_edit_id else {}
+        if user_input is not None:
+            name = str(user_input["name"]).strip()
+            slug = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_") or "surface"
+            surface_id = self._surface_edit_id or slug
+            if not self._surface_edit_id:
+                base, suffix = slug, 2
+                ids = {x.get("id") for x in surfaces}
+                while surface_id in ids:
+                    surface_id = f"{base}_{suffix}"
+                    suffix += 1
+            record = {"id": surface_id, "name": name, "room_id": user_input["room_id"],
+                      "boundary": user_input["boundary"], "area_m2": float(user_input["area_m2"]),
+                      "u_value_w_m2k": float(user_input["u_value_w_m2k"])}
+            data = dict(self.config_entry.options)
+            data["envelope_surfaces"] = [x for x in surfaces if x.get("id") != surface_id] + [record]
+            return self.async_create_entry(title="", data=data)
+        def num(key, default, minimum, maximum, unit, step):
+            marker = vol.Optional(key, default=default) if default is not None else vol.Required(key)
+            return marker, selector.NumberSelector(selector.NumberSelectorConfig(min=minimum, max=maximum, step=step, unit_of_measurement=unit, mode=selector.NumberSelectorMode.BOX))
+        area_marker, area_selector = num("area_m2", existing.get("area_m2"), 0.01, 1000, "m²", 0.01)
+        u_marker, u_selector = num("u_value_w_m2k", existing.get("u_value_w_m2k"), 0.01, 10, "W/m²K", 0.001)
+        fields = {
+            vol.Required("name", default=existing.get("name", "")): str,
+            vol.Required("room_id", default=existing.get("room_id", rooms[0]["id"])): vol.In({x["id"]: x[CONF_NAME] for x in rooms}),
+            vol.Required("boundary", default=existing.get("boundary", "outdoor")): vol.In({"outdoor": "Outdoors", "ground": "Ground", "attic": "Unheated attic", "adjacent_heated": "Adjacent heated space"}),
+            area_marker: area_selector,
+            u_marker: u_selector,
+        }
+        return self.async_show_form(step_id="envelope_surface_details", data_schema=vol.Schema(fields))
 
     async def async_step_windows(self, user_input=None):
         """Add, edit or remove individual physical window records."""
@@ -149,6 +212,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 "orientation": user_input["orientation"],
                 "glass_area_m2": float(user_input["glass_area_m2"]),
                 "frame_area_m2": float(user_input["frame_area_m2"]) if user_input.get("frame_area_m2") not in (None, "") else None,
+                "whole_window_u_value_w_m2k": float(user_input["whole_window_u_value_w_m2k"]) if user_input.get("whole_window_u_value_w_m2k") not in (None, "") else None,
                 "glazing": user_input.get("glazing", "unknown"),
                 "frame_material": user_input.get("frame_material", "unknown"),
                 "shading": user_input.get("shading", "unknown"),
@@ -168,6 +232,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Required("orientation", default=existing.get("orientation", "south")): vol.In({"north": "North", "east": "East", "south": "South", "west": "West"}),
             vol.Required("glass_area_m2", default=existing.get("glass_area_m2", 1.0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
             (vol.Optional("frame_area_m2", default=existing["frame_area_m2"]) if existing.get("frame_area_m2") is not None else vol.Optional("frame_area_m2")): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=30, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
+            (vol.Optional("whole_window_u_value_w_m2k", default=existing["whole_window_u_value_w_m2k"]) if existing.get("whole_window_u_value_w_m2k") is not None else vol.Optional("whole_window_u_value_w_m2k")): selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional("glazing", default=existing.get("glazing", "unknown")): vol.In({"unknown": "Unknown", "double": "Double", "triple": "Triple"}),
             vol.Optional("frame_material", default=existing.get("frame_material", "unknown")): vol.In({"unknown": "Unknown", "uPVC": "uPVC", "wood": "Wood", "aluminium": "Aluminium", "composite": "Composite"}),
             vol.Optional("shading", default=existing.get("shading", "unknown")): vol.In({"unknown": "Unknown", "none": "None", "blinds": "Blinds", "shutters": "Shutters", "external": "External shading", "mixed": "Mixed"}),

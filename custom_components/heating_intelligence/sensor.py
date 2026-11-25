@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), EnvelopeConductanceSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -1209,6 +1209,27 @@ class ThermalReadinessAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEnt
     @property
     def extra_state_attributes(self):
         return self.coordinator.data.get("thermal_readiness_audit", {})
+
+
+class EnvelopeConductanceSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Explicit UA totals grouped by room and physical boundary."""
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "surfaces"
+    _attr_icon = "mdi:home-thermometer-outline"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Envelope Conductance"
+        self._attr_unique_id = f"{DOMAIN}_envelope_conductance"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("envelope_conductance", {}).get("known_surface_count", 0)
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("envelope_conductance", {})
 
 
 class PhysicalModelExperimentsSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):

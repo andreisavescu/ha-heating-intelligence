@@ -171,6 +171,7 @@ def build_multizone_observation_model(
     profile: dict[str, Any] | None = None,
     plant: dict[str, Any] | None = None,
     circuits: list[dict[str, Any]] | None = None,
+    envelope_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Map configured HA observations into a transparent, parameter-aware zone inventory.
 
@@ -184,6 +185,8 @@ def build_multizone_observation_model(
     profile = profile or {}
     plant = plant or {}
     circuits = circuits or []
+    envelope_audit = envelope_audit or {}
+    calculated_envelope_rooms = envelope_audit.get("rooms", {}) or {}
 
     def value(record):
         if isinstance(record, dict):
@@ -424,6 +427,34 @@ def build_multizone_observation_model(
         })
 
     room_envelope_paths = []
+    envelope_reconciliation = {}
+    for room_id, room in rooms.items():
+        configured = _finite_or_none(room.get("envelope_conductance_w_per_k"))
+        calculated = calculated_envelope_rooms.get(room_id, {}) or {}
+        calculated_by_boundary = calculated.get("conductance_by_boundary_w_per_k", {}) or {}
+        calculated_outdoor = _finite_or_none(calculated_by_boundary.get("outdoor"))
+        difference = (
+            round(configured - calculated_outdoor, 4)
+            if configured is not None and calculated_outdoor is not None else None
+        )
+        envelope_reconciliation[room_id] = {
+            "configured_room_to_outdoors_w_per_k": configured,
+            "calculated_surface_inventory_outdoor_w_per_k": calculated_outdoor,
+            "difference_configured_minus_inventory_w_per_k": difference,
+            "status": (
+                "comparison_unavailable"
+                if configured is None or calculated_outdoor is None
+                else "matches_within_0_1_w_per_k"
+                if abs(difference) <= 0.1
+                else "review_difference"
+            ),
+            "model_source": "explicit_room_configuration",
+            "calculation_policy": (
+                "The configured value is the sole room-to-outdoors conductance used by "
+                "the thermal model. The surface/window inventory is diagnostic only and "
+                "is never added to the configured value."
+            ),
+        }
     for room_id, room in rooms.items():
         conductance = _finite_or_none(room.get("envelope_conductance_w_per_k"))
         if conductance is not None and conductance > 0:
@@ -701,6 +732,7 @@ def build_multizone_observation_model(
         "configured_connections": connections + attic_floor_paths + inter_room_paths + room_envelope_paths,
         "inter_room_paths": inter_room_paths,
         "room_envelope_paths": room_envelope_paths,
+        "envelope_conductance_reconciliation": envelope_reconciliation,
         "attic_floor_paths": attic_floor_paths,
         "attic_thermal_diagnostics": attic_thermal_diagnostics,
         "room_path_diagnostics": {

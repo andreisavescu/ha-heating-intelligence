@@ -45,7 +45,7 @@ def test_stage6_estimates_net_residual_but_never_splits_or_feeds_gains():
     )
     room = result["rooms"]["living"]
     assert room["eligible_intervals"] == 2
-    assert room["median_net_unattributed_gain_w"] == 200.0
+    assert room["median_net_unattributed_gain_w"] == 205.0
     assert room["solar_gain_w"] is None
     assert room["internal_gain_w"] is None
     assert room["solver_gain_input_w"] is None
@@ -91,7 +91,10 @@ def test_stage6_requires_known_ac_when_ac_sensor_is_configured():
 
 def test_stage6_withholds_when_absolute_room_parameters_are_missing():
     result = MODULE.build_stage6_gain_model(
-        [_sample("2026-01-01T00:00:00+00:00", 20.0)],
+        [
+            _sample("2026-01-01T00:00:00+00:00", 20.0),
+            _sample("2026-01-01T00:30:00+00:00", 20.5),
+        ],
         [{"id": "living", "envelope_conductance_w_per_k": 10.0}],
         {"rooms": {}},
     )

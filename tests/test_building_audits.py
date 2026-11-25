@@ -19,7 +19,8 @@ def test_house_audit_keeps_glass_frame_and_gross_areas_separate():
     assert result["individual_windows_glass_total_m2"] == 2.5
     assert result["individual_windows_known_frame_area_total_m2"] == 0.5
     assert result["individual_windows_gross_total_m2"] == 3.0
-    assert result["window_area_by_orientation"]["east"]["gross_difference_m2"] == 0.0
+    assert result["window_area_by_orientation"]["east"]["glass_difference_m2"] == -0.5
+    assert result["window_area_by_orientation"]["east"]["reference_area_basis"] == "glass"
 
 
 def test_house_audit_flags_unknown_room_and_incomplete_geometry():
@@ -63,3 +64,48 @@ def test_missing_frame_area_is_unknown_not_zero():
     assert east["gross_m2"] is None
     assert east["gross_difference_m2"] is None
     assert result["individual_windows_gross_total_m2"] is None
+
+
+
+def test_thermal_readiness_reads_attic_conductance_from_house_assessment():
+    options = {
+        "rooms": [
+            {"id": "upstairs", "name": "Upstairs", "floor": "upstairs",
+             "area_m2": 12, "volume_m3": 30, "envelope_conductance_w_per_k": 4.2},
+        ],
+        "house_assessment": {
+            "attic_floor_room_conductances_w_per_k": {"upstairs": 2.1},
+        },
+    }
+    result = build_thermal_readiness_audit(options, {}, {}, {})
+    room = result["room_parameters"]["upstairs"]
+    assert room["attic_floor_conductance_w_per_k"] == 2.1
+    assert room["room_to_attic_configured_w_per_k"] == 2.1
+    assert result["upstairs_rooms_without_attic_conductance"] == []
+
+
+def test_thermal_readiness_reports_outdoor_and_attic_paths_separately():
+    options = {
+        "rooms": [
+            {"id": "upstairs", "name": "Upstairs", "floor": "upstairs",
+             "area_m2": 12, "volume_m3": 30, "envelope_conductance_w_per_k": 4.2},
+        ],
+        "house_assessment": {
+            "attic_floor_room_conductances_w_per_k": {"upstairs": 2.1},
+        },
+    }
+    envelope = {
+        "status": "configured",
+        "rooms": {
+            "upstairs": {
+                "conductance_by_boundary_w_per_k": {"outdoor": 3.8, "attic": 2.1},
+                "configured_surface_count": 3,
+            },
+        },
+    }
+    result = build_thermal_readiness_audit(options, {}, {}, {}, envelope)
+    room = result["room_parameters"]["upstairs"]
+    assert room["room_to_outdoors_configured_w_per_k"] == 4.2
+    assert room["room_to_outdoors_surface_calculated_w_per_k"] == 3.8
+    assert room["room_to_attic_configured_w_per_k"] == 2.1
+    assert room["surface_conductance_by_boundary_w_per_k"]["attic"] == 2.1

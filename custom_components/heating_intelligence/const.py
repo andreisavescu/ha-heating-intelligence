@@ -9,7 +9,7 @@ DEFAULT_CALIBRATION_HISTORY_DAYS = 90
 CONF_NAME = "name"
 CONF_FLOOR = "floor"
 CONF_AREA = "area_m2"
-CONF_ACH = "air_changes_per_hour"
+CONF_ACH = "air_changes_per_hour"\nCONF_UFH_SCREED_THICKNESS_CM = "ufh_screed_thickness_cm"
 CONF_DEMAND_ENTITY = "demand_entity"
 CONF_TEMPERATURE_ENTITY = "temperature_entity"
 CONF_WINDOW_ENTITY = "window_entity"

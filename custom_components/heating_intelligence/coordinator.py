@@ -36,6 +36,7 @@ from .system_history import record_system_sample
 from .pump_countdown import start_deadline, timer_snapshot
 from .absolute_thermal_identification import identify_absolute_room_parameters
 from .stage3_thermal_capacity import build_stage3_thermal_capacity
+from .stage5_ufh_slab_model import build_stage5_ufh_slab_model
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator
 from .recorder_diagnostics import build_recorder_failure_summary, recorder_history_cache_ttl
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
@@ -1143,6 +1144,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_GAS_ENERGY_FACTOR, 10.55)),
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
             now_local,
+        )
+        result["stage5_ufh_slab_model"] = build_stage5_ufh_slab_model(
+            self.entry.options.get(CONF_ROOMS, []),
+            self.entry.options.get("ufh_circuits", []),
+            result.get("ufh_hydraulics", {}),
+            self._history.get("boiler_energy_experiment", {}),
+            result.get("water_temperature"),
         )
         result["ufh_topology_audit"] = build_ufh_topology_audit(
             self.entry.options.get("ufh_circuits", []),

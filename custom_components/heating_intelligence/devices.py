@@ -21,6 +21,17 @@ def house_device_info(coordinator) -> dr.DeviceInfo:
     )
 
 
+def audit_device_info(coordinator) -> dr.DeviceInfo:
+    """Return the dedicated diagnostics/audits device."""
+    return dr.DeviceInfo(
+        identifiers={(DOMAIN, f"{coordinator.entry.entry_id}_audits")},
+        name="Heating Intelligence — Audits",
+        manufacturer="Heating Intelligence",
+        model="Diagnostics and model audits",
+        via_device=_house_identifier(coordinator),
+    )
+
+
 def room_device_info(coordinator, room_id: str, room_name: str) -> dr.DeviceInfo:
     """Return one device per configured room, linked to the house device."""
     return dr.DeviceInfo(
@@ -156,3 +167,11 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
             repaired += 1
 
     return repaired
+
+
+class AuditDeviceMixin:
+    """Attach audit and model-readiness entities to the dedicated audit device."""
+
+    @property
+    def device_info(self) -> dr.DeviceInfo:
+        return audit_device_info(self.coordinator)

@@ -47,6 +47,7 @@ def build_stage6_gain_model(
     absolute_parameters: dict[str, Any] | None,
     minimum_intervals: int = 12,
     maximum_interval_minutes: float = 45.0,
+    require_ac_power: bool = False,
 ) -> dict[str, Any]:
     """Estimate net residual heat input in gated, demand-off intervals.
 
@@ -96,7 +97,9 @@ def build_stage6_gain_model(
                 if _switch(right.get("demand")) is not False:
                     excluded["demand_not_confirmed_off"] += 1
                     continue
-                if _switch(left.get("window")) is not False or _switch(right.get("window")) is not False:
+                if room.get("window_entity") and (
+                    _switch(left.get("window")) is not False or _switch(right.get("window")) is not False
+                ):
                     excluded["window_not_confirmed_closed"] += 1
                     continue
                 channels0, channels1 = first.get("channels") or {}, second.get("channels") or {}
@@ -109,9 +112,12 @@ def build_stage6_gain_model(
                 ac1 = _number(channels1.get("ac_power"))
                 ac_age0 = _number(channels0.get("ac_power_age_minutes"))
                 ac_age1 = _number(channels1.get("ac_power_age_minutes"))
-                if ((ac0 is not None and ac0 > 20) or (ac1 is not None and ac1 > 20)
+                if (
+                    (ac0 is not None and ac0 > 20) or (ac1 is not None and ac1 > 20)
+                    or (require_ac_power and (ac0 is None or ac1 is None))
                     or (ac_age0 is not None and ac_age0 > maximum_interval_minutes)
-                    or (ac_age1 is not None and ac_age1 > maximum_interval_minutes)):
+                    or (ac_age1 is not None and ac_age1 > maximum_interval_minutes)
+                ):
                     excluded["ac_active_or_unknown"] += 1
                     continue
                 if room.get("window_entity") and (

@@ -109,11 +109,12 @@
       },
       "set_room_area": {
         "title": "Room area, ventilation and window contact",
-        "description": "Set floor area, optional measured ACH and a window contact for {room_name}. Leave unknown values empty.",
+        "description": "Set floor area, optional measured ACH and window contact, and the UFH screed thickness for {room_name}. Existing rooms default to 4.5 cm until you enter a measured value.",
         "data": {
           "area_m2": "Room floor area (m²)",
           "air_changes_per_hour": "Measured room air changes per hour (ACH)",
-          "window_entity": "Room window contact"
+          "window_entity": "Room window contact",
+          "ufh_screed_thickness_cm": "UFH screed thickness for this room (cm)"
         }
       },
       "remove_room": {

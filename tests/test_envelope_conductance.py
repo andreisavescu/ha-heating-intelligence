@@ -47,3 +47,17 @@ def test_unknown_u_value_is_not_inferred_and_adjacent_space_is_separate():
     assert result["rooms"]["room"]["conductance_by_boundary_w_per_k"]["outdoor"] is None
     assert result["rooms"]["room"]["conductance_by_boundary_w_per_k"]["adjacent_heated"] == 4.0
     assert result["incomplete_records"] == ["Unknown wall"]
+
+
+def test_building_scale_surface_assigned_to_small_room_is_flagged_and_excluded():
+    result = build_envelope_conductance({
+        "rooms": [{"id": "bedroom", "area_m2": 11.2}],
+        "envelope_surfaces": [{
+            "id": "whole_house_walls", "name": "Exterior walls",
+            "room_id": "bedroom", "boundary": "outdoor",
+            "area_m2": 173.21, "u_value_w_m2k": 0.196,
+        }],
+    })
+    assert result["status"] == "review_required"
+    assert result["rooms"]["bedroom"]["conductance_by_boundary_w_per_k"]["outdoor"] is None
+    assert result["suspect_records"][0]["status"] == "likely_building_level_surface_assigned_to_room"

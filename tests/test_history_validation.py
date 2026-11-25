@@ -2485,3 +2485,40 @@ def test_multizone_identification_keeps_coasting_room_when_boiler_cycles_for_oth
     assert living["excluded_intervals"]["boiler_active_intervals_retained"] >= 64
     assert living["excluded_intervals"]["boiler_active_or_unavailable"] == 0
     assert result["rooms"]["bedroom"]["eligible_intervals"] == 0
+
+
+
+def test_multizone_target_fit_ignores_unrelated_room_with_sparse_temperature_history():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    target = 21.0
+    other = 20.0
+    for index in range(81):
+        outside = 5.0 + 3.0 * math.sin(index / 6.0)
+        rooms = {
+            "living": {"temperature": target, "demand": "off", "window": "off"},
+            "bedroom": {"temperature": other, "demand": "off", "window": "off"},
+            "bathroom": {"demand": "off", "window": "off"},
+        }
+        # The uninstrumented bathroom must not invalidate living/bedroom rows.
+        samples.append({
+            "timestamp": (start + timedelta(minutes=30 * index)).isoformat(),
+            "channels": {"outdoor_temperature": outside, "solar_radiation": 0.0, "ac_power": 0.0},
+            "rooms": rooms,
+        })
+        if index < 80:
+            target += 0.5 * (0.03 * (outside - target) + 0.01 * (other - target))
+            other += 0.5 * (0.025 * (outside - other) + 0.01 * (target - other))
+
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}, {"id": "bathroom"}],
+        interval_minutes=30,
+        minimum_train_intervals=24,
+        minimum_holdout_intervals=8,
+    )
+
+    assert result["rooms"]["living"]["eligible_intervals"] >= 32
+    assert result["rooms"]["bedroom"]["eligible_intervals"] >= 32
+    assert result["rooms"]["living"]["normalized_rates_per_hour"] is not None
+    assert result["excluded_unobserved_rooms"] == ["bathroom"]

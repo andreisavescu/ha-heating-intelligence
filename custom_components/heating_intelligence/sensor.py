@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -1230,6 +1230,28 @@ class EnvelopeConductanceSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntit
     @property
     def extra_state_attributes(self):
         return self.coordinator.data.get("envelope_conductance", {})
+
+
+class Stage6GainModelSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Stage 6 solar/internal gain residual diagnostics."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "rooms"
+    _attr_icon = "mdi:solar-power-variant"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Stage 6 Gain Model"
+        self._attr_unique_id = f"{DOMAIN}_stage6_gain_model"
+
+    @property
+    def native_value(self):
+        return len(self.coordinator.data.get("stage6_gain_model", {}).get("rooms_with_sufficient_evidence", []))
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("stage6_gain_model", {})
 
 
 class Stage5UfhSlabModelSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):

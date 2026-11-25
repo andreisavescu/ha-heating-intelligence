@@ -285,3 +285,111 @@ def test_solver_rejects_pathological_substep_count():
         assert "maximum is 100000" in str(error)
     else:
         raise AssertionError("pathological integration step count must be rejected")
+
+
+def test_room_outdoor_conductance_uses_configured_total_without_adding_surface_inventory():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "bathroom": {
+                "name": "Bathroom",
+                "floor": "upstairs",
+                "temperature": 21.0,
+                "envelope_conductance_w_per_k": 1.388,
+            }
+        },
+        weather={"outdoor_temperature": {"value": 5.0}},
+        envelope_audit={
+            "rooms": {
+                "bathroom": {
+                    "conductance_by_boundary_w_per_k": {
+                        "outdoor": 1.126,
+                        "attic": None,
+                    }
+                }
+            }
+        },
+    )
+    path = result["room_envelope_paths"][0]
+    assert path["conductance_w_per_k"] == 1.388
+    diagnostic = result["envelope_conductance_reconciliation"]["bathroom"]
+    assert diagnostic["configured_room_to_outdoors_w_per_k"] == 1.388
+    assert diagnostic["calculated_surface_inventory_outdoor_w_per_k"] == 1.126
+    assert diagnostic["difference_configured_minus_inventory_w_per_k"] == 0.262
+    assert diagnostic["status"] == "legacy_configuration_fallback"
+    assert diagnostic["model_source"] == "legacy_room_configuration"
+
+
+def test_room_outdoor_conductance_reconciliation_is_unavailable_without_complete_inventory():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "bedroom": {
+                "temperature": 20.0,
+                "envelope_conductance_w_per_k": 4.5,
+            }
+        },
+        envelope_audit={"rooms": {}},
+    )
+    diagnostic = result["envelope_conductance_reconciliation"]["bedroom"]
+    assert diagnostic["status"] == "legacy_configuration_fallback"
+    assert diagnostic["configured_room_to_outdoors_w_per_k"] == 4.5
+    assert diagnostic["calculated_surface_inventory_outdoor_w_per_k"] is None
+
+
+def test_room_surface_inventory_replaces_legacy_outdoor_conductance_and_includes_windows_once():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "bathroom": {
+                "name": "Bathroom",
+                "floor": "upstairs",
+                "temperature": 21.0,
+                "envelope_conductance_w_per_k": 2.5,
+            }
+        },
+        envelope_audit={
+            "rooms": {
+                "bathroom": {
+                    "conductance_by_boundary_w_per_k": {"outdoor": 1.388, "attic": None},
+                    "opaque_surface_counts": {"outdoor": 1, "ground": 0, "attic": 0, "adjacent_heated": 0},
+                }
+            }
+        },
+    )
+    path = result["room_envelope_paths"][0]
+    assert path["conductance_w_per_k"] == 1.388
+    assert path["source"] == "per_room_surface_inventory_including_windows"
+    assert result["envelope_conductance_reconciliation"]["bathroom"]["status"] == "surface_inventory_authoritative"
+
+
+def test_per_room_attic_surface_replaces_legacy_attic_share():
+    result = MODEL.build_multizone_observation_model(
+        {"bathroom": {"floor": "upstairs", "temperature": 21.0}},
+        attic={"attic_temperature": 10.0},
+        profile={"attic_floor_room_conductances_w_per_k": {"bathroom": 0.88}},
+        envelope_audit={
+            "rooms": {
+                "bathroom": {
+                    "conductance_by_boundary_w_per_k": {"outdoor": None, "attic": 0.74},
+                    "opaque_surface_counts": {"outdoor": 0, "ground": 0, "attic": 1, "adjacent_heated": 0},
+                }
+            }
+        },
+    )
+    path = next(item for item in result["attic_floor_paths"] if item["to"] == "room:bathroom")
+    assert path["conductance_w_per_k"] == 0.74
+    assert path["source"] == "per_room_surface_inventory"
+
+
+def test_per_room_ground_surface_creates_separate_ground_boundary_path():
+    result = MODEL.build_multizone_observation_model(
+        {"living": {"floor": "ground_floor", "temperature": 21.0}},
+        envelope_audit={
+            "rooms": {
+                "living": {
+                    "conductance_by_boundary_w_per_k": {"outdoor": None, "ground": 10.0},
+                    "opaque_surface_counts": {"outdoor": 0, "ground": 1, "attic": 0, "adjacent_heated": 0},
+                }
+            }
+        },
+    )
+    assert result["ground_paths"][0]["conductance_w_per_k"] == 10.0
+    assert result["ground_paths"][0]["to"] == "boundary:ground"

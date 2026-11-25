@@ -171,6 +171,7 @@ def build_multizone_observation_model(
     profile: dict[str, Any] | None = None,
     plant: dict[str, Any] | None = None,
     circuits: list[dict[str, Any]] | None = None,
+    envelope_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Map configured HA observations into a transparent, parameter-aware zone inventory.
 
@@ -184,6 +185,8 @@ def build_multizone_observation_model(
     profile = profile or {}
     plant = plant or {}
     circuits = circuits or []
+    envelope_audit = envelope_audit or {}
+    calculated_envelope_rooms = envelope_audit.get("rooms", {}) or {}
 
     def value(record):
         if isinstance(record, dict):
@@ -331,6 +334,28 @@ def build_multizone_observation_model(
     attic_floor_paths = []
     roof_u = _finite_or_none(profile.get("roof_u_value"))
     roof_area = _finite_or_none(profile.get("roof_area_m2"))
+    # Summarise attic paths without inferring any missing building values.
+    upstairs_room_ids = [
+        room_id for room_id, room in rooms.items()
+        if room.get("floor") == "upstairs"
+    ]
+    configured_attic_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
+    if not isinstance(configured_attic_shares, dict):
+        configured_attic_shares = {}
+    valid_attic_shares = {}
+    for room_id, raw in configured_attic_shares.items():
+        numeric = _finite_or_none(raw)
+        if room_id in upstairs_room_ids and numeric is not None and numeric > 0:
+            valid_attic_shares[room_id] = numeric
+    # Valid per-room attic surface records supersede legacy attic conductance entries.
+    for room_id in upstairs_room_ids:
+        inventory = calculated_envelope_rooms.get(room_id, {}) or {}
+        counts = inventory.get("opaque_surface_counts", {}) or {}
+        attic_count = _finite_or_none(counts.get("attic")) or 0
+        attic_value = _finite_or_none((inventory.get("conductance_by_boundary_w_per_k") or {}).get("attic"))
+        if attic_count > 0 and attic_value is not None and attic_value > 0:
+            valid_attic_shares[room_id] = attic_value
+
     if "attic:air" in nodes and roof_u is not None and roof_u > 0 and roof_area is not None and roof_area > 0 and "boundary:outdoors" not in nodes:
         nodes["boundary:outdoors"] = {
             "kind": "fixed_boundary", "name": "Outdoors",
@@ -363,27 +388,18 @@ def build_multizone_observation_model(
 
         # Explicit room-level attic shares are valid topology even when the
         # optional whole-attic U-value/area pair has not been configured.
-        configured_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
-        valid_shares = []
-        if isinstance(configured_shares, dict):
-            for room_id, room_conductance in configured_shares.items():
-                numeric = _finite_or_none(room_conductance)
-                if (
-                    room_id in rooms
-                    and rooms[room_id].get("floor") == "upstairs"
-                    and numeric is not None
-                    and numeric > 0
-                ):
-                    valid_shares.append((room_id, numeric))
+        valid_shares = list(valid_attic_shares.items())
         if valid_shares:
             for room_id, room_conductance in valid_shares:
+                inventory = calculated_envelope_rooms.get(room_id, {}) or {}
+                attic_surface_count = (_finite_or_none((inventory.get("opaque_surface_counts") or {}).get("attic")) or 0)
                 attic_floor_paths.append({
                     "from": "attic:air",
                     "to": "room:" + room_id,
                     "path": "attic_floor",
                     "conductance_w_per_k": round(room_conductance, 4),
-                    "source": "explicit_room_level_attic_floor_conductance",
-                    "status": "configured",
+                    "source": "per_room_surface_inventory" if attic_surface_count > 0 else "legacy_room_level_attic_floor_conductance",
+                    "status": "configured" if attic_surface_count > 0 else "legacy_fallback",
                 })
             if has_total and abs(sum(value for _, value in valid_shares) - u_value * area) > max(0.1, u_value * area * 0.05):
                 pending_paths.append({
@@ -424,13 +440,52 @@ def build_multizone_observation_model(
         })
 
     room_envelope_paths = []
+    ground_paths = []
+    envelope_reconciliation = {}
     for room_id, room in rooms.items():
-        conductance = _finite_or_none(room.get("envelope_conductance_w_per_k"))
-        if conductance is not None and conductance > 0:
+        configured = _finite_or_none(room.get("envelope_conductance_w_per_k"))
+        calculated = calculated_envelope_rooms.get(room_id, {}) or {}
+        calculated_by_boundary = calculated.get("conductance_by_boundary_w_per_k", {}) or {}
+        opaque_counts = calculated.get("opaque_surface_counts", {}) or {}
+        calculated_outdoor = _finite_or_none(calculated_by_boundary.get("outdoor"))
+        has_room_wall_surfaces = (_finite_or_none(opaque_counts.get("outdoor")) or 0) > 0
+        selected_outdoor = calculated_outdoor if has_room_wall_surfaces else configured
+        difference = (
+            round(configured - calculated_outdoor, 4)
+            if configured is not None and calculated_outdoor is not None else None
+        )
+        envelope_reconciliation[room_id] = {
+            "configured_room_to_outdoors_w_per_k": configured,
+            "calculated_surface_inventory_outdoor_w_per_k": calculated_outdoor,
+            "difference_configured_minus_inventory_w_per_k": difference,
+            "status": (
+                "surface_inventory_authoritative"
+                if has_room_wall_surfaces and calculated_outdoor is not None
+                else "legacy_configuration_fallback"
+                if configured is not None
+                else "awaiting_room_wall_surfaces"
+            ),
+            "model_source": "per_room_surface_inventory_including_windows" if has_room_wall_surfaces else "legacy_room_configuration",
+            "calculation_policy": (
+                "Once valid opaque outdoor wall surfaces are configured for a room, their "
+                "conductance plus that room's window/door records replace the legacy room "
+                "conductance. The two sources are never added together."
+            ),
+        }
+        if selected_outdoor is not None and selected_outdoor > 0:
             room_envelope_paths.append({
                 "from": "room:" + room_id, "to": "boundary:outdoors",
-                "path": "room_envelope", "conductance_w_per_k": round(conductance, 4),
-                "source": "explicit_room_configuration", "status": "configured",
+                "path": "room_envelope", "conductance_w_per_k": round(selected_outdoor, 4),
+                "source": "per_room_surface_inventory_including_windows" if has_room_wall_surfaces else "legacy_room_configuration",
+                "status": "configured" if has_room_wall_surfaces else "legacy_fallback",
+            })
+        ground = _finite_or_none(calculated_by_boundary.get("ground"))
+        ground_count = _finite_or_none(opaque_counts.get("ground")) or 0
+        if ground is not None and ground_count > 0:
+            ground_paths.append({
+                "from": "room:" + room_id, "to": "boundary:ground",
+                "path": "ground", "conductance_w_per_k": round(ground, 4),
+                "source": "per_room_surface_inventory", "status": "configured",
             })
     if room_envelope_paths and "boundary:outdoors" not in nodes:
         nodes["boundary:outdoors"] = {
@@ -439,20 +494,13 @@ def build_multizone_observation_model(
             "temperature_entity": outdoor_record.get("entity_id") if isinstance(outdoor_record, dict) else None,
             "status": "observed" if outdoor_c is not None else "temperature_unavailable",
         }
+    if ground_paths:
+        nodes["boundary:ground"] = {
+            "kind": "fixed_boundary", "name": "Ground",
+            "temperature_c": None,
+            "status": "ground_temperature_not_configured",
+        }
 
-    # Summarise attic paths without inferring any missing building values.
-    upstairs_room_ids = [
-        room_id for room_id, room in rooms.items()
-        if room.get("floor") == "upstairs"
-    ]
-    configured_attic_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
-    if not isinstance(configured_attic_shares, dict):
-        configured_attic_shares = {}
-    valid_attic_shares = {}
-    for room_id, raw in configured_attic_shares.items():
-        numeric = _finite_or_none(raw)
-        if room_id in upstairs_room_ids and numeric is not None and numeric > 0:
-            valid_attic_shares[room_id] = numeric
     attic_floor_total_g = (
         _finite_or_none(profile.get("attic_floor_u_value"))
         * _finite_or_none(profile.get("attic_floor_area_m2"))
@@ -698,9 +746,11 @@ def build_multizone_observation_model(
         "simulation_status": simulation_readiness["status"],
         "simulation_readiness": simulation_readiness,
         "nodes": nodes,
-        "configured_connections": connections + attic_floor_paths + inter_room_paths + room_envelope_paths,
+        "configured_connections": connections + attic_floor_paths + inter_room_paths + room_envelope_paths + ground_paths,
         "inter_room_paths": inter_room_paths,
         "room_envelope_paths": room_envelope_paths,
+        "ground_paths": ground_paths,
+        "envelope_conductance_reconciliation": envelope_reconciliation,
         "attic_floor_paths": attic_floor_paths,
         "attic_thermal_diagnostics": attic_thermal_diagnostics,
         "room_path_diagnostics": {
@@ -714,7 +764,7 @@ def build_multizone_observation_model(
             for room_id, room in rooms.items()
         },
         "network_diagnostics": {
-            "configured_conductive_paths": len(connections) + len(attic_floor_paths) + len(inter_room_paths) + len(room_envelope_paths),
+            "configured_conductive_paths": len(connections) + len(attic_floor_paths) + len(inter_room_paths) + len(room_envelope_paths) + len(ground_paths),
             "configured_ventilation_paths": len(ventilation_paths),
             "pending_paths": len(pending_paths),
             "unresolved_room_paths": len(unresolved_room_paths),

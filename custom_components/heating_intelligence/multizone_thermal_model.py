@@ -334,6 +334,28 @@ def build_multizone_observation_model(
     attic_floor_paths = []
     roof_u = _finite_or_none(profile.get("roof_u_value"))
     roof_area = _finite_or_none(profile.get("roof_area_m2"))
+    # Summarise attic paths without inferring any missing building values.
+    upstairs_room_ids = [
+        room_id for room_id, room in rooms.items()
+        if room.get("floor") == "upstairs"
+    ]
+    configured_attic_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
+    if not isinstance(configured_attic_shares, dict):
+        configured_attic_shares = {}
+    valid_attic_shares = {}
+    for room_id, raw in configured_attic_shares.items():
+        numeric = _finite_or_none(raw)
+        if room_id in upstairs_room_ids and numeric is not None and numeric > 0:
+            valid_attic_shares[room_id] = numeric
+    # Valid per-room attic surface records supersede legacy attic conductance entries.
+    for room_id in upstairs_room_ids:
+        inventory = calculated_envelope_rooms.get(room_id, {}) or {}
+        counts = inventory.get("opaque_surface_counts", {}) or {}
+        attic_count = _finite_or_none(counts.get("attic")) or 0
+        attic_value = _finite_or_none((inventory.get("conductance_by_boundary_w_per_k") or {}).get("attic"))
+        if attic_count > 0 and attic_value is not None and attic_value > 0:
+            valid_attic_shares[room_id] = attic_value
+
     if "attic:air" in nodes and roof_u is not None and roof_u > 0 and roof_area is not None and roof_area > 0 and "boundary:outdoors" not in nodes:
         nodes["boundary:outdoors"] = {
             "kind": "fixed_boundary", "name": "Outdoors",
@@ -479,27 +501,6 @@ def build_multizone_observation_model(
             "status": "ground_temperature_not_configured",
         }
 
-    # Summarise attic paths without inferring any missing building values.
-    upstairs_room_ids = [
-        room_id for room_id, room in rooms.items()
-        if room.get("floor") == "upstairs"
-    ]
-    configured_attic_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
-    if not isinstance(configured_attic_shares, dict):
-        configured_attic_shares = {}
-    valid_attic_shares = {}
-    for room_id, raw in configured_attic_shares.items():
-        numeric = _finite_or_none(raw)
-        if room_id in upstairs_room_ids and numeric is not None and numeric > 0:
-            valid_attic_shares[room_id] = numeric
-    # Valid per-room attic surface records supersede legacy attic conductance entries.
-    for room_id in upstairs_room_ids:
-        inventory = calculated_envelope_rooms.get(room_id, {}) or {}
-        counts = inventory.get("opaque_surface_counts", {}) or {}
-        attic_count = _finite_or_none(counts.get("attic")) or 0
-        attic_value = _finite_or_none((inventory.get("conductance_by_boundary_w_per_k") or {}).get("attic"))
-        if attic_count > 0 and attic_value is not None and attic_value > 0:
-            valid_attic_shares[room_id] = attic_value
     attic_floor_total_g = (
         _finite_or_none(profile.get("attic_floor_u_value"))
         * _finite_or_none(profile.get("attic_floor_area_m2"))

@@ -285,3 +285,51 @@ def test_solver_rejects_pathological_substep_count():
         assert "maximum is 100000" in str(error)
     else:
         raise AssertionError("pathological integration step count must be rejected")
+
+
+def test_room_outdoor_conductance_uses_configured_total_without_adding_surface_inventory():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "bathroom": {
+                "name": "Bathroom",
+                "floor": "upstairs",
+                "temperature": 21.0,
+                "envelope_conductance_w_per_k": 1.388,
+            }
+        },
+        weather={"outdoor_temperature": {"value": 5.0}},
+        envelope_audit={
+            "rooms": {
+                "bathroom": {
+                    "conductance_by_boundary_w_per_k": {
+                        "outdoor": 1.126,
+                        "attic": None,
+                    }
+                }
+            }
+        },
+    )
+    path = result["room_envelope_paths"][0]
+    assert path["conductance_w_per_k"] == 1.388
+    diagnostic = result["envelope_conductance_reconciliation"]["bathroom"]
+    assert diagnostic["configured_room_to_outdoors_w_per_k"] == 1.388
+    assert diagnostic["calculated_surface_inventory_outdoor_w_per_k"] == 1.126
+    assert diagnostic["difference_configured_minus_inventory_w_per_k"] == 0.262
+    assert diagnostic["status"] == "review_difference"
+    assert diagnostic["model_source"] == "explicit_room_configuration"
+
+
+def test_room_outdoor_conductance_reconciliation_is_unavailable_without_complete_inventory():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "bedroom": {
+                "temperature": 20.0,
+                "envelope_conductance_w_per_k": 4.5,
+            }
+        },
+        envelope_audit={"rooms": {}},
+    )
+    diagnostic = result["envelope_conductance_reconciliation"]["bedroom"]
+    assert diagnostic["status"] == "comparison_unavailable"
+    assert diagnostic["configured_room_to_outdoors_w_per_k"] == 4.5
+    assert diagnostic["calculated_surface_inventory_outdoor_w_per_k"] is None

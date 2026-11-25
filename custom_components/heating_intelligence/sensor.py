@@ -1204,7 +1204,10 @@ class ThermalReadinessAuditSensor(AuditDeviceMixin, CoordinatorEntity, SensorEnt
     @property
     def native_value(self):
         audit = self.coordinator.data.get("thermal_readiness_audit", {})
-        return len(audit.get("rooms_missing_envelope_conductance", [])) + len(audit.get("upstairs_rooms_without_attic_conductance", [])) + len(audit.get("rooms_missing_area_or_volume", []))
+        return (len(audit.get("rooms_missing_envelope_conductance", []))
+                + len(audit.get("upstairs_rooms_without_attic_conductance", []))
+                + len(audit.get("rooms_missing_area_or_volume", []))
+                + int(not audit.get("configured_inter_room_connections", [])))
 
     @property
     def extra_state_attributes(self):

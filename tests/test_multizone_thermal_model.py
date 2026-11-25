@@ -363,7 +363,7 @@ def test_room_surface_inventory_replaces_legacy_outdoor_conductance_and_includes
 def test_per_room_attic_surface_replaces_legacy_attic_share():
     result = MODEL.build_multizone_observation_model(
         {"bathroom": {"floor": "upstairs", "temperature": 21.0}},
-        attic={"temperature": {"value": 10.0}},
+        attic={"attic_temperature": 10.0},
         profile={"attic_floor_room_conductances_w_per_k": {"bathroom": 0.88}},
         envelope_audit={
             "rooms": {

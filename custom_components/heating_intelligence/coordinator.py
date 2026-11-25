@@ -1071,6 +1071,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         result["thermal_readiness_audit"] = build_thermal_readiness_audit(
             self.entry.options, result.get("rooms", {}),
             result["house_audit"], result.get("attic_thermal", {}),
+            result.get("envelope_conductance", {}),
         )
         normalised_by_date = {
             item["date"]: item for item in weather_model.get("recent_days", [])

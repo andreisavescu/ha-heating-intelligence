@@ -31,6 +31,7 @@ def test_window_requires_frame_area_and_whole_window_uw():
     })
     assert missing["known_surface_count"] == 0
     assert missing["windows"] == []
+    assert missing["incomplete_records"] == ["w"]
 
 
 def test_unknown_u_value_is_not_inferred_and_adjacent_space_is_separate():

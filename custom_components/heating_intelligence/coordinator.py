@@ -301,15 +301,29 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             summary["ufh_slab_observability"] = build_ufh_slab_observability(
                 self._calibration_dataset_samples, configured_rooms, interval_minutes=30,
             )
+            # Use a dedicated 10-minute Recorder alignment for room response
+            # identification. The ordinary 30-minute dataset remains intact
+            # for existing energy, UFH and validation diagnostics.
+            identification_dataset = build_recorder_calibration_dataset(
+                history, configured_rooms, calibration_channels, start, now,
+                interval_minutes=10, max_age_minutes=20, include_samples=True,
+            )
+            identification_samples = identification_dataset.pop("samples", [])
+            summary["multizone_identification_dataset"] = identification_dataset
             summary["multizone_response_identification"] = build_multizone_response_identification(
-                self._calibration_dataset_samples,
+                identification_samples,
                 configured_rooms,
-                interval_minutes=30,
+                interval_minutes=10,
                 train_fraction=0.7,
+                minimum_train_intervals=48,
+                minimum_holdout_intervals=16,
                 require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
-                require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
-                require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
-                max_age_minutes=45,
+                # Boiler firing elsewhere in the house must not veto a room
+                # whose own demand is off. Retain boiler telemetry in the
+                # interval diagnostics rather than imposing a global gate.
+                require_boiler_burner_off=False,
+                require_boiler_modulation_zero=False,
+                max_age_minutes=20,
             )
             summary["absolute_parameter_identification"] = identify_absolute_room_parameters(
                 summary["multizone_response_identification"],
@@ -411,6 +425,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "note": "A Recorder history pass is required to calculate chronological one-step scores.",
             }
         snapshot["physical_model_validation"] = physical_validation
+        snapshot["multizone_identification_dataset"] = validation.get("multizone_identification_dataset", {})
+        snapshot["multizone_response_identification"] = validation.get("multizone_response_identification", {})
+        snapshot["absolute_parameter_identification"] = absolute_parameters
         diagnostic_keys = (
             "status", "failed_stage", "exception_type", "exception_message",
             "attempted_at", "requested_history_days", "entity_count",

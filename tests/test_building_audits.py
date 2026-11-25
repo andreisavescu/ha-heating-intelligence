@@ -62,7 +62,7 @@ def test_missing_frame_area_is_unknown_not_zero():
     )
     east = result["window_area_by_orientation"]["east"]
     assert east["gross_m2"] is None
-    assert east["gross_difference_m2"] is None
+    assert east["glass_difference_m2"] is None
     assert result["individual_windows_gross_total_m2"] is None
 
 

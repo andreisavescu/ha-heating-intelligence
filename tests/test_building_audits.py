@@ -109,3 +109,16 @@ def test_thermal_readiness_reports_outdoor_and_attic_paths_separately():
     assert room["room_to_outdoors_surface_calculated_w_per_k"] == 3.8
     assert room["room_to_attic_configured_w_per_k"] == 2.1
     assert room["surface_conductance_by_boundary_w_per_k"]["attic"] == 2.1
+
+
+
+def test_thermal_readiness_exposes_missing_inter_room_connection_configuration():
+    options = {
+        "rooms": [{"id": "living", "floor": "ground_floor", "area_m2": 20,
+                   "volume_m3": 50, "envelope_conductance_w_per_k": 5}],
+        "house_assessment": {},
+    }
+    result = build_thermal_readiness_audit(options, {}, {}, {})
+    assert result["inter_room_connection_status"] == "not_configured"
+    assert result["inter_room_connections_required_for_multizone_model"] is True
+    assert result["status"] == "incomplete"

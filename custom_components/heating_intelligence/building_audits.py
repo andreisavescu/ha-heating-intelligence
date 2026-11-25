@@ -69,7 +69,8 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
             "frame_area_known_count": values["frame_area_known_count"],
             "frame_area_complete": values["window_count"] == values["frame_area_known_count"],
             "house_assessment_reference_m2": reference,
-            "gross_difference_m2": round(values["gross_m2"] - reference, 3) if reference is not None and values["window_count"] == values["frame_area_known_count"] else None,
+            "glass_difference_m2": round(values["glass_m2"] - reference, 3) if reference is not None else None,
+            "reference_area_basis": "glass",
         }
     known_references = [
         _number(profile.get(f"window_area_{orientation}_m2"))
@@ -87,7 +88,7 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
             room_area_by_floor[floor] += area
     discrepancies = [
         orientation for orientation, values in comparisons.items()
-        if values["gross_difference_m2"] is not None and abs(values["gross_difference_m2"]) > 0.1
+        if values["glass_difference_m2"] is not None and abs(values["glass_difference_m2"]) > 0.1
     ]
     orientations_without_complete_frame_area = [
         orientation for orientation, values in comparisons.items()
@@ -128,24 +129,41 @@ def build_house_audit(options: dict, rooms: dict, windows: list[dict]) -> dict:
             else None
         ),
         "house_assessment_reference_total_m2": round(sum(known_references), 3) if len(known_references) == 4 else None,
-        "reference_semantics": "Existing house-assessment orientation totals are treated as gross/frame-inclusive reference areas; individual records separately report glass and frame areas. Differences are diagnostic only.",
+        "reference_semantics": "House-assessment orientation totals are compared with glass area only. Frame area is reported separately and is never added to the reference comparison.",
     }
 
 
-def build_thermal_readiness_audit(options: dict, rooms: dict, house_audit: dict, attic: dict) -> dict:
+def build_thermal_readiness_audit(
+    options: dict, rooms: dict, house_audit: dict, attic: dict,
+    envelope_audit: dict | None = None,
+) -> dict:
     """Report explicit thermal boundaries and model parameter gaps without filling them."""
     profile = options.get(CONF_HOUSE_ASSESSMENT, {}) or {}
     room_list = options.get(CONF_ROOMS, []) or []
     room_parameters = {}
+    envelope_audit = envelope_audit or {}
+    calculated_rooms = envelope_audit.get("rooms", {}) or {}
+    connections = profile.get("room_connections", []) or []
+    attic_shares = profile.get("attic_floor_room_conductances_w_per_k", {}) or {}
     for room in room_list:
         rid = room.get("id")
+        configured_outdoor = _number(room.get("envelope_conductance_w_per_k"))
+        attic_value = _number(attic_shares.get(rid))
+        calculated = calculated_rooms.get(rid, {}) or {}
+        by_boundary = calculated.get("conductance_by_boundary_w_per_k", {}) or {}
         room_parameters[rid] = {
             "name": room.get("name"),
             "floor": room.get("floor"),
             "area_m2": _number(room.get("area_m2", room.get("area"))),
             "volume_m3": _number(room.get("volume_m3")),
-            "envelope_conductance_w_per_k": _number(room.get("envelope_conductance_w_per_k")),
-            "attic_floor_conductance_w_per_k": _number(room.get("attic_floor_conductance_w_per_k")),
+            # Backward-compatible key: room-to-outdoors only, never including attic.
+            "envelope_conductance_w_per_k": configured_outdoor,
+            "room_to_outdoors_configured_w_per_k": configured_outdoor,
+            "room_to_outdoors_surface_calculated_w_per_k": by_boundary.get("outdoor"),
+            "room_to_attic_configured_w_per_k": attic_value,
+            "attic_floor_conductance_w_per_k": attic_value,
+            "surface_conductance_by_boundary_w_per_k": by_boundary,
+            "configured_surface_count": calculated.get("configured_surface_count", 0),
             "temperature_sensor_configured": bool(room.get("temperature_entity")),
             "missing": [
                 key for key, value in (
@@ -154,18 +172,28 @@ def build_thermal_readiness_audit(options: dict, rooms: dict, house_audit: dict,
                 ) if value is None
             ],
         }
-    connections = profile.get("room_connections", []) or []
-    attic_shares = profile.get("attic_floor_room_conductances_w_per_k", {}) or {}
-    missing_envelope = [rid for rid, item in room_parameters.items() if item["envelope_conductance_w_per_k"] is None]
+    missing_envelope = [rid for rid, item in room_parameters.items() if item["room_to_outdoors_configured_w_per_k"] is None]
     upstairs_ids = [room.get("id") for room in room_list if room.get("floor") == "upstairs"]
-    missing_attic = [rid for rid in upstairs_ids if rid not in attic_shares]
+    missing_attic = [
+        rid for rid in upstairs_ids
+        if _number(attic_shares.get(rid)) is None or _number(attic_shares.get(rid)) <= 0
+    ]
     return {
         "status": "incomplete" if missing_envelope or missing_attic or not connections or any(item["missing"] for item in room_parameters.values()) else "configured",
         "room_parameters": room_parameters,
         "rooms_missing_envelope_conductance": missing_envelope,
         "rooms_missing_area_or_volume": [rid for rid, item in room_parameters.items() if item["missing"]],
         "configured_inter_room_connections": connections,
+        "inter_room_connection_status": "configured" if connections else "not_configured",
+        "inter_room_connections_required_for_multizone_model": True,
         "configured_attic_floor_conductances_w_per_k": attic_shares,
+        "envelope_surface_audit_status": envelope_audit.get("status", "not_available"),
+        "envelope_surface_boundary_totals_by_room": calculated_rooms,
+        "boundary_interpretation": {
+            "outdoor": "Room to outdoors: exterior walls and windows/doors may be combined because they share the outdoor boundary temperature.",
+            "attic": "Room to attic: ceiling/attic-floor conductance is a separate path and must not be added to room-to-outdoors conductance.",
+            "legacy_room_envelope_field": "envelope_conductance_w_per_k is interpreted as room-to-outdoors only. It must not include the attic-floor contribution.",
+        },
         "upstairs_rooms_without_attic_conductance": missing_attic,
         "attic_measurements": {
             "temperature_sensor_configured": bool(options.get(CONF_ATTIC_TEMPERATURE_ENTITY)),

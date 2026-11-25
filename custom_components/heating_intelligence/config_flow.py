@@ -146,12 +146,14 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         def num(key, default, minimum, maximum, unit, step):
             marker = vol.Optional(key, default=default) if default is not None else vol.Required(key)
             return marker, selector.NumberSelector(selector.NumberSelectorConfig(min=minimum, max=maximum, step=step, unit_of_measurement=unit, mode=selector.NumberSelectorMode.BOX))
+        area_marker, area_selector = num("area_m2", existing.get("area_m2"), 0.01, 1000, "m²", 0.01)
+        u_marker, u_selector = num("u_value_w_m2k", existing.get("u_value_w_m2k"), 0.01, 10, "W/m²K", 0.001)
         fields = {
             vol.Required("name", default=existing.get("name", "")): str,
             vol.Required("room_id", default=existing.get("room_id", rooms[0]["id"])): vol.In({x["id"]: x[CONF_NAME] for x in rooms}),
             vol.Required("boundary", default=existing.get("boundary", "outdoor")): vol.In({"outdoor": "Outdoors", "ground": "Ground", "attic": "Unheated attic", "adjacent_heated": "Adjacent heated space"}),
-            num("area_m2", existing.get("area_m2"), 0.01, 1000, "m²", 0.01),
-            num("u_value_w_m2k", existing.get("u_value_w_m2k"), 0.01, 10, "W/m²K", 0.001),
+            area_marker: area_selector,
+            u_marker: u_selector,
         }
         return self.async_show_form(step_id="envelope_surface_details", data_schema=vol.Schema(fields))
 
@@ -210,6 +212,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 "orientation": user_input["orientation"],
                 "glass_area_m2": float(user_input["glass_area_m2"]),
                 "frame_area_m2": float(user_input["frame_area_m2"]) if user_input.get("frame_area_m2") not in (None, "") else None,
+                "whole_window_u_value_w_m2k": float(user_input["whole_window_u_value_w_m2k"]) if user_input.get("whole_window_u_value_w_m2k") not in (None, "") else None,
                 "glazing": user_input.get("glazing", "unknown"),
                 "frame_material": user_input.get("frame_material", "unknown"),
                 "shading": user_input.get("shading", "unknown"),
@@ -229,6 +232,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Required("orientation", default=existing.get("orientation", "south")): vol.In({"north": "North", "east": "East", "south": "South", "west": "West"}),
             vol.Required("glass_area_m2", default=existing.get("glass_area_m2", 1.0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
             (vol.Optional("frame_area_m2", default=existing["frame_area_m2"]) if existing.get("frame_area_m2") is not None else vol.Optional("frame_area_m2")): selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=30, step=0.01, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)),
+            (vol.Optional("whole_window_u_value_w_m2k", default=existing["whole_window_u_value_w_m2k"]) if existing.get("whole_window_u_value_w_m2k") is not None else vol.Optional("whole_window_u_value_w_m2k")): selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)),
             vol.Optional("glazing", default=existing.get("glazing", "unknown")): vol.In({"unknown": "Unknown", "double": "Double", "triple": "Triple"}),
             vol.Optional("frame_material", default=existing.get("frame_material", "unknown")): vol.In({"unknown": "Unknown", "uPVC": "uPVC", "wood": "Wood", "aluminium": "Aluminium", "composite": "Composite"}),
             vol.Optional("shading", default=existing.get("shading", "unknown")): vol.In({"unknown": "Unknown", "none": "None", "blinds": "Blinds", "shutters": "Shutters", "external": "External shading", "mixed": "Mixed"}),

@@ -97,6 +97,26 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
         model="House overview",
     )
 
+    audit_device = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{entry.entry_id}_audits")},
+        name="Heating Intelligence — Audits",
+        manufacturer="Heating Intelligence",
+        model="Diagnostics and model audits",
+        via_device=_house_identifier(coordinator),
+    )
+
+    audit_prefixes = {
+        f"{DOMAIN}_ufh_hydraulic_audit",
+        f"{DOMAIN}_house_audit",
+        f"{DOMAIN}_thermal_readiness_audit",
+        f"{DOMAIN}_measurement_audit",
+        f"{DOMAIN}_physical_model_experiments",
+        f"{DOMAIN}_envelope_conductance",
+        f"{DOMAIN}_stage3_thermal_capacity",
+        f"{DOMAIN}_stage4_room_heating_power",
+    }
+
     room_devices = {}
     for room in entry.options.get(CONF_ROOMS, []):
         room_id = room["id"]
@@ -151,7 +171,7 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
         if entity.platform != DOMAIN:
             continue
 
-        target = house
+        target = audit_device if entity.unique_id in audit_prefixes else house
         for room_id, device in room_devices.items():
             if entity.unique_id.startswith(f"{DOMAIN}_{room_id}_"):
                 target = device

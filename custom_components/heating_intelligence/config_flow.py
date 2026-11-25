@@ -17,6 +17,7 @@ from .const import (
     CONF_FLOOR,
     CONF_AREA,
     CONF_ACH,
+    CONF_UFH_SCREED_THICKNESS_CM,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SOLAR_RADIATION_ENTITY,
     CONF_WEATHER_ENTITY,
@@ -749,6 +750,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_AREA: float(user_input[CONF_AREA]) if user_input.get(CONF_AREA) not in (None, "") else None,
             "volume_m3": float(user_input["volume_m3"]) if user_input.get("volume_m3") not in (None, "") else None,
             CONF_ACH: float(user_input[CONF_ACH]) if user_input.get(CONF_ACH) not in (None, "") else None,
+            CONF_UFH_SCREED_THICKNESS_CM: float(user_input.get(CONF_UFH_SCREED_THICKNESS_CM, 4.5) or 4.5),
             **({CONF_DEMAND_ENTITY: user_input[CONF_DEMAND_ENTITY]} if user_input.get(CONF_DEMAND_ENTITY) else {}),
             **({CONF_TEMPERATURE_ENTITY: user_input[CONF_TEMPERATURE_ENTITY]} if user_input.get(CONF_TEMPERATURE_ENTITY) else {}),
             CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
@@ -855,6 +857,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                     CONF_AREA: float(area) if area not in (None, "") else None,
                     "volume_m3": float(user_input["volume_m3"]) if user_input.get("volume_m3") not in (None, "") else None,
                     CONF_ACH: float(ach) if ach not in (None, "") else None,
+                    CONF_UFH_SCREED_THICKNESS_CM: float(user_input.get(CONF_UFH_SCREED_THICKNESS_CM, 4.5) or 4.5),
                     CONF_WINDOW_ENTITY: user_input.get(CONF_WINDOW_ENTITY),
                 }
                 if item["id"] == self._area_room_id else item
@@ -905,11 +908,15 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             else vol.Optional(CONF_WINDOW_ENTITY)
         )
         window_selector = selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor"))
+        current_screed = room.get(CONF_UFH_SCREED_THICKNESS_CM, 4.5)
+        screed_field = vol.Optional(CONF_UFH_SCREED_THICKNESS_CM, default=current_screed)
+        screed_selector = selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=30, step=0.1, unit_of_measurement="cm", mode=selector.NumberSelectorMode.BOX))
         schema = vol.Schema({
             area_field: area_selector,
             volume_field: selector.NumberSelector(selector.NumberSelectorConfig(min=2, max=2000, step=0.1, unit_of_measurement="m³", mode=selector.NumberSelectorMode.BOX)),
             ach_field: ach_selector,
             window_field: window_selector,
+            screed_field: screed_selector,
         })
         return self.async_show_form(
             step_id="set_room_area",

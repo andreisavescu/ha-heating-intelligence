@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), EnvelopeConductanceSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -1230,6 +1230,30 @@ class EnvelopeConductanceSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntit
     @property
     def extra_state_attributes(self):
         return self.coordinator.data.get("envelope_conductance", {})
+
+
+class Stage3ThermalCapacitySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Stage 3 effective room and per-room UFH screed capacity diagnostics."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "rooms"
+    _attr_icon = "mdi:weight"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Stage 3 Thermal Capacity"
+        self._attr_unique_id = f"{DOMAIN}_stage3_thermal_capacity"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("stage3_thermal_capacity", {}).get(
+            "rooms_with_provisional_effective_capacity", 0
+        )
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("stage3_thermal_capacity", {})
 
 
 class PhysicalModelExperimentsSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):

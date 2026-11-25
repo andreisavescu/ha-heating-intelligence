@@ -21,6 +21,21 @@ def house_device_info(coordinator) -> dr.DeviceInfo:
     )
 
 
+def _audit_identifier(coordinator) -> tuple[str, str]:
+    return (DOMAIN, f"{coordinator.entry.entry_id}_audits")
+
+
+def audit_device_info(coordinator) -> dr.DeviceInfo:
+    """Return the dedicated diagnostics/audits device."""
+    return dr.DeviceInfo(
+        identifiers={_audit_identifier(coordinator)},
+        name="Heating Intelligence — Audits",
+        manufacturer="Heating Intelligence",
+        model="Diagnostics and audits",
+        via_device=_house_identifier(coordinator),
+    )
+
+
 def room_device_info(coordinator, room_id: str, room_name: str) -> dr.DeviceInfo:
     """Return one device per configured room, linked to the house device."""
     return dr.DeviceInfo(
@@ -49,6 +64,14 @@ class HouseDeviceMixin:
     @property
     def device_info(self) -> dr.DeviceInfo:
         return house_device_info(self.coordinator)
+
+
+class AuditDeviceMixin:
+    """Attach diagnostic and audit entities to their own child device."""
+
+    @property
+    def device_info(self) -> dr.DeviceInfo:
+        return audit_device_info(self.coordinator)
 
 
 class RoomDeviceMixin:
@@ -135,12 +158,31 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
         ):
             entity_registry.async_remove(entity.entity_id)
 
+    audit_device = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={_audit_identifier(coordinator)},
+        name="Heating Intelligence — Audits",
+        manufacturer="Heating Intelligence",
+        model="Diagnostics and audits",
+        via_device=_house_identifier(coordinator),
+    )
+    audit_unique_ids = {
+        f"{DOMAIN}_ufh_hydraulic_audit",
+        f"{DOMAIN}_house_audit",
+        f"{DOMAIN}_thermal_readiness_audit",
+        f"{DOMAIN}_measurement_audit",
+        f"{DOMAIN}_physical_model_experiments",
+        f"{DOMAIN}_envelope_conductance",
+        f"{DOMAIN}_stage3_thermal_capacity",
+        f"{DOMAIN}_stage5_ufh_slab_model",
+    }
+
     repaired = 0
     for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
         if entity.platform != DOMAIN:
             continue
 
-        target = house
+        target = audit_device if entity.unique_id in audit_unique_ids else house
         for room_id, device in room_devices.items():
             if entity.unique_id.startswith(f"{DOMAIN}_{room_id}_"):
                 target = device

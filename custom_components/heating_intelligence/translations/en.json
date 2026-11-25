@@ -25,7 +25,8 @@
           "house_assessment": "House assessment",
           "edit_rooms": "Edit rooms",
           "ufh_circuits": "Configure UFH circuits",
-          "thermal_topology": "Configure room thermal paths (W/K)"
+          "thermal_topology": "Configure room thermal paths (W/K)",
+          "envelope_surfaces": "Configure explicit envelope surfaces (area × U-value)"
         }
       },
       "thermal_topology": {
@@ -203,6 +204,41 @@
         "description": "Select the heating-demand entity for {room_name}. Leave it empty to remove the room's demand sensor.",
         "data": {
           "demand_entity": "Room heating-demand entity"
+        }
+      },
+      "envelope_surfaces": {
+        "title": "Envelope surfaces",
+        "description": "Add, edit or remove measured opaque surfaces. Select the room, physical boundary, measured area and whole-assembly U-value. No U-values or dimensions are inferred.",
+        "data": {
+          "action": "Action",
+          "surface": "Surface"
+        }
+      },
+      "envelope_surface_details": {
+        "title": "Envelope surface details",
+        "description": "Enter an explicit measured area and whole-assembly U-value. Use adjacent heated space for a shared boundary with a heated neighbouring dwelling; it is kept separate from outdoor losses.",
+        "data": {
+          "name": "Surface name",
+          "room_id": "Room",
+          "boundary": "Boundary",
+          "area_m2": "Measured surface area (m²)",
+          "u_value_w_m2k": "Whole-assembly U-value (W/m²K)"
+        }
+      },
+      "window_details": {
+        "title": "Window geometry and shading",
+        "description": "Record measured geometry. The optional Uw must describe the whole window, not center-of-glass Ug.",
+        "data": {
+          "name": "Window name",
+          "room_id": "Room",
+          "orientation": "Orientation",
+          "glass_area_m2": "Glass area (m²)",
+          "frame_area_m2": "Frame area (m²)",
+          "glazing": "Glazing",
+          "frame_material": "Frame material",
+          "shading": "Shading type",
+          "shading_behaviour": "Typical shading behaviour",
+          "whole_window_u_value_w_m2k": "Whole-window Uw (W/m²K), not center-of-glass Ug"
         }
       }
     },

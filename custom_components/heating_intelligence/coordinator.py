@@ -330,14 +330,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 configured_rooms,
             )
             summary["multi_zone_historical_replay"] = build_multizone_historical_replay(
-                identification_samples,
+                self._calibration_dataset_samples,
                 configured_rooms,
                 summary["multizone_response_identification"],
-                interval_minutes=10,
-                max_age_minutes=20,
+                interval_minutes=30,
+                max_age_minutes=45,
                 require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
-                require_boiler_burner_off=False,
-                require_boiler_modulation_zero=False,
+                require_boiler_burner_off=bool(self.entry.options.get(CONF_BOILER_BURNER_ENTITY)),
+                require_boiler_modulation_zero=bool(self.entry.options.get(CONF_BOILER_MODULATION_ENTITY)),
             )
             # Physical validation is based only on chronological Recorder samples.
             # Forecasts and what-if scenarios are recalculated from live inputs

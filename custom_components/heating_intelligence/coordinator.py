@@ -337,6 +337,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 self._calibration_dataset_samples,
                 configured_rooms,
                 summary["absolute_parameter_identification"],
+                require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
             )
             summary["multi_zone_historical_replay"] = build_multizone_historical_replay(
                 self._calibration_dataset_samples,

@@ -3311,7 +3311,7 @@ def build_multizone_response_identification(
             x = [(outside0 + outside1) / 2 - (temps0[room_id] + temps1[room_id]) / 2]
             x.extend(
                 (temps0[other] + temps1[other] - temps0[room_id] - temps1[room_id]) / 2
-                for other in room_ids if other != room_id
+                for other in other_predictors
             )
             if "attic" in predictors:
                 attic0 = numeric(first_channels.get("attic_temperature"))

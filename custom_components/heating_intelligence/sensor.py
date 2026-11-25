@@ -19,7 +19,7 @@ from .const import (
     CONF_HEATING_GAS_ENTITY, CONF_DHW_GAS_ENTITY,
 )
 from .coordinator import HeatingIntelligenceCoordinator
-from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
+from .devices import HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin, AuditDeviceMixin
 from .insights import build_heating_insights
 
 
@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage4RoomHeatingPowerSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -455,7 +455,7 @@ class RoomBoilerExperimentEnergySensor(RoomDeviceMixin, CoordinatorEntity, Senso
             "calculation_assumptions": "Heating gas only; DHW excluded. Exposure is configured circuit flow × modulation-derived output × burner-on seconds.",
         }
 
-class UFHHydraulicAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+class UFHHydraulicAuditSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
     """Diagnostic summary of configured UFH circuit topology."""
 
     _attr_should_poll = False
@@ -1165,7 +1165,7 @@ class RoomAirQualitySensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
 
 
 
-class HouseAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+class HouseAuditSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
     """Whole-house geometry and configuration cross-check."""
 
     _attr_should_poll = False
@@ -1188,7 +1188,7 @@ class HouseAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
         return self.coordinator.data.get("house_audit", {})
 
 
-class ThermalReadinessAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+class ThermalReadinessAuditSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
     """Thermal boundary and physical model parameter readiness."""
 
     _attr_should_poll = False
@@ -1211,7 +1211,7 @@ class ThermalReadinessAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEnt
         return self.coordinator.data.get("thermal_readiness_audit", {})
 
 
-class EnvelopeConductanceSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+class EnvelopeConductanceSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
     """Explicit UA totals grouped by room and physical boundary."""
     _attr_should_poll = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -1232,7 +1232,7 @@ class EnvelopeConductanceSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntit
         return self.coordinator.data.get("envelope_conductance", {})
 
 
-class Stage3ThermalCapacitySensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+class Stage3ThermalCapacitySensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
     """Stage 3 effective room and per-room UFH screed capacity diagnostics."""
 
     _attr_should_poll = False
@@ -1256,7 +1256,31 @@ class Stage3ThermalCapacitySensor(HouseDeviceMixin, CoordinatorEntity, SensorEnt
         return self.coordinator.data.get("stage3_thermal_capacity", {})
 
 
-class PhysicalModelExperimentsSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+class Stage4RoomHeatingPowerSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Stage 4 inferred room-level heating power diagnostics."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "rooms"
+    _attr_icon = "mdi:heat-wave"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Stage 4 Room Heating Power"
+        self._attr_unique_id = f"{DOMAIN}_stage4_room_heating_power"
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data.get("stage4_room_heating_power", {})
+        return sum(1 for room in data.get("rooms", {}).values()
+                   if room.get("status") == "estimated_power_available")
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data.get("stage4_room_heating_power", {})
+
+
+class PhysicalModelExperimentsSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
     """Physical replay validation, experimental forecasts and isolated scenarios."""
 
     _attr_should_poll = False
@@ -1288,7 +1312,7 @@ class PhysicalModelExperimentsSensor(HouseDeviceMixin, CoordinatorEntity, Sensor
         }
 
 
-class MeasurementAuditSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+class MeasurementAuditSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
     """Configured measurement source and room sensor coverage inventory."""
 
     _attr_should_poll = False

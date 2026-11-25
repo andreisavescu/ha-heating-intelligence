@@ -3131,6 +3131,8 @@ def build_multizone_response_identification(
             "ac_heating_active_or_unavailable": 0,
             "unsupported_ac_power_unit": 0,
             "boiler_active_or_unavailable": 0,
+            "boiler_active_intervals_retained": 0,
+            "boiler_telemetry_missing_intervals_retained": 0,
             "stale_room_temperature": 0,
             "stale_room_state": 0,
             "stale_solar_or_outdoor": 0,

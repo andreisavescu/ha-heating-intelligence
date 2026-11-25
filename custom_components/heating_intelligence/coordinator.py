@@ -508,6 +508,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                     ),
                 },
                 self.entry.options.get("ufh_circuits", []),
+                build_envelope_conductance(self.entry.options),
             )
             current["thermal_model"] = thermal_model
             self._apply_physical_model_experiments(current, validation)
@@ -1044,6 +1045,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                     else None
                 ),
             },
+            self.entry.options.get("ufh_circuits", []),
+            build_envelope_conductance(self.entry.options),
         )
         result["thermal_model"]["ac_heating_filter"] = (
             "sensor_unavailable" if ac_power_entity and ac_power_value is None

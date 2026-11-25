@@ -184,6 +184,8 @@ def build_thermal_readiness_audit(
         "rooms_missing_envelope_conductance": missing_envelope,
         "rooms_missing_area_or_volume": [rid for rid, item in room_parameters.items() if item["missing"]],
         "configured_inter_room_connections": connections,
+        "inter_room_connection_status": "configured" if connections else "not_configured",
+        "inter_room_connections_required_for_multizone_model": True,
         "configured_attic_floor_conductances_w_per_k": attic_shares,
         "envelope_surface_audit_status": envelope_audit.get("status", "not_available"),
         "envelope_surface_boundary_totals_by_room": calculated_rooms,

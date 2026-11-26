@@ -39,7 +39,11 @@ from .stage3_thermal_capacity import build_stage3_thermal_capacity
 from .stage5_ufh_slab_model import build_stage5_ufh_slab_model
 from .stage6_gain_model import build_stage6_gain_model
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator, build_simulation_audit
-from .recorder_diagnostics import (\n    RECORDER_HISTORY_ANALYSIS_VERSION,\n    build_recorder_failure_summary,\n    recorder_history_cache_ttl,\n)
+from .recorder_diagnostics import (
+    RECORDER_HISTORY_ANALYSIS_VERSION,
+    build_recorder_failure_summary,
+    recorder_history_cache_ttl,
+)
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_recorder_event_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (

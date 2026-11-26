@@ -3330,9 +3330,6 @@ def build_multizone_response_identification(
                 # A brief demand/window transition inside an aggregated window
                 # invalidates it even if the state is OFF/CLOSED again at its end.
                 segment = [
-                    row for _, row in parsed
-                    if stamp0 < _timestamp_from_row(row) <= stamp1
-                ] if False else [
                     parsed[index][1]
                     for index in range(global_index0 + 1, global_index1 + 1)
                 ]

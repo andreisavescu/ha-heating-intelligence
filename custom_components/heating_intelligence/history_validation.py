@@ -3063,7 +3063,7 @@ def _multizone_holdout_diagnostics(
         }
     residuals = [
         (intercept + sum(physical[j] * row[1][j] for j in range(len(physical)))
-         - row[2]) * row[3] / 60
+         - row[2]) * (row[3] if len(row) > 3 else interval_minutes) / 60
         for row in holdout
     ]
     count = len(residuals)

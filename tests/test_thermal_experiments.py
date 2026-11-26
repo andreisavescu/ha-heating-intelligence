@@ -85,3 +85,21 @@ def test_simulation_audit_reports_room_readiness_and_keeps_validation_separate()
     assert "no_chronological_validation_intervals" in audit["rooms"]["living"]["blockers"]
     assert audit["rooms"]["baie_matr"]["temperature_source"] == "fixed_scenario_assumption_only"
     assert audit["complete_room_state_samples"] == 0
+
+
+
+def test_simulation_audit_counts_native_event_dataset_samples():
+    audit = MODULE.build_simulation_audit(
+        [],
+        {},
+        {"rooms": {}},
+        {"rooms": {}},
+        {"rooms": {}, "outdoor_temperature_c": None},
+        {
+            "status": "event_dataset_available",
+            "event_sample_count": 29132,
+        },
+        {"rooms": {}},
+    )
+    assert audit["dataset_status"] == "event_dataset_available"
+    assert audit["dataset_samples"] == 29132

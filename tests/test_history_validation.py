@@ -2646,5 +2646,49 @@ def test_event_dataset_uses_native_irregular_room_timestamps_and_reaches_fitter(
     assert fit["observed_rooms"] == 2
     assert fit["rooms"]["room_a"]["eligible_intervals"] > 0
     assert fit["rooms"]["room_b"]["eligible_intervals"] > 0
-    assert fit["rooms"]["room_a"]["candidate_intervals"] == len(samples) - 1
+    assert fit["rooms"]["room_a"]["candidate_intervals"] == 40
     assert fit["rooms"]["room_a"]["excluded_intervals"]["non_contiguous_or_missing_temperature"] < len(samples) - 1
+
+
+
+def test_event_mode_aggregates_sub_five_minute_room_events_and_checks_intermediate_controls():
+    start = datetime(2026, 11, 26, tzinfo=timezone.utc)
+    samples = []
+    for index in range(26):
+        stamp = start + timedelta(minutes=index)
+        demand = "on" if index == 11 else "off"
+        samples.append({
+            "timestamp": stamp.isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0,
+                "solar_radiation": 0.0,
+                "solar_radiation_unit": "W/m²",
+            },
+            "rooms": {
+                "room": {
+                    "temperature": 21.0 - index * 0.01,
+                    "temperature_timestamp": stamp.isoformat(),
+                    "temperature_age_minutes": 0,
+                    "demand": demand,
+                    "window": "off",
+                }
+            },
+        })
+
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "room", "floor": "ground_floor"}],
+        minimum_train_intervals=1,
+        minimum_holdout_intervals=1,
+        max_age_minutes=90,
+        max_interval_minutes=120,
+    )
+    room = result["rooms"]["room"]
+
+    # Twenty-five one-minute event gaps become five-minute room intervals.
+    assert room["candidate_intervals"] == 25
+    assert room["eligible_intervals"] == 4
+    assert room["excluded_intervals"]["short_intervals_accumulated"] == 20
+    # The OFF -> ON -> OFF transition inside the 10-15 minute window
+    # must invalidate that aggregate interval.
+    assert room["excluded_intervals"]["target_demand_or_window_not_confirmed_off_closed"] == 1

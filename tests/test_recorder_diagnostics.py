@@ -57,6 +57,12 @@ def test_legacy_successful_history_pass_is_invalidated():
     assert MODULE.recorder_history_cache_ttl({"status": "ok"}) == 0
 
 
+def test_v0235_cache_is_invalidated_after_identification_algorithm_change():
+    assert MODULE.RECORDER_HISTORY_ANALYSIS_VERSION == 3
+    previous = {"status": "ok", "analysis_schema_version": 2}
+    assert MODULE.recorder_history_cache_ttl(previous) == 0
+
+
 def test_current_successful_history_pass_keeps_six_hour_cache():
     summary = {
         "status": "ok",

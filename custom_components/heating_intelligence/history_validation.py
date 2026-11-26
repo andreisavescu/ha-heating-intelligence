@@ -3063,7 +3063,7 @@ def _multizone_holdout_diagnostics(
         }
     residuals = [
         (intercept + sum(physical[j] * row[1][j] for j in range(len(physical)))
-         - row[2]) * interval_minutes / 60
+         - row[2]) * row[3] / 60
         for row in holdout
     ]
     count = len(residuals)
@@ -3168,8 +3168,9 @@ def build_multizone_response_identification(
     max_predictor_correlation: float = 0.985,
     max_predictor_condition_number: float = 1_000_000.0,
     max_age_minutes: float = 45.0,
+    max_interval_minutes: float = 120.0,
 ) -> dict[str, Any]:
-    """Identify normalized passive room-to-room and envelope response rates.
+    """Identify normalized passive room-to-room and envelope response rates from actual room events.
 
     Fits dT_i/dt = b_envelope*(T_out-T_i) +
     sum_j b_ij*(T_j-T_i) + intercept. Coefficients have units 1/hour:
@@ -3209,14 +3210,14 @@ def build_multizone_response_identification(
         _finite_number_or_none((sample.get("channels") or {}).get("attic_temperature")) is not None
         for sample in samples
     )
-    if len(room_ids) < 2:
+    if len(room_ids) < 1:
         return {
             "status": "insufficient_zones",
             "rooms": {},
             "configured_rooms": len(configured_room_ids),
             "observed_rooms": len(room_ids),
             "excluded_unobserved_rooms": excluded_unobserved_rooms,
-            "note": "At least two rooms with numeric Recorder temperature observations are required to identify inter-zone response.",
+            "note": "At least one room with numeric Recorder temperature observations is required for independent envelope-response identification; room coupling is fitted only where overlapping room observations support it.",
         }
 
     def numeric(value):
@@ -3242,7 +3243,11 @@ def build_multizone_response_identification(
     room_results = {}
     all_interval_counts = {"candidate": max(0, len(parsed) - 1), "eligible": 0, "excluded": {}}
     for room_id in room_ids:
-        predictors = ["envelope"] + [other for other in room_ids if other != room_id]
+        # Fit each target room independently. Other room temperatures are
+        # not mandatory: sparse sensors must not veto a valid target-room interval.
+        # Configured inter-room links remain in the physical network model and
+        # are only identified from a separate overlap-qualified fit.
+        predictors = ["envelope"]
         if room_by_id.get(room_id, {}).get("floor") == "upstairs" and attic_predictor_available:
             predictors.append("attic")
         rows = []
@@ -3264,24 +3269,34 @@ def build_multizone_response_identification(
             "invalid_interval": 0,
         }
         for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
-            elapsed_minutes = (stamp1 - stamp0).total_seconds() / 60
-            if abs(elapsed_minutes - interval_minutes) > 1:
+            first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
+            target_first = first_rooms.get(room_id, {})
+            target_second = second_rooms.get(room_id, {})
+            target_stamp0 = target_first.get("temperature_timestamp")
+            target_stamp1 = target_second.get("temperature_timestamp")
+            if not target_stamp0 or not target_stamp1 or target_stamp0 == target_stamp1:
+                continue
+            try:
+                elapsed_minutes = (datetime.fromisoformat(target_stamp1) - datetime.fromisoformat(target_stamp0)).total_seconds() / 60
+            except (TypeError, ValueError):
+                exclusions["invalid_interval"] += 1
+                continue
+            if elapsed_minutes < 5 or elapsed_minutes > max_interval_minutes:
                 exclusions["invalid_interval"] += 1
                 continue
             first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
             temps0 = {rid: numeric(first_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
             temps1 = {rid: numeric(second_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
             stale_temperature = any(
-                (numeric(first_rooms.get(rid, {}).get("temperature_age_minutes")) is not None
-                 and numeric(first_rooms.get(rid, {}).get("temperature_age_minutes")) > max_age_minutes)
-                or (numeric(second_rooms.get(rid, {}).get("temperature_age_minutes")) is not None
-                    and numeric(second_rooms.get(rid, {}).get("temperature_age_minutes")) > max_age_minutes)
-                for rid in room_ids
+                (numeric(target_first.get("temperature_age_minutes")) is not None
+                 and numeric(target_first.get("temperature_age_minutes")) > max_age_minutes)
+                or (numeric(target_second.get("temperature_age_minutes")) is not None
+                    and numeric(target_second.get("temperature_age_minutes")) > max_age_minutes)
             )
             if stale_temperature:
                 exclusions["stale_room_temperature"] += 1
                 continue
-            if any(temps0[rid] is None or temps1[rid] is None for rid in room_ids):
+            if temps0[room_id] is None or temps1[room_id] is None:
                 exclusions["non_contiguous_or_missing_temperature"] += 1
                 continue
             def fresh_room_state(room_data, field):
@@ -3291,8 +3306,6 @@ def build_multizone_response_identification(
             # target room being fitted. Other rooms contribute measured
             # temperatures as predictors; their own heating demand must not
             # invalidate this room's interval.
-            target_first = first_rooms.get(room_id, {})
-            target_second = second_rooms.get(room_id, {})
             stale_room_states = any(
                 numeric(data.get(field + "_age_minutes")) is not None
                 and numeric(data.get(field + "_age_minutes")) > max_age_minutes
@@ -3401,10 +3414,6 @@ def build_multizone_response_identification(
                 continue
             dt_hours = elapsed_minutes / 60
             x = [(outside0 + outside1) / 2 - (temps0[room_id] + temps1[room_id]) / 2]
-            x.extend(
-                (temps0[other] + temps1[other] - temps0[room_id] - temps1[room_id]) / 2
-                for other in room_ids if other != room_id
-            )
             if "attic" in predictors:
                 attic0 = numeric(first_channels.get("attic_temperature"))
                 attic1 = numeric(second_channels.get("attic_temperature"))
@@ -3418,7 +3427,7 @@ def build_multizone_response_identification(
                     continue
                 x.append((attic0 + attic1 - temps0[room_id] - temps1[room_id]) / 2)
             y = (temps1[room_id] - temps0[room_id]) / dt_hours
-            rows.append((stamp1, x, y))
+            rows.append((stamp1, x, y, elapsed_minutes))
         all_interval_counts["eligible"] += len(rows)
 
         split = int(len(rows) * train_fraction)
@@ -3874,13 +3883,13 @@ def build_multizone_response_identification(
                 total_sum = sum((row[2] - y_mean) ** 2 for row in train)
                 r2 = max(0.0, min(1.0, 1 - residual_sum / total_sum)) if total_sum > 1e-10 else None
                 errors, baseline = [], []
-                for _, x, observed_rate in holdout:
+                for _, x, observed_rate, elapsed in holdout:
                     pred_rate = intercept + sum(physical[j] * x[j] for j in range(p))
-                    errors.append(pred_rate * interval_minutes / 60)
+                    errors.append(pred_rate * elapsed / 60)
                     baseline.append(0.0)
                 # Temperature change prediction: predicted rate * interval;
                 # persistence baseline predicts no temperature change.
-                holdout_changes = [row[2] * interval_minutes / 60 for row in holdout]
+                holdout_changes = [row[2] * row[3] / 60 for row in holdout]
                 mae = sum(abs(pred - obs) for pred, obs in zip(errors, holdout_changes)) / len(errors)
                 rmse = math.sqrt(sum((pred - obs) ** 2 for pred, obs in zip(errors, holdout_changes)) / len(errors))
                 baseline_mae = sum(abs(value) for value in holdout_changes) / len(holdout_changes)
@@ -3986,6 +3995,7 @@ def build_multizone_response_identification(
         "house_level_holdout_validation": house_holdout_validation,
         "method": "nonnegative_multizone_free_coasting_regression",
         "interval_minutes": interval_minutes,
+        "interval_policy": {"minimum_minutes": 5, "maximum_minutes": max_interval_minutes, "basis": "actual_consecutive_target_temperature_timestamps"},
         "train_fraction": train_fraction,
         "max_predictor_correlation_threshold": max_predictor_correlation,
         "identifiability_method": "pairwise_correlation_and_full_standardized_training_matrix_condition_number",

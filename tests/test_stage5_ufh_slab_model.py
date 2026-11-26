@@ -77,3 +77,28 @@ def test_stage5_reports_missing_room_area_without_fabricating_capacity():
     floor = result["floors"]["upstairs"]
     assert floor["screed_capacity_wh_per_k"] is None
     assert floor["room_screed_capacity"]["unknown"]["status"] == "withheld_missing_area"
+
+
+
+def test_stage5_preserves_manual_configured_flow_when_pump_is_stopped():
+    result = MODULE.build_stage5_ufh_slab_model(
+        [{"id": "living", "floor": "ground_floor", "area_m2": 30}],
+        [{"id": "loop", "floor": "ground_floor", "pipe_length_m": 90}],
+        {"circuits": {"loop": {
+            "configured_flow_l_min": 2.5,
+            "active_configured_flow_l_min": 0.0,
+            "flow_is_manual_input": True,
+            "circulation_confirmed": False,
+        }}},
+        {"last_modulation_interval_calibrated_output_kw": 5.0,
+         "last_modulation_room_diagnostics": {"living": {"allocation_share": 1.0}}},
+        40.0,
+    )
+    floor = result["floors"]["ground_floor"]
+    circuit = floor["circuits"][0]
+    assert floor["configured_total_flow_l_min"] == 2.5
+    assert floor["active_total_flow_l_min"] == 0.0
+    assert circuit["configured_flow_l_min"] == 2.5
+    assert circuit["active_flow_l_min"] == 0.0
+    assert circuit["flow_is_manual_input"] is True
+    assert floor["estimated_return_temperature_c"] is None

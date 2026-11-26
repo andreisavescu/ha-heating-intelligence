@@ -3240,14 +3240,18 @@ def build_multizone_response_identification(
         parsed.append((stamp, row))
     parsed.sort(key=lambda item: item[0])
 
+    event_mode = any(
+        "temperature_timestamp" in ((sample.get("rooms") or {}).get(room_id) or {})
+        for sample in samples for room_id in configured_room_ids
+    )
     room_results = {}
     all_interval_counts = {"candidate": max(0, len(parsed) - 1), "eligible": 0, "excluded": {}}
     for room_id in room_ids:
-        # Fit each target room independently. Other room temperatures are
-        # not mandatory: sparse sensors must not veto a valid target-room interval.
-        # Configured inter-room links remain in the physical network model and
-        # are only identified from a separate overlap-qualified fit.
-        predictors = ["envelope"]
+        # Event datasets fit target rooms independently. Legacy aligned datasets
+        # retain their original multizone predictor behaviour for compatibility.
+        predictors = ["envelope"] + (
+            [other for other in room_ids if other != room_id] if not event_mode else []
+        )
         if room_by_id.get(room_id, {}).get("floor") == "upstairs" and attic_predictor_available:
             predictors.append("attic")
         rows = []
@@ -3274,9 +3278,9 @@ def build_multizone_response_identification(
             first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
             target_first = first_rooms.get(room_id, {})
             target_second = second_rooms.get(room_id, {})
-            target_stamp0 = target_first.get("temperature_timestamp")
-            target_stamp1 = target_second.get("temperature_timestamp")
-            if not target_stamp0 or not target_stamp1 or target_stamp0 == target_stamp1:
+            target_stamp0 = target_first.get("temperature_timestamp") or stamp0.isoformat()
+            target_stamp1 = target_second.get("temperature_timestamp") or stamp1.isoformat()
+            if target_stamp0 == target_stamp1:
                 continue
             try:
                 elapsed_minutes = (datetime.fromisoformat(target_stamp1) - datetime.fromisoformat(target_stamp0)).total_seconds() / 60
@@ -3289,16 +3293,22 @@ def build_multizone_response_identification(
             first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
             temps0 = {rid: numeric(first_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
             temps1 = {rid: numeric(second_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
+            temperature_rows = (
+                [(target_first, target_second)] if event_mode
+                else [(first_rooms.get(rid, {}), second_rooms.get(rid, {})) for rid in room_ids]
+            )
             stale_temperature = any(
-                (numeric(target_first.get("temperature_age_minutes")) is not None
-                 and numeric(target_first.get("temperature_age_minutes")) > max_age_minutes)
-                or (numeric(target_second.get("temperature_age_minutes")) is not None
-                    and numeric(target_second.get("temperature_age_minutes")) > max_age_minutes)
+                (numeric(left.get("temperature_age_minutes")) is not None
+                 and numeric(left.get("temperature_age_minutes")) > max_age_minutes)
+                or (numeric(right.get("temperature_age_minutes")) is not None
+                    and numeric(right.get("temperature_age_minutes")) > max_age_minutes)
+                for left, right in temperature_rows
             )
             if stale_temperature:
                 exclusions["stale_room_temperature"] += 1
                 continue
-            if temps0[room_id] is None or temps1[room_id] is None:
+            if (temps0[room_id] is None or temps1[room_id] is None
+                    or (not event_mode and any(temps0[rid] is None or temps1[rid] is None for rid in room_ids))):
                 exclusions["non_contiguous_or_missing_temperature"] += 1
                 continue
             def fresh_room_state(room_data, field):
@@ -3419,6 +3429,11 @@ def build_multizone_response_identification(
                 continue
             dt_hours = elapsed_minutes / 60
             x = [(outside0 + outside1) / 2 - (temps0[room_id] + temps1[room_id]) / 2]
+            if not event_mode:
+                x.extend(
+                    (temps0[other] + temps1[other] - temps0[room_id] - temps1[room_id]) / 2
+                    for other in room_ids if other != room_id
+                )
             if "attic" in predictors:
                 attic0 = numeric(first_channels.get("attic_temperature"))
                 attic1 = numeric(second_channels.get("attic_temperature"))

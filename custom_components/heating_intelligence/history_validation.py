@@ -3262,6 +3262,8 @@ def build_multizone_response_identification(
             "boiler_telemetry_missing_intervals_retained": 0,
             "stale_room_temperature": 0,
             "stale_room_state": 0,
+            "solar_missing_intervals_retained": 0,
+            "ac_power_missing_intervals_retained": 0,
             "stale_solar_or_outdoor": 0,
             "stale_ac_or_boiler_telemetry": 0,
             "unsupported_solar_unit": 0,
@@ -3300,20 +3302,14 @@ def build_multizone_response_identification(
                 exclusions["non_contiguous_or_missing_temperature"] += 1
                 continue
             def fresh_room_state(room_data, field):
-                age = numeric(room_data.get(field + "_age_minutes"))
-                return (age is None or age <= max_age_minutes) and state_off(room_data.get(field))
+                # Binary controls are event states, not continuously sampled
+                # measurements. A recorded OFF/CLOSED state remains valid
+                # until a later Recorder transition (including unavailable).
+                return state_off(room_data.get(field))
             # Free-coasting and closed-window requirements apply to the
             # target room being fitted. Other rooms contribute measured
             # temperatures as predictors; their own heating demand must not
             # invalidate this room's interval.
-            stale_room_states = any(
-                numeric(data.get(field + "_age_minutes")) is not None
-                and numeric(data.get(field + "_age_minutes")) > max_age_minutes
-                for data in (target_first, target_second)
-                for field in ("demand", "window")
-            )
-            if stale_room_states:
-                exclusions["stale_room_state"] += 1
             clean_states = (
                 fresh_room_state(target_first, "demand")
                 and fresh_room_state(target_second, "demand")
@@ -3345,9 +3341,15 @@ def build_multizone_response_identification(
                 solar0 *= solar_scales[solar_unit0]
             if solar1 is not None and solar_unit1 in solar_scales:
                 solar1 *= solar_scales[solar_unit1]
-            if solar0 is None or solar1 is None or max(solar0, solar1) > solar_max_w_m2:
+            if ((solar0 is not None and solar0 > solar_max_w_m2)
+                    or (solar1 is not None and solar1 > solar_max_w_m2)):
                 exclusions["solar_missing_or_high"] += 1
                 continue
+            if solar0 is None or solar1 is None:
+                # Keep an explicitly provisional interval when solar history
+                # is absent. It can inform a candidate response, but cannot
+                # justify promotion to validated physical parameters.
+                exclusions["solar_missing_intervals_retained"] += 1
             ac0 = numeric(first_channels.get("ac_power"))
             ac1 = numeric(second_channels.get("ac_power"))
             ac_ages = (numeric(first_channels.get("ac_power_age_minutes")), numeric(second_channels.get("ac_power_age_minutes")))
@@ -3364,11 +3366,14 @@ def build_multizone_response_identification(
                 ac0 *= ac_scales[ac_unit0]
             if ac1 is not None and ac_unit1 in ac_scales:
                 ac1 *= ac_scales[ac_unit1]
-            if ((require_ac_power and (ac0 is None or ac1 is None))
-                    or (ac0 is not None and ac0 > ac_power_max_w)
+            if ((ac0 is not None and ac0 > ac_power_max_w)
                     or (ac1 is not None and ac1 > ac_power_max_w)):
                 exclusions["ac_heating_active_or_unavailable"] += 1
                 continue
+            if require_ac_power and (ac0 is None or ac1 is None):
+                # Missing AC history is retained only as provisional evidence;
+                # it is tracked so the fit cannot be mistaken for validated.
+                exclusions["ac_power_missing_intervals_retained"] += 1
             burner0 = first_channels.get("boiler_burner")
             burner1 = second_channels.get("boiler_burner")
             boiler_ages = (
@@ -4005,6 +4010,7 @@ def build_multizone_response_identification(
         "rooms": room_results,
         "global_interval_counts": all_interval_counts,
         "units": "1/hour normalized conductance-to-capacity ratios (G/C), not W/K",
+        "provisional_evidence_policy": "Intervals with missing solar or configured AC power are retained and counted, but their fitted parameters are provisional and must not be promoted without independent validation.",
         "note": (
             "This is an initial directional multi-zone identification. Each target room "
             "must be coasting with a confirmed closed window and low measured solar radiation; "

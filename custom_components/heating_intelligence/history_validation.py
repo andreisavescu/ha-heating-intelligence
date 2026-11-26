@@ -3280,19 +3280,76 @@ def build_multizone_response_identification(
             "attic_missing_or_stale": 0,
             "invalid_interval": 0,
         }
-        for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
+        if event_mode:
+            # Build this room's own temperature-event timeline. The input dataset
+            # is a union of all rooms' events, so adjacent global rows are not
+            # necessarily adjacent observations for this target room.
+            target_events = []
+            seen_target_stamps = set()
+            for global_index, (global_stamp, sample) in enumerate(parsed):
+                room_data = (sample.get("rooms") or {}).get(room_id) or {}
+                raw_target_stamp = room_data.get("temperature_timestamp")
+                target_temp = numeric(room_data.get("temperature"))
+                if not raw_target_stamp or target_temp is None:
+                    continue
+                try:
+                    target_stamp = datetime.fromisoformat(str(raw_target_stamp))
+                    if target_stamp.tzinfo is None:
+                        target_stamp = target_stamp.replace(tzinfo=timezone.utc)
+                    target_stamp = target_stamp.astimezone(timezone.utc)
+                except (TypeError, ValueError):
+                    continue
+                if target_stamp in seen_target_stamps:
+                    continue
+                seen_target_stamps.add(target_stamp)
+                target_events.append((target_stamp, sample, global_index))
+            target_events.sort(key=lambda item: item[0])
+            candidate_intervals = max(0, len(target_events) - 1)
+            interval_pairs = []
+            anchor_index = 0
+            short_accumulated = 0
+            while anchor_index < len(target_events) - 1:
+                end_index = anchor_index + 1
+                while end_index < len(target_events):
+                    elapsed = (
+                        target_events[end_index][0] - target_events[anchor_index][0]
+                    ).total_seconds() / 60
+                    if elapsed >= 5:
+                        break
+                    short_accumulated += 1
+                    end_index += 1
+                if end_index >= len(target_events):
+                    break
+                stamp0, first, global_index0 = target_events[anchor_index]
+                stamp1, second, global_index1 = target_events[end_index]
+                elapsed = (stamp1 - stamp0).total_seconds() / 60
+                if elapsed > max_interval_minutes:
+                    exclusions["invalid_interval"] += 1
+                    anchor_index = end_index
+                    continue
+                # A brief demand/window transition inside an aggregated window
+                # invalidates it even if the state is OFF/CLOSED again at its end.
+                segment = [
+                    row for _, row in parsed
+                    if stamp0 < _timestamp_from_row(row) <= stamp1
+                ] if False else [
+                    parsed[index][1]
+                    for index in range(global_index0 + 1, global_index1 + 1)
+                ]
+                interval_pairs.append((stamp0, first, stamp1, second, segment))
+                anchor_index = end_index
+            exclusions["short_intervals_accumulated"] = short_accumulated
+        else:
+            candidate_intervals = max(0, len(parsed) - 1)
+            interval_pairs = [
+                (stamp0, first, stamp1, second, [])
+                for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:])
+            ]
+        for stamp0, first, stamp1, second, intermediate_rows in interval_pairs:
             first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
             target_first = first_rooms.get(room_id, {})
             target_second = second_rooms.get(room_id, {})
-            target_stamp0 = target_first.get("temperature_timestamp") or stamp0.isoformat()
-            target_stamp1 = target_second.get("temperature_timestamp") or stamp1.isoformat()
-            if target_stamp0 == target_stamp1:
-                continue
-            try:
-                elapsed_minutes = (datetime.fromisoformat(target_stamp1) - datetime.fromisoformat(target_stamp0)).total_seconds() / 60
-            except (TypeError, ValueError):
-                exclusions["invalid_interval"] += 1
-                continue
+            elapsed_minutes = (stamp1 - stamp0).total_seconds() / 60
             if elapsed_minutes < 5 or elapsed_minutes > max_interval_minutes:
                 exclusions["invalid_interval"] += 1
                 continue
@@ -3339,6 +3396,12 @@ def build_multizone_response_identification(
                 and fresh_room_state(target_first, "window")
                 and fresh_room_state(target_second, "window")
             )
+            if event_mode and clean_states:
+                clean_states = all(
+                    state_off(((row.get("rooms") or {}).get(room_id) or {}).get("demand"))
+                    and state_off(((row.get("rooms") or {}).get(room_id) or {}).get("window"))
+                    for row in intermediate_rows
+                )
             if not clean_states:
                 exclusions["target_demand_or_window_not_confirmed_off_closed"] += 1
                 continue
@@ -3475,7 +3538,7 @@ def build_multizone_response_identification(
             "holdout_start": holdout[0][0].isoformat() if holdout else None,
             "holdout_end": holdout[-1][0].isoformat() if holdout else None,
             "status": "insufficient_clean_intervals",
-            "candidate_intervals": len(parsed) - 1,
+            "candidate_intervals": candidate_intervals,
             "eligible_intervals": len(rows),
             "training_intervals": len(train),
             "holdout_intervals": len(holdout),

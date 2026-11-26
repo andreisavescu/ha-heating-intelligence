@@ -348,7 +348,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             summary["stage6_gain_model"] = build_stage6_gain_model(
                 self._calibration_dataset_samples,
-                configured_rooms,
+                absolute_anchor_rooms,
                 summary["absolute_parameter_identification"],
                 require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
             )

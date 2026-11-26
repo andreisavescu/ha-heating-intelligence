@@ -934,10 +934,14 @@ def build_recorder_event_calibration_dataset(
             timelines[f"room:{rid}:{field}"] = sorted(points, key=lambda item: item[0])
 
     first, last = start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+    # Include binary-control transitions as first-class events as well as
+    # temperature changes. This exposes brief demand/window transitions that
+    # occur between two temperature readings.
     event_stamps = sorted({
         stamp
         for rid in room_fields
-        for stamp, raw, _ in timelines.get(f"room:{rid}:temperature", [])
+        for field in ("temperature", "demand", "window")
+        for stamp, raw, _ in timelines.get(f"room:{rid}:{field}", [])
         if first <= stamp <= last and raw not in (None, "unknown", "unavailable")
     })
     samples = []
@@ -984,7 +988,7 @@ def build_recorder_event_calibration_dataset(
         "source": "home_assistant_recorder_native_state_change_timestamps",
         "window_start": first.isoformat(),
         "window_end": last.isoformat(),
-        "sampling_method": "union_of_actual_room_temperature_state_change_timestamps",
+        "sampling_method": "union_of_room_temperature_and_demand_window_state_change_timestamps",
         "cadence_minutes": None,
         "maximum_input_age_minutes": max_age_minutes,
         "event_sample_count": len(event_stamps),
@@ -3281,33 +3285,61 @@ def build_multizone_response_identification(
             "invalid_interval": 0,
         }
         if event_mode:
-            # Build this room's own temperature-event timeline. The input dataset
-            # is a union of all rooms' events, so adjacent global rows are not
-            # necessarily adjacent observations for this target room.
+            # The input is a union of room temperature and control events. A
+            # target room's own temperature observation is present only when
+            # its source timestamp equals the global event timestamp; older
+            # timestamps are carried-forward values from another room's event.
             target_events = []
-            seen_target_stamps = set()
+            seen_target_stamps = {}
+            last_target_stamp = None
+            timestamp_diagnostics = {
+                "missing_temperature_timestamps": 0,
+                "invalid_temperature_timestamps": 0,
+                "timestamp_inconsistent_events": 0,
+                "out_of_order_temperature_timestamps": 0,
+                "duplicate_temperature_timestamp_conflicts": 0,
+            }
             for global_index, (global_stamp, sample) in enumerate(parsed):
                 room_data = (sample.get("rooms") or {}).get(room_id) or {}
-                raw_target_stamp = room_data.get("temperature_timestamp")
                 target_temp = numeric(room_data.get("temperature"))
-                if not raw_target_stamp or target_temp is None:
+                raw_target_stamp = room_data.get("temperature_timestamp")
+                if target_temp is None:
+                    continue
+                if not raw_target_stamp:
+                    timestamp_diagnostics["missing_temperature_timestamps"] += 1
                     continue
                 try:
-                    target_stamp = datetime.fromisoformat(str(raw_target_stamp))
+                    target_stamp = datetime.fromisoformat(str(raw_target_stamp).replace("Z", "+00:00"))
                     if target_stamp.tzinfo is None:
                         target_stamp = target_stamp.replace(tzinfo=timezone.utc)
                     target_stamp = target_stamp.astimezone(timezone.utc)
                 except (TypeError, ValueError):
+                    timestamp_diagnostics["invalid_temperature_timestamps"] += 1
                     continue
-                if target_stamp in seen_target_stamps:
+                if target_stamp > global_stamp:
+                    timestamp_diagnostics["timestamp_inconsistent_events"] += 1
                     continue
-                seen_target_stamps.add(target_stamp)
+                if last_target_stamp is not None and target_stamp < last_target_stamp:
+                    timestamp_diagnostics["out_of_order_temperature_timestamps"] += 1
+                    timestamp_diagnostics["timestamp_inconsistent_events"] += 1
+                    continue
+                last_target_stamp = target_stamp
+                if target_stamp != global_stamp:
+                    continue
+                previous_temp = seen_target_stamps.get(target_stamp)
+                if previous_temp is not None:
+                    if abs(previous_temp - target_temp) > 1e-9:
+                        timestamp_diagnostics["duplicate_temperature_timestamp_conflicts"] += 1
+                        timestamp_diagnostics["timestamp_inconsistent_events"] += 1
+                    continue
+                seen_target_stamps[target_stamp] = target_temp
                 target_events.append((target_stamp, sample, global_index))
-            target_events.sort(key=lambda item: item[0])
             candidate_intervals = max(0, len(target_events) - 1)
             interval_pairs = []
             anchor_index = 0
             short_accumulated = 0
+            short_unusable_tail = 0
+            too_long_intervals = 0
             while anchor_index < len(target_events) - 1:
                 end_index = anchor_index + 1
                 while end_index < len(target_events):
@@ -3319,16 +3351,18 @@ def build_multizone_response_identification(
                     short_accumulated += 1
                     end_index += 1
                 if end_index >= len(target_events):
+                    short_unusable_tail = max(0, len(target_events) - 1 - anchor_index)
                     break
                 stamp0, first, global_index0 = target_events[anchor_index]
                 stamp1, second, global_index1 = target_events[end_index]
                 elapsed = (stamp1 - stamp0).total_seconds() / 60
                 if elapsed > max_interval_minutes:
+                    too_long_intervals += 1
                     exclusions["invalid_interval"] += 1
                     anchor_index = end_index
                     continue
-                # A brief demand/window transition inside an aggregated window
-                # invalidates it even if the state is OFF/CLOSED again at its end.
+                # All intervening room control changes are now represented in
+                # parsed rows and checked below, including brief ON/OPEN excursions.
                 segment = [
                     parsed[index][1]
                     for index in range(global_index0 + 1, global_index1 + 1)
@@ -3336,8 +3370,12 @@ def build_multizone_response_identification(
                 interval_pairs.append((stamp0, first, stamp1, second, segment))
                 anchor_index = end_index
             exclusions["short_intervals_accumulated"] = short_accumulated
+            exclusions["short_intervals_unusable_tail"] = short_unusable_tail
+            exclusions["too_long_intervals"] = too_long_intervals
+            exclusions.update(timestamp_diagnostics)
         else:
             candidate_intervals = max(0, len(parsed) - 1)
+            target_events = []
             interval_pairs = [
                 (stamp0, first, stamp1, second, [])
                 for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:])
@@ -3552,6 +3590,27 @@ def build_multizone_response_identification(
             "maximum_predictor_condition_number": max_predictor_condition_number,
             "predictor_matrix_rank": None,
             "excluded_intervals": exclusions,
+            "interval_audit": {
+                "timeline": "room_native_temperature_events" if event_mode else "aligned_sample_timestamps",
+                "temperature_events": len(target_events) if event_mode else len(parsed),
+                "candidate_intervals": candidate_intervals,
+                "aggregated_intervals": len(interval_pairs),
+                "eligible_intervals": len(rows),
+                "rejected_aggregated_intervals": max(0, len(interval_pairs) - len(rows)),
+                "short_intervals_accumulated": exclusions.get("short_intervals_accumulated", 0),
+                "short_intervals_unusable_tail": exclusions.get("short_intervals_unusable_tail", 0),
+                "too_long_intervals": exclusions.get("too_long_intervals", 0),
+                "timestamp_inconsistent_events": exclusions.get("timestamp_inconsistent_events", 0),
+                "timestamp_errors": {
+                    key: exclusions.get(key, 0)
+                    for key in (
+                        "missing_temperature_timestamps",
+                        "invalid_temperature_timestamps",
+                        "out_of_order_temperature_timestamps",
+                        "duplicate_temperature_timestamp_conflicts",
+                    )
+                },
+            },
         }
         if len(train) >= minimum_train_intervals and len(holdout) >= minimum_holdout_intervals:
             # Non-negative coordinate descent with an unpenalized intercept.

@@ -1447,6 +1447,10 @@ class PhysicalModelExperimentsExclusionsSensor(AuditDeviceMixin, CoordinatorEnti
                 room_id: item.get("excluded_intervals", {})
                 for room_id, item in (response.get("rooms") or {}).items()
             },
+            "interval_audit_by_room": {
+                room_id: item.get("interval_audit", {})
+                for room_id, item in (response.get("rooms") or {}).items()
+            },
         }
 
 

@@ -2539,14 +2539,18 @@ def test_multizone_identification_accepts_variable_target_intervals_and_missing_
     history = {
         "sensor.room": [],
         "sensor.other": [],
-        "sensor.outdoor": [{"state": "5", "last_changed": start.isoformat()}],
+        "sensor.outdoor": [
+            {"state": "5", "last_changed": (start + timedelta(hours=hour)).isoformat()}
+            for hour in range(31)
+        ],
         "binary_sensor.room_demand": [{"state": "off", "last_changed": start.isoformat()}],
         "binary_sensor.room_window": [{"state": "off", "last_changed": start.isoformat()}],
     }
     temperature = 20.0
+    stamp = start
     for index in range(36):
-        stamp = start + timedelta(minutes=30 if index == 0 else (30 if index % 2 else 45))
         if index:
+            stamp += timedelta(minutes=30 if index % 2 else 45)
             temperature += 0.03 + (0.01 if index % 3 else -0.015)
         history["sensor.room"].append({"state": str(temperature), "last_changed": stamp.isoformat()})
         if index % 4 == 0:

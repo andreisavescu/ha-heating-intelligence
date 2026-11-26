@@ -39,7 +39,7 @@ from .stage3_thermal_capacity import build_stage3_thermal_capacity
 from .stage5_ufh_slab_model import build_stage5_ufh_slab_model
 from .stage6_gain_model import build_stage6_gain_model
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator, build_simulation_audit
-from .recorder_diagnostics import build_recorder_failure_summary, recorder_history_cache_ttl
+from .recorder_diagnostics import (\n    RECORDER_HISTORY_ANALYSIS_VERSION,\n    build_recorder_failure_summary,\n    recorder_history_cache_ttl,\n)
 from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_recorder_event_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
@@ -145,6 +145,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             self._history.setdefault("pumps", {})
             self._history.setdefault("sync_mismatch_count", 0)
             self._history.setdefault("last_sync_result", "unknown")
+            cached_summary = self._history.get("recorder_history_summary")
+            if cached_summary and cached_summary.get("analysis_schema_version") != RECORDER_HISTORY_ANALYSIS_VERSION:
+                # Invalidate persisted analysis produced by older algorithms.
+                # In particular, v0.23.1 changed multizone identification from
+                # aligned samples to native Recorder event timestamps.
+                self._history.pop("recorder_history_summary", None)
+                self._history.pop("recorder_history_checked_at", None)
 
     async def _async_recorder_history_summary(self, now, efficiency=None):
         """Read a bounded Recorder window at most every six hours."""
@@ -436,6 +443,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 history_days=history_days,
                 attempted_at=now.isoformat(),
             )
+        summary["analysis_schema_version"] = RECORDER_HISTORY_ANALYSIS_VERSION
         self._history["recorder_history_checked_at"] = now.isoformat()
         self._history["recorder_history_summary"] = summary
         return summary

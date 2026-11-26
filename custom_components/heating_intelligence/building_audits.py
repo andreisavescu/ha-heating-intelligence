@@ -151,8 +151,29 @@ def build_thermal_readiness_audit(
         attic_value = _number(attic_shares.get(rid))
         calculated = calculated_rooms.get(rid, {}) or {}
         by_boundary = calculated.get("conductance_by_boundary_w_per_k", {}) or {}
+        opaque_counts = calculated.get("opaque_surface_counts", {}) or {}
+        outdoor_opaque_count = int(opaque_counts.get("outdoor") or 0)
+        attic_surface = by_boundary.get("attic")
+        attic_difference = (
+            round(attic_value - attic_surface, 4)
+            if attic_value is not None and attic_surface is not None else None
+        )
         room_parameters[rid] = {
             "name": room.get("name"),
+            "outdoor_opaque_surface_count": outdoor_opaque_count,
+            "outdoor_window_record_count": calculated.get("window_record_count", 0),
+            "outdoor_surface_inventory_status": (
+                "opaque_and_window_surfaces_present" if outdoor_opaque_count and calculated.get("window_record_count")
+                else "opaque_surfaces_present" if outdoor_opaque_count
+                else "incomplete_windows_only_or_no_outdoor_surface"
+            ),
+            "attic_surface_calculated_w_per_k": attic_surface,
+            "attic_configured_minus_surface_w_per_k": attic_difference,
+            "attic_surface_reconciliation_status": (
+                "matches_within_0_1_w_per_k" if attic_difference is not None and abs(attic_difference) <= 0.1
+                else "discrepancy_requires_review" if attic_difference is not None
+                else "surface_record_missing_or_flagged_suspect"
+            ),
             "floor": room.get("floor"),
             "area_m2": _number(room.get("area_m2", room.get("area"))),
             "volume_m3": _number(room.get("volume_m3")),
@@ -182,6 +203,8 @@ def build_thermal_readiness_audit(
         "status": "incomplete" if missing_envelope or missing_attic or not connections or any(item["missing"] for item in room_parameters.values()) else "configured",
         "room_parameters": room_parameters,
         "rooms_missing_envelope_conductance": missing_envelope,
+        "rooms_missing_opaque_outdoor_surfaces": [rid for rid, item in room_parameters.items() if item["outdoor_opaque_surface_count"] == 0],
+        "rooms_with_attic_surface_reconciliation_issue": [rid for rid, item in room_parameters.items() if item["attic_surface_reconciliation_status"] != "matches_within_0_1_w_per_k" and item["room_to_attic_configured_w_per_k"] is not None],
         "rooms_missing_area_or_volume": [rid for rid, item in room_parameters.items() if item["missing"]],
         "configured_inter_room_connections": connections,
         "inter_room_connection_status": "configured" if connections else "not_configured",

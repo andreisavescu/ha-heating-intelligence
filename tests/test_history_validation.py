@@ -2521,8 +2521,8 @@ def test_event_dataset_uses_actual_temperature_timestamps_and_keeps_rooms_indepe
         start, end, max_age_minutes=90, include_samples=True,
     )
     samples = result["samples"]
-    assert result["sampling_method"] == "union_of_actual_room_temperature_state_change_timestamps"
-    assert result["event_sample_count"] == 4
+    assert result["sampling_method"] == "union_of_room_temperature_and_demand_window_state_change_timestamps"
+    assert result["event_sample_count"] == 5
     living_rows = [row["rooms"]["living"] for row in samples]
     assert [row["temperature_timestamp"] for row in living_rows if row["temperature_timestamp"]] == [
         (start + timedelta(minutes=5)).isoformat(),
@@ -2633,7 +2633,7 @@ def test_event_dataset_uses_native_irregular_room_timestamps_and_reaches_fitter(
     )
     samples = dataset.pop("samples")
     assert dataset["status"] == "event_dataset_available"
-    assert dataset["sampling_method"] == "union_of_actual_room_temperature_state_change_timestamps"
+    assert dataset["sampling_method"] == "union_of_room_temperature_and_demand_window_state_change_timestamps"
     assert dataset["cadence_minutes"] is None
     assert dataset["event_sample_count"] == len(samples)
     assert dataset["room_temperature_event_counts"]["room_a"] == 41
@@ -2692,3 +2692,87 @@ def test_event_mode_aggregates_sub_five_minute_room_events_and_checks_intermedia
     # The OFF -> ON -> OFF transition inside the 10-15 minute window
     # must invalidate that aggregate interval.
     assert room["excluded_intervals"]["target_demand_or_window_not_confirmed_off_closed"] == 1
+
+
+def test_event_dataset_includes_intermediate_demand_and_window_transitions():
+    start = datetime(2026, 11, 26, tzinfo=timezone.utc)
+    history = {
+        "sensor.room": [
+            {"state": str(21.0 - index * 0.02),
+             "last_changed": (start + timedelta(minutes=10 * index)).isoformat()}
+            for index in range(4)
+        ],
+        "binary_sensor.demand": [
+            {"state": "off", "last_changed": start.isoformat()},
+            {"state": "on", "last_changed": (start + timedelta(minutes=12)).isoformat()},
+            {"state": "off", "last_changed": (start + timedelta(minutes=13)).isoformat()},
+        ],
+        "binary_sensor.window": [
+            {"state": "off", "last_changed": start.isoformat()},
+            {"state": "on", "last_changed": (start + timedelta(minutes=15)).isoformat()},
+            {"state": "off", "last_changed": (start + timedelta(minutes=16)).isoformat()},
+        ],
+        "sensor.outdoor": [
+            {"state": "5", "last_changed": start.isoformat()},
+        ],
+    }
+    rooms = [{
+        "id": "room", "floor": "ground_floor",
+        "temperature_entity": "sensor.room",
+        "demand_entity": "binary_sensor.demand",
+        "window_entity": "binary_sensor.window",
+    }]
+    dataset = MODULE.build_recorder_event_calibration_dataset(
+        history, rooms, {"outdoor_temperature": "sensor.outdoor"},
+        start, start + timedelta(minutes=30), max_age_minutes=90,
+        include_samples=True,
+    )
+    samples = dataset["samples"]
+    event_times = [row["timestamp"] for row in samples]
+    assert len(event_times) == 7
+    assert (start + timedelta(minutes=12)).isoformat() in event_times
+    assert (start + timedelta(minutes=15)).isoformat() in event_times
+
+    fit = MODULE.build_multizone_response_identification(
+        samples, rooms, minimum_train_intervals=1, minimum_holdout_intervals=1,
+        max_age_minutes=90, max_interval_minutes=120,
+    )
+    room = fit["rooms"]["room"]
+    assert room["candidate_intervals"] == 3
+    assert room["excluded_intervals"]["target_demand_or_window_not_confirmed_off_closed"] >= 1
+    assert room["interval_audit"]["eligible_intervals"] == room["eligible_intervals"]
+
+
+def test_event_interval_audit_separates_short_long_and_timestamp_rejections():
+    start = datetime(2026, 11, 26, tzinfo=timezone.utc)
+    offsets = [0, 2, 4, 6, 400, 402]
+    samples = []
+    for index, minute in enumerate(offsets):
+        stamp = start + timedelta(minutes=minute)
+        samples.append({
+            "timestamp": stamp.isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0,
+                "solar_radiation": 0.0,
+                "solar_radiation_unit": "W/m²",
+            },
+            "rooms": {"room": {
+                "temperature": 21.0 - index * 0.01,
+                "temperature_timestamp": stamp.isoformat(),
+                "temperature_age_minutes": 0,
+                "demand": "off",
+                "window": "off",
+            }},
+        })
+    samples[2]["rooms"]["room"]["temperature_timestamp"] = "not-a-timestamp"
+    result = MODULE.build_multizone_response_identification(
+        samples, [{"id": "room", "floor": "ground_floor"}],
+        minimum_train_intervals=1, minimum_holdout_intervals=1,
+        max_age_minutes=90, max_interval_minutes=120,
+    )
+    room = result["rooms"]["room"]
+    exclusions = room["excluded_intervals"]
+    assert exclusions["invalid_temperature_timestamps"] == 1
+    assert exclusions["too_long_intervals"] >= 1
+    assert exclusions["short_intervals_unusable_tail"] >= 1
+    assert room["interval_audit"]["timestamp_errors"]["invalid_temperature_timestamps"] == 1

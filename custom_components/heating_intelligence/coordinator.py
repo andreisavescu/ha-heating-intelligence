@@ -425,7 +425,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
             ac_unit = (ac_state.attributes.get("unit_of_measurement") or "") if ac_state else ""
             ac_scale = {"kW": 1000.0, "MW": 1_000_000.0, "mW": 0.001}.get(ac_unit.strip(), 1.0)
-            recorder_rooms = self.entry.options.get(CONF_ROOMS, [])
             summary["room_response"] = build_recorder_room_response(
                 history, recorder_rooms, ac_power_entity, ac_scale,
             )

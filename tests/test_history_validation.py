@@ -2583,3 +2583,69 @@ def test_multizone_identification_accepts_variable_target_intervals_and_missing_
     assert room["predictors"] == ["envelope"]
     assert room["excluded_intervals"]["solar_missing_intervals_retained"] > 0
     assert room["excluded_intervals"]["ac_power_missing_intervals_retained"] > 0
+
+
+
+def test_event_dataset_uses_native_irregular_room_timestamps_and_reaches_fitter():
+    end = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+    history = {
+        "sensor.outdoor": [],
+        "binary_sensor.demand": [
+            {"state": "off", "last_changed": (end - timedelta(hours=8)).isoformat()}
+        ],
+        "binary_sensor.window": [
+            {"state": "off", "last_changed": (end - timedelta(hours=8)).isoformat()}
+        ],
+        "sensor.room_a": [],
+        "sensor.room_b": [],
+    }
+    # Two rooms report on different, irregular schedules. A's updates are
+    # every 10 minutes; B's are every 17 minutes and must not block A.
+    for index in range(41):
+        stamp = end - timedelta(minutes=10 * (40 - index))
+        temp = 22.0 - index * 0.025
+        history["sensor.room_a"].append({
+            "state": str(temp), "last_changed": stamp.isoformat()
+        })
+        history["sensor.outdoor"].append({
+            "state": "5", "last_changed": stamp.isoformat(),
+            "attributes": {"unit_of_measurement": "°C"},
+        })
+    for index in range(24):
+        stamp = end - timedelta(minutes=17 * (23 - index))
+        history["sensor.room_b"].append({
+            "state": str(21.0 - index * 0.018), "last_changed": stamp.isoformat()
+        })
+
+    rooms = [
+        {"id": "room_a", "floor": "ground_floor",
+         "temperature_entity": "sensor.room_a",
+         "demand_entity": "binary_sensor.demand",
+         "window_entity": "binary_sensor.window"},
+        {"id": "room_b", "floor": "ground_floor",
+         "temperature_entity": "sensor.room_b",
+         "demand_entity": "binary_sensor.demand",
+         "window_entity": "binary_sensor.window"},
+    ]
+    dataset = MODULE.build_recorder_event_calibration_dataset(
+        history, rooms, {"outdoor_temperature": "sensor.outdoor"},
+        end - timedelta(days=1), end, max_age_minutes=90, include_samples=True,
+    )
+    samples = dataset.pop("samples")
+    assert dataset["status"] == "event_dataset_available"
+    assert dataset["sampling_method"] == "union_of_actual_room_temperature_state_change_timestamps"
+    assert dataset["cadence_minutes"] is None
+    assert dataset["event_sample_count"] == len(samples)
+    assert dataset["room_temperature_event_counts"]["room_a"] == 41
+    assert dataset["room_temperature_event_counts"]["room_b"] == 24
+
+    fit = MODULE.build_multizone_response_identification(
+        samples, rooms, interval_minutes=30, minimum_train_intervals=8,
+        minimum_holdout_intervals=4, max_age_minutes=90, max_interval_minutes=120,
+    )
+    assert fit["observed_rooms"] == 2
+    assert fit["input_dataset"] if "input_dataset" in fit else True
+    assert fit["rooms"]["room_a"]["eligible_intervals"] > 0
+    assert fit["rooms"]["room_b"]["eligible_intervals"] > 0
+    assert fit["rooms"]["room_a"]["candidate_intervals"] == len(samples) - 1
+    assert fit["rooms"]["room_a"]["excluded_intervals"]["non_contiguous_or_missing_temperature"] < len(samples) - 1

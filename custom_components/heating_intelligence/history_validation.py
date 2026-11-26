@@ -3266,18 +3266,10 @@ def build_multizone_response_identification(
         "temperature_is_event" in ((sample.get("rooms") or {}).get(room_id) or {})
         for sample in samples for room_id in configured_room_ids
     )
-    event_mode = (
-        any(
-            room_data.get("temperature_is_event") is True
-            for sample in samples
-            for room_data in (sample.get("rooms") or {}).values()
-        )
-        if has_explicit_event_markers
-        else any(
-            bool(room_data.get("temperature_timestamp"))
-            for sample in samples
-            for room_data in (sample.get("rooms") or {}).values()
-        )
+    event_mode = has_explicit_event_markers or any(
+        bool(room_data.get("temperature_timestamp"))
+        for sample in samples
+        for room_data in (sample.get("rooms") or {}).values()
     )
     if event_mode:
         attic_predictor_available = (

@@ -45,8 +45,12 @@ def test_processing_failure_is_not_misreported_as_recorder_query_failure():
 
 
 def test_failed_history_pass_retries_after_five_minutes():
-    assert MODULE.recorder_history_cache_ttl({"status": "recorder_query_failed"}) == 300
-    assert MODULE.recorder_history_cache_ttl({"status": "history_processing_failed"}) == 300
+    for status in ("recorder_query_failed", "history_processing_failed"):
+        summary = {
+            "status": status,
+            "analysis_schema_version": MODULE.RECORDER_HISTORY_ANALYSIS_VERSION,
+        }
+        assert MODULE.recorder_history_cache_ttl(summary) == 300
 
 
 def test_legacy_successful_history_pass_is_invalidated():

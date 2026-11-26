@@ -970,6 +970,13 @@ def build_recorder_event_calibration_dataset(
                 room_row[field] = value
                 room_row[field + "_age_minutes"] = round(age, 2) if age is not None else None
                 room_row[field + "_timestamp"] = source_stamp.isoformat() if source_stamp else None
+                # Mark a native observation explicitly. A carried-forward
+                # temperature value must never become a target event merely
+                # because another room or controller changed state.
+                if field == "temperature":
+                    room_row["temperature_is_event"] = bool(
+                        value is not None and source_stamp == stamp
+                    )
                 room_row[field + "_unit"] = unit
             else:
                 row["channels"][key] = value
@@ -992,6 +999,11 @@ def build_recorder_event_calibration_dataset(
         "cadence_minutes": None,
         "maximum_input_age_minutes": max_age_minutes,
         "event_sample_count": len(event_stamps),
+        "native_room_temperature_event_count": sum(
+            1 for sample in samples
+            for room_data in (sample.get("rooms") or {}).values()
+            if room_data.get("temperature_is_event") is True
+        ),
         "room_temperature_event_counts": {
             rid: len(timelines.get(f"room:{rid}:temperature", [])) for rid in room_fields
         },
@@ -3246,9 +3258,26 @@ def build_multizone_response_identification(
         parsed.append((stamp, row))
     parsed.sort(key=lambda item: item[0])
 
-    event_mode = any(
-        "temperature_timestamp" in ((sample.get("rooms") or {}).get(room_id) or {})
+    # Prefer the explicit per-room native-event marker emitted by the
+    # Recorder dataset builder. Older event datasets remain supported through
+    # their source timestamp field, but a merely-present (possibly null)
+    # timestamp key is not sufficient to select event mode.
+    has_explicit_event_markers = any(
+        "temperature_is_event" in ((sample.get("rooms") or {}).get(room_id) or {})
         for sample in samples for room_id in configured_room_ids
+    )
+    event_mode = (
+        any(
+            room_data.get("temperature_is_event") is True
+            for sample in samples
+            for room_data in (sample.get("rooms") or {}).values()
+        )
+        if has_explicit_event_markers
+        else any(
+            bool(room_data.get("temperature_timestamp"))
+            for sample in samples
+            for room_data in (sample.get("rooms") or {}).values()
+        )
     )
     if event_mode:
         attic_predictor_available = (
@@ -3324,7 +3353,10 @@ def build_multizone_response_identification(
                     timestamp_diagnostics["timestamp_inconsistent_events"] += 1
                     continue
                 last_target_stamp = target_stamp
-                if target_stamp != global_stamp:
+                if has_explicit_event_markers:
+                    if room_data.get("temperature_is_event") is not True:
+                        continue
+                elif target_stamp != global_stamp:
                     continue
                 previous_temp = seen_target_stamps.get(target_stamp)
                 if previous_temp is not None:
@@ -3593,6 +3625,7 @@ def build_multizone_response_identification(
             "interval_audit": {
                 "timeline": "room_native_temperature_events" if event_mode else "aligned_sample_timestamps",
                 "temperature_events": len(target_events) if event_mode else len(parsed),
+                "native_temperature_event_marker_used": has_explicit_event_markers,
                 "candidate_intervals": candidate_intervals,
                 "aggregated_intervals": len(interval_pairs),
                 "eligible_intervals": len(rows),

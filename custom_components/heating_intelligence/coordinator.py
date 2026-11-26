@@ -40,7 +40,7 @@ from .stage5_ufh_slab_model import build_stage5_ufh_slab_model
 from .stage6_gain_model import build_stage6_gain_model
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator, build_simulation_audit
 from .recorder_diagnostics import build_recorder_failure_summary, recorder_history_cache_ttl
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_recorder_event_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -305,29 +305,28 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             summary["ufh_slab_observability"] = build_ufh_slab_observability(
                 self._calibration_dataset_samples, configured_rooms, interval_minutes=30,
             )
-            # Use a dedicated 10-minute Recorder alignment for room response
-            # identification. The ordinary 30-minute dataset remains intact
-            # for existing energy, UFH and validation diagnostics.
-            identification_dataset = build_recorder_calibration_dataset(
+            # Identification uses native Recorder event timestamps, not a
+            # synthetic 10-minute grid. Each room contributes its own actual
+            # temperature observations; missing temperatures in other rooms
+            # do not invalidate the target room.
+            identification_dataset = build_recorder_event_calibration_dataset(
                 history, configured_rooms, calibration_channels, start, now,
-                interval_minutes=10, max_age_minutes=20, include_samples=True,
+                max_age_minutes=90, include_samples=True,
             )
             identification_samples = identification_dataset.pop("samples", [])
             summary["multizone_identification_dataset"] = identification_dataset
             summary["multizone_response_identification"] = build_multizone_response_identification(
                 identification_samples,
                 configured_rooms,
-                interval_minutes=10,
+                interval_minutes=30,
                 train_fraction=0.7,
-                minimum_train_intervals=48,
-                minimum_holdout_intervals=16,
+                minimum_train_intervals=24,
+                minimum_holdout_intervals=8,
                 require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
-                # Boiler firing elsewhere in the house must not veto a room
-                # whose own demand is off. Retain boiler telemetry in the
-                # interval diagnostics rather than imposing a global gate.
                 require_boiler_burner_off=False,
                 require_boiler_modulation_zero=False,
-                max_age_minutes=20,
+                max_age_minutes=90,
+                max_interval_minutes=120,
             )
             summary["absolute_parameter_identification"] = identify_absolute_room_parameters(
                 summary["multizone_response_identification"],

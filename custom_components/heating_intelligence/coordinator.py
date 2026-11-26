@@ -366,7 +366,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             # Forecasts and what-if scenarios are recalculated from live inputs
             # when the results are merged into the current coordinator snapshot.
             summary["physical_model_validation"] = build_physical_model_validation(
-                self._calibration_dataset_samples, configured_rooms,
+                self._calibration_dataset_samples, absolute_anchor_rooms,
                 summary["absolute_parameter_identification"],
             )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)

@@ -1395,7 +1395,7 @@ class PhysicalModelExperimentsDiagnosticsSensor(AuditDeviceMixin, CoordinatorEnt
 
 
 class PhysicalModelExperimentsDatasetSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
-    """Recorder-aligned dataset coverage, kept separate for copyability."""
+    """Native Recorder event dataset coverage, kept separate for copyability."""
 
     _attr_should_poll = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -1410,7 +1410,7 @@ class PhysicalModelExperimentsDatasetSensor(AuditDeviceMixin, CoordinatorEntity,
     @property
     def native_value(self):
         dataset = self.coordinator.data.get("multizone_identification_dataset", {})
-        return dataset.get("aligned_sample_count", 0)
+        return dataset.get("event_sample_count", 0)
 
     @property
     def extra_state_attributes(self):

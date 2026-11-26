@@ -235,9 +235,18 @@ def build_simulation_audit(rooms, current_rooms, absolute_parameters, physical_v
         "rooms_awaiting_parameters": sum(item["status"] == "awaiting_parameters" for item in audited.values()),
         "rooms_awaiting_live_inputs": sum(item["status"] == "awaiting_live_inputs" for item in audited.values()),
         "dataset_status": (identification_dataset or {}).get("status"),
-        "dataset_samples": (identification_dataset or {}).get("aligned_sample_count", 0),
-        "core_eligible_samples": (identification_dataset or {}).get("core_eligible_sample_count", 0),
-        "complete_room_state_samples": (identification_dataset or {}).get("complete_room_state_sample_count", 0),
+        # This audit receives the native event dataset for the multi-zone
+        # fitter, not the legacy aligned-cadence dataset.
+        "dataset_samples": (
+            (identification_dataset or {}).get("event_sample_count")
+            or (identification_dataset or {}).get("aligned_sample_count", 0)
+        ),
+        "core_eligible_samples": (
+            (identification_dataset or {}).get("core_eligible_sample_count", 0)
+        ),
+        "complete_room_state_samples": (
+            (identification_dataset or {}).get("complete_room_state_sample_count", 0)
+        ),
         "method": "per_room_readiness_plus_experimental_envelope_forecast_and_chronological_validation",
         "rooms": audited,
         "interpretation": "Experimental simulation availability is not calibration or validation; bathroom fixed values are scenario assumptions only.",

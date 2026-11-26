@@ -49,5 +49,21 @@ def test_failed_history_pass_retries_after_five_minutes():
     assert MODULE.recorder_history_cache_ttl({"status": "history_processing_failed"}) == 300
 
 
-def test_successful_history_pass_keeps_six_hour_cache():
-    assert MODULE.recorder_history_cache_ttl({"status": "ok"}) == 21600
+def test_legacy_successful_history_pass_is_invalidated():
+    assert MODULE.recorder_history_cache_ttl({"status": "ok"}) == 0
+
+
+def test_current_successful_history_pass_keeps_six_hour_cache():
+    summary = {
+        "status": "ok",
+        "analysis_schema_version": MODULE.RECORDER_HISTORY_ANALYSIS_VERSION,
+    }
+    assert MODULE.recorder_history_cache_ttl(summary) == 21600
+
+
+def test_current_failed_history_pass_retries_after_five_minutes():
+    summary = {
+        "status": "history_processing_failed",
+        "analysis_schema_version": MODULE.RECORDER_HISTORY_ANALYSIS_VERSION,
+    }
+    assert MODULE.recorder_history_cache_ttl(summary) == 300

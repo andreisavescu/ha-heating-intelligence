@@ -879,6 +879,129 @@ def build_recorder_calibration_dataset(
 
 
 
+
+def build_recorder_event_calibration_dataset(
+    history: dict[str, list[Any]],
+    rooms: list[dict[str, Any]],
+    channels: dict[str, str | None],
+    start: datetime,
+    end: datetime,
+    max_age_minutes: float = 90.0,
+    include_samples: bool = False,
+) -> dict[str, Any]:
+    """Build event-timestamped observations without imposing a synthetic cadence.
+
+    Every configured room-temperature state change contributes an event. Other
+    channels are sampled at their latest genuine Recorder state at that instant
+    and are accepted only within the freshness bound. Each room carries the
+    timestamp of its own temperature observation, allowing independent room
+    intervals even when another room has no reading.
+    """
+    if max_age_minutes < 0 or end <= start:
+        raise ValueError("Invalid event dataset bounds or freshness limit")
+    room_fields = {
+        str(room.get("id", "unknown")): {
+            "temperature": room.get("temperature_entity"),
+            "demand": room.get("demand_entity"),
+            "window": room.get("window_entity"),
+            "humidity": room.get("humidity_entity"),
+            "co2": room.get("co2_entity"),
+        } for room in rooms
+    }
+    timelines: dict[str, list[tuple[datetime, Any, Any]]] = {}
+    for key, entity_id in channels.items():
+        points = []
+        if entity_id:
+            for state in history.get(entity_id, []):
+                stamp = _timestamp(state)
+                raw = state.get("state") if isinstance(state, dict) else getattr(state, "state", None)
+                attrs = state.get("attributes", {}) if isinstance(state, dict) else getattr(state, "attributes", {})
+                unit = attrs.get("unit_of_measurement") if isinstance(attrs, dict) else None
+                if stamp is not None:
+                    points.append((stamp, raw, unit))
+        timelines[key] = sorted(points, key=lambda item: item[0])
+    for rid, fields in room_fields.items():
+        for field, entity_id in fields.items():
+            points = []
+            if entity_id:
+                for state in history.get(entity_id, []):
+                    stamp = _timestamp(state)
+                    raw = state.get("state") if isinstance(state, dict) else getattr(state, "state", None)
+                    attrs = state.get("attributes", {}) if isinstance(state, dict) else getattr(state, "attributes", {})
+                    unit = attrs.get("unit_of_measurement") if isinstance(attrs, dict) else None
+                    if stamp is not None:
+                        points.append((stamp, raw, unit))
+            timelines[f"room:{rid}:{field}"] = sorted(points, key=lambda item: item[0])
+
+    first, last = start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+    event_stamps = sorted({
+        stamp
+        for rid in room_fields
+        for stamp, raw, _ in timelines.get(f"room:{rid}:temperature", [])
+        if first <= stamp <= last and raw not in (None, "unknown", "unavailable")
+    })
+    samples = []
+    fresh_counts = {key: 0 for key in timelines}
+    for stamp in event_stamps:
+        row = {"timestamp": stamp.isoformat(), "channels": {}, "rooms": {}}
+        for key, points in timelines.items():
+            index = bisect_right(points, stamp, key=lambda item: item[0]) - 1
+            raw = unit = source_stamp = None
+            if index >= 0:
+                source_stamp, raw, unit = points[index]
+            age = (stamp - source_stamp).total_seconds() / 60 if source_stamp else None
+            is_latched_control = key.endswith(":demand") or key.endswith(":window")
+            valid = (
+                raw not in (None, "unknown", "unavailable")
+                and (is_latched_control or (age is not None and age <= max_age_minutes))
+            )
+            value = _state_value({"state": raw}) if valid else None
+            if valid and value is None:
+                value = raw
+            if valid:
+                fresh_counts[key] += 1
+            if key.startswith("room:"):
+                _, rid, field = key.split(":", 2)
+                room_row = row["rooms"].setdefault(rid, {})
+                room_row[field] = value
+                room_row[field + "_age_minutes"] = round(age, 2) if age is not None else None
+                room_row[field + "_timestamp"] = source_stamp.isoformat() if source_stamp else None
+                room_row[field + "_unit"] = unit
+            else:
+                row["channels"][key] = value
+                row["channels"][key + "_age_minutes"] = round(age, 2) if age is not None else None
+                row["channels"][key + "_timestamp"] = source_stamp.isoformat() if source_stamp else None
+                row["channels"][key + "_unit"] = unit
+        samples.append(row)
+    coverage = {
+        key: {
+            "fresh_event_samples": count,
+            "coverage_percent": round(100 * count / len(event_stamps), 1) if event_stamps else 0.0,
+        } for key, count in fresh_counts.items()
+    }
+    return {
+        "status": "event_dataset_available" if event_stamps else "insufficient_room_temperature_events",
+        "source": "home_assistant_recorder_native_state_change_timestamps",
+        "window_start": first.isoformat(),
+        "window_end": last.isoformat(),
+        "sampling_method": "union_of_actual_room_temperature_state_change_timestamps",
+        "cadence_minutes": None,
+        "maximum_input_age_minutes": max_age_minutes,
+        "event_sample_count": len(event_stamps),
+        "room_temperature_event_counts": {
+            rid: len(timelines.get(f"room:{rid}:temperature", [])) for rid in room_fields
+        },
+        "channel_event_coverage": coverage,
+        "raw_history_retained": False,
+        "note": (
+            "Rows are timestamped from actual Recorder room-temperature state changes. "
+            "Other rooms may be absent without invalidating a target room; each channel "
+            "retains its own source timestamp and age. No interpolation or synthetic cadence is used."
+        ),
+        **({"samples": samples} if include_samples else {}),
+    }
+
+
 def build_floor_thermal_output_observability(
     samples: list[dict[str, Any]],
     interval_minutes: int = 30,
@@ -2941,7 +3064,7 @@ def _multizone_holdout_diagnostics(
         }
     residuals = [
         (intercept + sum(physical[j] * row[1][j] for j in range(len(physical)))
-         - row[2]) * interval_minutes / 60
+         - row[2]) * (row[3] if len(row) > 3 else interval_minutes) / 60
         for row in holdout
     ]
     count = len(residuals)
@@ -3046,8 +3169,9 @@ def build_multizone_response_identification(
     max_predictor_correlation: float = 0.985,
     max_predictor_condition_number: float = 1_000_000.0,
     max_age_minutes: float = 45.0,
+    max_interval_minutes: float = 120.0,
 ) -> dict[str, Any]:
-    """Identify normalized passive room-to-room and envelope response rates.
+    """Identify normalized passive room-to-room and envelope response rates from actual room events.
 
     Fits dT_i/dt = b_envelope*(T_out-T_i) +
     sum_j b_ij*(T_j-T_i) + intercept. Coefficients have units 1/hour:
@@ -3083,18 +3207,19 @@ def build_multizone_response_identification(
     excluded_unobserved_rooms = [
         room_id for room_id in configured_room_ids if room_id not in observed_room_ids
     ]
-    attic_predictor_available = any(
+    attic_valid_samples = sum(
         _finite_number_or_none((sample.get("channels") or {}).get("attic_temperature")) is not None
         for sample in samples
     )
-    if len(room_ids) < 2:
+    attic_predictor_available = attic_valid_samples > 0
+    if len(room_ids) < 1:
         return {
             "status": "insufficient_zones",
             "rooms": {},
             "configured_rooms": len(configured_room_ids),
             "observed_rooms": len(room_ids),
             "excluded_unobserved_rooms": excluded_unobserved_rooms,
-            "note": "At least two rooms with numeric Recorder temperature observations are required to identify inter-zone response.",
+            "note": "At least one room with numeric Recorder temperature observations is required for independent envelope-response identification; room coupling is fitted only where overlapping room observations support it.",
         }
 
     def numeric(value):
@@ -3117,10 +3242,22 @@ def build_multizone_response_identification(
         parsed.append((stamp, row))
     parsed.sort(key=lambda item: item[0])
 
+    event_mode = any(
+        "temperature_timestamp" in ((sample.get("rooms") or {}).get(room_id) or {})
+        for sample in samples for room_id in configured_room_ids
+    )
+    if event_mode:
+        attic_predictor_available = (
+            bool(samples) and attic_valid_samples / len(samples) >= 0.7
+        )
     room_results = {}
     all_interval_counts = {"candidate": max(0, len(parsed) - 1), "eligible": 0, "excluded": {}}
     for room_id in room_ids:
-        predictors = ["envelope"] + [other for other in room_ids if other != room_id]
+        # Event datasets fit target rooms independently. Legacy aligned datasets
+        # retain their original multizone predictor behaviour for compatibility.
+        predictors = ["envelope"] + (
+            [other for other in room_ids if other != room_id] if not event_mode else []
+        )
         if room_by_id.get(room_id, {}).get("floor") == "upstairs" and attic_predictor_available:
             predictors.append("attic")
         rows = []
@@ -3135,6 +3272,8 @@ def build_multizone_response_identification(
             "boiler_telemetry_missing_intervals_retained": 0,
             "stale_room_temperature": 0,
             "stale_room_state": 0,
+            "solar_missing_intervals_retained": 0,
+            "ac_power_missing_intervals_retained": 0,
             "stale_solar_or_outdoor": 0,
             "stale_ac_or_boiler_telemetry": 0,
             "unsupported_solar_unit": 0,
@@ -3142,42 +3281,57 @@ def build_multizone_response_identification(
             "invalid_interval": 0,
         }
         for (stamp0, first), (stamp1, second) in zip(parsed, parsed[1:]):
-            elapsed_minutes = (stamp1 - stamp0).total_seconds() / 60
-            if abs(elapsed_minutes - interval_minutes) > 1:
+            first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
+            target_first = first_rooms.get(room_id, {})
+            target_second = second_rooms.get(room_id, {})
+            target_stamp0 = target_first.get("temperature_timestamp") or stamp0.isoformat()
+            target_stamp1 = target_second.get("temperature_timestamp") or stamp1.isoformat()
+            if target_stamp0 == target_stamp1:
+                continue
+            try:
+                elapsed_minutes = (datetime.fromisoformat(target_stamp1) - datetime.fromisoformat(target_stamp0)).total_seconds() / 60
+            except (TypeError, ValueError):
+                exclusions["invalid_interval"] += 1
+                continue
+            if elapsed_minutes < 5 or elapsed_minutes > max_interval_minutes:
                 exclusions["invalid_interval"] += 1
                 continue
             first_rooms, second_rooms = first.get("rooms", {}), second.get("rooms", {})
             temps0 = {rid: numeric(first_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
             temps1 = {rid: numeric(second_rooms.get(rid, {}).get("temperature")) for rid in room_ids}
+            temperature_rows = (
+                [(target_first, target_second)] if event_mode
+                else [(first_rooms.get(rid, {}), second_rooms.get(rid, {})) for rid in room_ids]
+            )
             stale_temperature = any(
-                (numeric(first_rooms.get(rid, {}).get("temperature_age_minutes")) is not None
-                 and numeric(first_rooms.get(rid, {}).get("temperature_age_minutes")) > max_age_minutes)
-                or (numeric(second_rooms.get(rid, {}).get("temperature_age_minutes")) is not None
-                    and numeric(second_rooms.get(rid, {}).get("temperature_age_minutes")) > max_age_minutes)
-                for rid in room_ids
+                (numeric(left.get("temperature_age_minutes")) is not None
+                 and numeric(left.get("temperature_age_minutes")) > max_age_minutes)
+                or (numeric(right.get("temperature_age_minutes")) is not None
+                    and numeric(right.get("temperature_age_minutes")) > max_age_minutes)
+                for left, right in temperature_rows
             )
             if stale_temperature:
                 exclusions["stale_room_temperature"] += 1
                 continue
-            if any(temps0[rid] is None or temps1[rid] is None for rid in room_ids):
+            if (temps0[room_id] is None or temps1[room_id] is None
+                    or (not event_mode and any(temps0[rid] is None or temps1[rid] is None for rid in room_ids))):
                 exclusions["non_contiguous_or_missing_temperature"] += 1
                 continue
             def fresh_room_state(room_data, field):
+                # Binary controls are event states, not continuously sampled
+                # measurements. A recorded OFF/CLOSED state remains valid
+                # until a later Recorder transition (including unavailable).
                 age = numeric(room_data.get(field + "_age_minutes"))
-                return (age is None or age <= max_age_minutes) and state_off(room_data.get(field))
+                return (event_mode or age is None or age <= max_age_minutes) and state_off(room_data.get(field))
             # Free-coasting and closed-window requirements apply to the
             # target room being fitted. Other rooms contribute measured
             # temperatures as predictors; their own heating demand must not
             # invalidate this room's interval.
-            target_first = first_rooms.get(room_id, {})
-            target_second = second_rooms.get(room_id, {})
-            stale_room_states = any(
+            if not event_mode and any(
                 numeric(data.get(field + "_age_minutes")) is not None
                 and numeric(data.get(field + "_age_minutes")) > max_age_minutes
-                for data in (target_first, target_second)
-                for field in ("demand", "window")
-            )
-            if stale_room_states:
+                for data in (target_first, target_second) for field in ("demand", "window")
+            ):
                 exclusions["stale_room_state"] += 1
             clean_states = (
                 fresh_room_state(target_first, "demand")
@@ -3210,9 +3364,17 @@ def build_multizone_response_identification(
                 solar0 *= solar_scales[solar_unit0]
             if solar1 is not None and solar_unit1 in solar_scales:
                 solar1 *= solar_scales[solar_unit1]
-            if solar0 is None or solar1 is None or max(solar0, solar1) > solar_max_w_m2:
+            if ((solar0 is not None and solar0 > solar_max_w_m2)
+                    or (solar1 is not None and solar1 > solar_max_w_m2)):
                 exclusions["solar_missing_or_high"] += 1
                 continue
+            if solar0 is None or solar1 is None:
+                if event_mode:
+                    # Missing solar is retained only as provisional evidence.
+                    exclusions["solar_missing_intervals_retained"] += 1
+                else:
+                    exclusions["solar_missing_or_high"] += 1
+                    continue
             ac0 = numeric(first_channels.get("ac_power"))
             ac1 = numeric(second_channels.get("ac_power"))
             ac_ages = (numeric(first_channels.get("ac_power_age_minutes")), numeric(second_channels.get("ac_power_age_minutes")))
@@ -3229,11 +3391,17 @@ def build_multizone_response_identification(
                 ac0 *= ac_scales[ac_unit0]
             if ac1 is not None and ac_unit1 in ac_scales:
                 ac1 *= ac_scales[ac_unit1]
-            if ((require_ac_power and (ac0 is None or ac1 is None))
-                    or (ac0 is not None and ac0 > ac_power_max_w)
+            if ((ac0 is not None and ac0 > ac_power_max_w)
                     or (ac1 is not None and ac1 > ac_power_max_w)):
                 exclusions["ac_heating_active_or_unavailable"] += 1
                 continue
+            if require_ac_power and (ac0 is None or ac1 is None):
+                if event_mode:
+                    # Missing AC history is retained only as provisional evidence.
+                    exclusions["ac_power_missing_intervals_retained"] += 1
+                else:
+                    exclusions["ac_heating_active_or_unavailable"] += 1
+                    continue
             burner0 = first_channels.get("boiler_burner")
             burner1 = second_channels.get("boiler_burner")
             boiler_ages = (
@@ -3279,10 +3447,11 @@ def build_multizone_response_identification(
                 continue
             dt_hours = elapsed_minutes / 60
             x = [(outside0 + outside1) / 2 - (temps0[room_id] + temps1[room_id]) / 2]
-            x.extend(
-                (temps0[other] + temps1[other] - temps0[room_id] - temps1[room_id]) / 2
-                for other in room_ids if other != room_id
-            )
+            if not event_mode:
+                x.extend(
+                    (temps0[other] + temps1[other] - temps0[room_id] - temps1[room_id]) / 2
+                    for other in room_ids if other != room_id
+                )
             if "attic" in predictors:
                 attic0 = numeric(first_channels.get("attic_temperature"))
                 attic1 = numeric(second_channels.get("attic_temperature"))
@@ -3296,7 +3465,7 @@ def build_multizone_response_identification(
                     continue
                 x.append((attic0 + attic1 - temps0[room_id] - temps1[room_id]) / 2)
             y = (temps1[room_id] - temps0[room_id]) / dt_hours
-            rows.append((stamp1, x, y))
+            rows.append((stamp1, x, y, elapsed_minutes))
         all_interval_counts["eligible"] += len(rows)
 
         split = int(len(rows) * train_fraction)
@@ -3752,13 +3921,13 @@ def build_multizone_response_identification(
                 total_sum = sum((row[2] - y_mean) ** 2 for row in train)
                 r2 = max(0.0, min(1.0, 1 - residual_sum / total_sum)) if total_sum > 1e-10 else None
                 errors, baseline = [], []
-                for _, x, observed_rate in holdout:
+                for _, x, observed_rate, elapsed in holdout:
                     pred_rate = intercept + sum(physical[j] * x[j] for j in range(p))
-                    errors.append(pred_rate * interval_minutes / 60)
+                    errors.append(pred_rate * elapsed / 60)
                     baseline.append(0.0)
                 # Temperature change prediction: predicted rate * interval;
                 # persistence baseline predicts no temperature change.
-                holdout_changes = [row[2] * interval_minutes / 60 for row in holdout]
+                holdout_changes = [row[2] * row[3] / 60 for row in holdout]
                 mae = sum(abs(pred - obs) for pred, obs in zip(errors, holdout_changes)) / len(errors)
                 rmse = math.sqrt(sum((pred - obs) ** 2 for pred, obs in zip(errors, holdout_changes)) / len(errors))
                 baseline_mae = sum(abs(value) for value in holdout_changes) / len(holdout_changes)
@@ -3864,6 +4033,8 @@ def build_multizone_response_identification(
         "house_level_holdout_validation": house_holdout_validation,
         "method": "nonnegative_multizone_free_coasting_regression",
         "interval_minutes": interval_minutes,
+        "interval_policy": {"minimum_minutes": 5, "maximum_minutes": max_interval_minutes, "basis": "actual_consecutive_target_temperature_timestamps"},
+        "sampling_mode": "native_recorder_events" if event_mode else "legacy_aligned_samples",
         "train_fraction": train_fraction,
         "max_predictor_correlation_threshold": max_predictor_correlation,
         "identifiability_method": "pairwise_correlation_and_full_standardized_training_matrix_condition_number",
@@ -3873,6 +4044,7 @@ def build_multizone_response_identification(
         "rooms": room_results,
         "global_interval_counts": all_interval_counts,
         "units": "1/hour normalized conductance-to-capacity ratios (G/C), not W/K",
+        "provisional_evidence_policy": "Intervals with missing solar or configured AC power are retained and counted, but their fitted parameters are provisional and must not be promoted without independent validation.",
         "note": (
             "This is an initial directional multi-zone identification. Each target room "
             "must be coasting with a confirmed closed window and low measured solar radiation; "

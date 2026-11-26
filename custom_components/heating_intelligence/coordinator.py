@@ -40,7 +40,7 @@ from .stage5_ufh_slab_model import build_stage5_ufh_slab_model
 from .stage6_gain_model import build_stage6_gain_model
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator, build_simulation_audit
 from .recorder_diagnostics import build_recorder_failure_summary, recorder_history_cache_ttl
-from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
+from .history_validation import build_recorder_history_summary, build_recorder_room_response, build_preliminary_room_calibration, build_held_out_room_validation, build_house_effective_rc_calibration, build_recorder_calibration_dataset, build_recorder_event_calibration_dataset, build_multizone_response_identification, build_multizone_physical_calibration_readiness, build_ufh_slab_observability, build_thermal_input_energy_observability, build_thermal_input_room_response_alignment, build_room_level_excitation_identifiability, build_water_side_thermal_output, build_floor_thermal_output_observability, build_floor_room_heat_allocation_inference, build_floor_room_demand_lag_analysis, build_solar_room_response_analysis, build_control_event_inventory
 
 from .const import (
     CONF_DEMAND_ENTITY,
@@ -305,37 +305,50 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             summary["ufh_slab_observability"] = build_ufh_slab_observability(
                 self._calibration_dataset_samples, configured_rooms, interval_minutes=30,
             )
-            # Use a dedicated 10-minute Recorder alignment for room response
-            # identification. The ordinary 30-minute dataset remains intact
-            # for existing energy, UFH and validation diagnostics.
-            identification_dataset = build_recorder_calibration_dataset(
+            # Identification uses native Recorder event timestamps, not a
+            # synthetic 10-minute grid. Each room contributes its own actual
+            # temperature observations; missing temperatures in other rooms
+            # do not invalidate the target room.
+            identification_dataset = build_recorder_event_calibration_dataset(
                 history, configured_rooms, calibration_channels, start, now,
-                interval_minutes=10, max_age_minutes=20, include_samples=True,
+                max_age_minutes=90, include_samples=True,
             )
             identification_samples = identification_dataset.pop("samples", [])
             summary["multizone_identification_dataset"] = identification_dataset
             summary["multizone_response_identification"] = build_multizone_response_identification(
                 identification_samples,
                 configured_rooms,
-                interval_minutes=10,
+                interval_minutes=30,
                 train_fraction=0.7,
-                minimum_train_intervals=48,
-                minimum_holdout_intervals=16,
+                minimum_train_intervals=24,
+                minimum_holdout_intervals=8,
                 require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
-                # Boiler firing elsewhere in the house must not veto a room
-                # whose own demand is off. Retain boiler telemetry in the
-                # interval diagnostics rather than imposing a global gate.
                 require_boiler_burner_off=False,
                 require_boiler_modulation_zero=False,
-                max_age_minutes=20,
+                max_age_minutes=90,
+                max_interval_minutes=120,
             )
+            envelope_inventory = build_envelope_conductance(self.entry.options)
+            absolute_anchor_rooms = []
+            for room in configured_rooms:
+                rid = str(room.get("id", "unknown"))
+                surface_room = (envelope_inventory.get("rooms") or {}).get(rid) or {}
+                boundaries = surface_room.get("conductance_by_boundary_w_per_k") or {}
+                opaque_count = int((surface_room.get("opaque_surface_counts") or {}).get("outdoor") or 0)
+                # A present surface inventory is authoritative. Window-only
+                # outdoor UA is incomplete and must not anchor an absolute C.
+                outdoor_anchor = boundaries.get("outdoor") if opaque_count > 0 else None
+                absolute_anchor_rooms.append({
+                    **room,
+                    "envelope_conductance_w_per_k": outdoor_anchor,
+                })
             summary["absolute_parameter_identification"] = identify_absolute_room_parameters(
                 summary["multizone_response_identification"],
-                configured_rooms,
+                absolute_anchor_rooms,
             )
             summary["stage6_gain_model"] = build_stage6_gain_model(
                 self._calibration_dataset_samples,
-                configured_rooms,
+                absolute_anchor_rooms,
                 summary["absolute_parameter_identification"],
                 require_ac_power=bool(self.entry.options.get(CONF_AC_POWER_ENTITY)),
             )
@@ -353,7 +366,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             # Forecasts and what-if scenarios are recalculated from live inputs
             # when the results are merged into the current coordinator snapshot.
             summary["physical_model_validation"] = build_physical_model_validation(
-                self._calibration_dataset_samples, configured_rooms,
+                self._calibration_dataset_samples, absolute_anchor_rooms,
                 summary["absolute_parameter_identification"],
             )
             ac_power_entity = self.entry.options.get(CONF_AC_POWER_ENTITY)
@@ -438,6 +451,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         snapshot["multizone_identification_dataset"] = validation.get("multizone_identification_dataset", {})
         snapshot["multizone_response_identification"] = validation.get("multizone_response_identification", {})
         snapshot["absolute_parameter_identification"] = absolute_parameters
+        snapshot["stage6_gain_model"] = validation.get("stage6_gain_model", {})
         snapshot["stage3_thermal_capacity"] = build_stage3_thermal_capacity(
             validation.get("multizone_response_identification", {}),
             configured_rooms,
@@ -511,6 +525,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                     "boiler_context": current.get("boiler_context", {}),
                     "pumps": current.get("pumps", {}),
                     "ufh_slab_observability": validation.get("ufh_slab_observability", {}),
+                    "stage5_ufh_slab_model": current.get("stage5_ufh_slab_model", {}),
                     "house_heat_loss_coefficient_w_k": (
                         heat_loss_u * envelope_area
                         if heat_loss_u is not None and envelope_area is not None else None

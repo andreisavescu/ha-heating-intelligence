@@ -2485,3 +2485,101 @@ def test_multizone_identification_keeps_coasting_room_when_boiler_cycles_for_oth
     assert living["excluded_intervals"]["boiler_active_intervals_retained"] >= 64
     assert living["excluded_intervals"]["boiler_active_or_unavailable"] == 0
     assert result["rooms"]["bedroom"]["eligible_intervals"] == 0
+
+
+def test_event_dataset_uses_actual_temperature_timestamps_and_keeps_rooms_independent():
+    end = datetime(2026, 11, 26, 12, tzinfo=timezone.utc)
+    start = end - timedelta(hours=2)
+    history = {
+        "sensor.living": [
+            {"state": "20.0", "last_changed": (start + timedelta(minutes=5)).isoformat()},
+            {"state": "20.2", "last_changed": (start + timedelta(minutes=37)).isoformat()},
+            {"state": "20.4", "last_changed": (start + timedelta(minutes=91)).isoformat()},
+        ],
+        "sensor.bedroom": [
+            {"state": "21.0", "last_changed": (start + timedelta(minutes=22)).isoformat()},
+        ],
+        "sensor.outdoor": [
+            {"state": "8.0", "last_changed": start.isoformat()},
+        ],
+        "binary_sensor.living_demand": [
+            {"state": "off", "last_changed": start.isoformat()},
+        ],
+        "binary_sensor.living_window": [
+            {"state": "off", "last_changed": start.isoformat()},
+        ],
+    }
+    result = MODULE.build_recorder_event_calibration_dataset(
+        history,
+        [
+            {"id": "living", "temperature_entity": "sensor.living",
+             "demand_entity": "binary_sensor.living_demand",
+             "window_entity": "binary_sensor.living_window"},
+            {"id": "bedroom", "temperature_entity": "sensor.bedroom"},
+        ],
+        {"outdoor_temperature": "sensor.outdoor"},
+        start, end, max_age_minutes=90, include_samples=True,
+    )
+    samples = result["samples"]
+    assert result["sampling_method"] == "union_of_actual_room_temperature_state_change_timestamps"
+    assert result["event_sample_count"] == 4
+    living_rows = [row["rooms"]["living"] for row in samples]
+    assert [row["temperature_timestamp"] for row in living_rows if row["temperature_timestamp"]] == [
+        (start + timedelta(minutes=5)).isoformat(),
+        (start + timedelta(minutes=5)).isoformat(),
+        (start + timedelta(minutes=37)).isoformat(),
+        (start + timedelta(minutes=91)).isoformat(),
+    ]
+    # The bedroom's sparse history does not erase otherwise valid living data.
+    assert all(row["temperature"] is not None for row in living_rows)
+
+
+def test_multizone_identification_accepts_variable_target_intervals_and_missing_other_room():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    history = {
+        "sensor.room": [],
+        "sensor.other": [],
+        "sensor.outdoor": [
+            {"state": "5", "last_changed": (start + timedelta(hours=hour)).isoformat()}
+            for hour in range(31)
+        ],
+        "binary_sensor.room_demand": [{"state": "off", "last_changed": start.isoformat()}],
+        "binary_sensor.room_window": [{"state": "off", "last_changed": start.isoformat()}],
+    }
+    temperature = 20.0
+    stamp = start
+    for index in range(36):
+        if index:
+            stamp += timedelta(minutes=30 if index % 2 else 45)
+            temperature += 0.03 + (0.01 if index % 3 else -0.015)
+        history["sensor.room"].append({"state": str(temperature), "last_changed": stamp.isoformat()})
+        if index % 4 == 0:
+            history["sensor.other"].append({
+                "state": str(21 + index * 0.01), "last_changed": stamp.isoformat()
+            })
+    dataset = MODULE.build_recorder_event_calibration_dataset(
+        history,
+        [
+            {"id": "room", "floor": "ground_floor", "temperature_entity": "sensor.room",
+             "demand_entity": "binary_sensor.room_demand",
+             "window_entity": "binary_sensor.room_window"},
+            {"id": "other", "floor": "upstairs", "temperature_entity": "sensor.other"},
+        ],
+        {"outdoor_temperature": "sensor.outdoor"},
+        start, start + timedelta(hours=30), max_age_minutes=90, include_samples=True,
+    )
+    fit = MODULE.build_multizone_response_identification(
+        dataset["samples"],
+        [
+            {"id": "room", "floor": "ground_floor", "temperature_entity": "sensor.room"},
+            {"id": "other", "floor": "upstairs", "temperature_entity": "sensor.other"},
+        ],
+        interval_minutes=30, minimum_train_intervals=8, minimum_holdout_intervals=4,
+        require_ac_power=True, max_age_minutes=90, max_interval_minutes=90,
+    )
+    room = fit["rooms"]["room"]
+    assert room["candidate_intervals"] > 0
+    assert room["eligible_intervals"] >= 8, room["excluded_intervals"]
+    assert room["predictors"] == ["envelope"]
+    assert room["excluded_intervals"]["solar_missing_intervals_retained"] > 0
+    assert room["excluded_intervals"]["ac_power_missing_intervals_retained"] > 0

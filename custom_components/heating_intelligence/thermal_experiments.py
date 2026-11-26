@@ -20,7 +20,9 @@ def _parameters(rooms, absolute_parameters):
         room_id = str(room.get("id", "unknown"))
         fit = (absolute_parameters.get("rooms") or {}).get(room_id) or {}
         capacity = _number(fit.get("effective_room_capacity_wh_per_k"))
-        envelope = _number(room.get("envelope_conductance_w_per_k"))
+        envelope = _number(fit.get("envelope_anchor_w_per_k"))
+        if envelope is None:
+            envelope = _number(room.get("envelope_conductance_w_per_k"))
         if capacity is not None and capacity > 0 and envelope is not None and envelope > 0:
             result[room_id] = {"capacity": capacity, "envelope": envelope}
     return result

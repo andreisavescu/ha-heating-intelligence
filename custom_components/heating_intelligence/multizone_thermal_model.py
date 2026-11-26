@@ -266,9 +266,23 @@ def build_multizone_observation_model(
             'slab_temperature_c': None,
             'screed_thickness_cm': screed_cm,
             'thermal_capacity_wh_per_k': None,
+            'screed_capacity_prior_wh_per_k': _finite_or_none(
+                (((plant.get('stage5_ufh_slab_model') or {}).get('floors') or {}).get(floor_id) or {}).get('screed_capacity_wh_per_k')
+            ),
+            'estimated_heat_input_w': _finite_or_none(
+                (((plant.get('stage5_ufh_slab_model') or {}).get('floors') or {}).get(floor_id) or {}).get('allocated_useful_heat_power_w')
+            ),
+            'estimated_room_heat_allocation_w': (
+                (((plant.get('stage5_ufh_slab_model') or {}).get('floors') or {}).get(floor_id) or {}).get('allocated_room_power_w') or {}
+            ),
+            'heat_input_source': 'calibrated_boiler_modulation_allocation_estimate',
             'pump_running': pump.get('running'),
             'observability': (
                 (plant.get('ufh_slab_observability') or {}).get('floors', {}).get(floor_id, {})
+            ),
+            'transfer_coefficients_status': (
+                (((plant.get('stage5_ufh_slab_model') or {}).get('floors') or {}).get(floor_id) or {}).get('transfer_coefficients_status')
+                or 'not_identifiable_without_slab_temperature_or_independent_heat_input'
             ),
             'status': 'awaiting_slab_sensor_or_identifiable_capacity' if screed_cm is not None else 'screed_profile_incomplete',
         }

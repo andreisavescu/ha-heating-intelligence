@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), PhysicalModelSimulationAuditSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), PhysicalModelExperimentsDiagnosticsSensor(coordinator), PhysicalModelSimulationAuditSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -1324,16 +1324,49 @@ class PhysicalModelExperimentsSensor(AuditDeviceMixin, CoordinatorEntity, Sensor
     @property
     def extra_state_attributes(self):
         return {
-            "physical_model_simulation_audit": self.coordinator.data.get("physical_model_simulation_audit", {}),
             "physical_model_validation": self.coordinator.data.get("physical_model_validation", {}),
-            "multizone_identification_dataset": self.coordinator.data.get("multizone_identification_dataset", {}),
             "multizone_response_identification": self.coordinator.data.get("multizone_response_identification", {}),
             "absolute_parameter_identification": self.coordinator.data.get("absolute_parameter_identification", {}),
-            "recorder_diagnostics": self.coordinator.data.get("recorder_diagnostics", {}),
             "predictive_forecast": self.coordinator.data.get("predictive_forecast", {}),
             "what_if_simulator": self.coordinator.data.get("what_if_simulator", {}),
             "fixed_scenario_temperatures_c": {"baie_matr": 22.0, "baie_parter": 20.5},
             "fixed_temperature_policy": "scenario_initial_conditions_only_never_historical_measurements",
+        }
+
+
+class PhysicalModelExperimentsDiagnosticsSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Detailed coverage, exclusions and subsystem diagnostics for the physical model."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "events"
+    _attr_icon = "mdi:chart-box-outline"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Physical Model Experiments Diagnostics"
+        self._attr_unique_id = f"{DOMAIN}_physical_model_experiments_diagnostics"
+
+    @property
+    def native_value(self):
+        dataset = self.coordinator.data.get("multizone_identification_dataset", {})
+        return dataset.get("event_sample_count", 0)
+
+    @property
+    def extra_state_attributes(self):
+        response = self.coordinator.data.get("multizone_response_identification", {})
+        return {
+            "physical_model_simulation_audit": self.coordinator.data.get("physical_model_simulation_audit", {}),
+            "multizone_identification_dataset": self.coordinator.data.get("multizone_identification_dataset", {}),
+            "recorder_diagnostics": self.coordinator.data.get("recorder_diagnostics", {}),
+            "identification_exclusions_by_room": {
+                room_id: item.get("excluded_intervals", {})
+                for room_id, item in (response.get("rooms") or {}).items()
+            },
+            "stage3_thermal_capacity": self.coordinator.data.get("stage3_thermal_capacity", {}),
+            "stage5_ufh_slab_model": self.coordinator.data.get("stage5_ufh_slab_model", {}),
+            "stage6_gain_model": self.coordinator.data.get("stage6_gain_model", {}),
+            "heat_delivery_calibration": self.coordinator.data.get("heat_delivery_calibration", {}),
         }
 
 

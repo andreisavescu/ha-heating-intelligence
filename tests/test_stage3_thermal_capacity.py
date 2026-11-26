@@ -54,10 +54,13 @@ def test_stage3_uses_explicit_outdoor_ua_not_other_boundaries_as_anchor():
     result = MODULE.build_stage3_thermal_capacity(
         {},
         [{"id": "room", "area_m2": 10, "envelope_conductance_w_per_k": 9.0}],
-        {"rooms": {"room": {"conductance_by_boundary_w_per_k": {
-            "outdoor": 4.0, "attic": 3.0, "ground": 2.0,
-            "adjacent_heated": 1.0,
-        }}}},
+        {"rooms": {"room": {
+            "conductance_by_boundary_w_per_k": {
+                "outdoor": 4.0, "attic": 3.0, "ground": 2.0,
+                "adjacent_heated": 1.0,
+            },
+            "opaque_surface_counts": {"outdoor": 1},
+        }}},
     )
     assert result["rooms"]["room"]["envelope_anchor_source"] == (
         "explicit_envelope_surface_outdoor_boundary"
@@ -70,3 +73,20 @@ def test_stage3_withholds_screed_capacity_without_room_area():
     slab = result["rooms"]["unknown"]["ufh_screed"]
     assert slab["status"] == "withheld_missing_room_area"
     assert slab["estimated_capacity_wh_per_k"] is None
+
+
+def test_stage3_withholds_absolute_anchor_for_window_only_surface_inventory():
+    result = MODULE.build_stage3_thermal_capacity(
+        {"rooms": {"room": {"normalized_rates_per_hour": {"envelope": 0.1}}}},
+        [{"id": "room", "area_m2": 10, "envelope_conductance_w_per_k": 8.0}],
+        {"rooms": {"room": {
+            "conductance_by_boundary_w_per_k": {"outdoor": 2.0},
+            "opaque_surface_counts": {"outdoor": 0},
+            "window_record_count": 1,
+        }}},
+    )
+    room = result["rooms"]["room"]
+    assert room["envelope_anchor_source"] == (
+        "withheld_incomplete_surface_inventory_missing_opaque_outdoor_surface"
+    )
+    assert room["effective_room_capacity"]["effective_room_capacity_wh_per_k"] is None

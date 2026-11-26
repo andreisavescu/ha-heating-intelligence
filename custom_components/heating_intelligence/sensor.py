@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), PhysicalModelSimulationAuditSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -1324,6 +1324,7 @@ class PhysicalModelExperimentsSensor(AuditDeviceMixin, CoordinatorEntity, Sensor
     @property
     def extra_state_attributes(self):
         return {
+            "physical_model_simulation_audit": self.coordinator.data.get("physical_model_simulation_audit", {}),
             "physical_model_validation": self.coordinator.data.get("physical_model_validation", {}),
             "multizone_identification_dataset": self.coordinator.data.get("multizone_identification_dataset", {}),
             "multizone_response_identification": self.coordinator.data.get("multizone_response_identification", {}),
@@ -1334,6 +1335,31 @@ class PhysicalModelExperimentsSensor(AuditDeviceMixin, CoordinatorEntity, Sensor
             "fixed_scenario_temperatures_c": {"baie_matr": 22.0, "baie_parter": 20.5},
             "fixed_temperature_policy": "scenario_initial_conditions_only_never_historical_measurements",
         }
+
+
+class PhysicalModelSimulationAuditSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Per-room physical simulation readiness and progress audit."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "rooms"
+    _attr_icon = "mdi:clipboard-pulse-outline"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Physical Model Simulation Audit"
+        self._attr_unique_id = f"{DOMAIN}_physical_model_simulation_audit"
+
+    @property
+    def native_value(self):
+        audit = self.coordinator.data.get("physical_model_simulation_audit", {})
+        return audit.get("rooms_configured", 0)
+
+    @property
+    def extra_state_attributes(self):
+        audit = dict(self.coordinator.data.get("physical_model_simulation_audit", {}))
+        audit["state_metric"] = "configured_rooms_audited"
+        return audit
 
 
 class MeasurementAuditSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):

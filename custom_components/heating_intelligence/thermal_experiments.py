@@ -165,3 +165,78 @@ def build_what_if_simulator(current_rooms, rooms, absolute_parameters, outdoor_t
                         "No inter-room, attic, solar or UFH slab dynamics.",
                         "Bathroom fixed values are scenario assumptions only."],
     }
+
+
+def build_simulation_audit(rooms, current_rooms, absolute_parameters, physical_validation,
+                           predictive_forecast, identification_dataset, response_identification):
+    """Summarize per-room simulation readiness without confusing scenarios with validation."""
+    parameter_rooms = (absolute_parameters or {}).get("rooms") or {}
+    validation_rooms = (physical_validation or {}).get("rooms") or {}
+    forecast_rooms = (predictive_forecast or {}).get("rooms") or {}
+    response_rooms = (response_identification or {}).get("rooms") or {}
+    audited = {}
+    for room in rooms:
+        room_id = str(room.get("id", "unknown"))
+        fit = parameter_rooms.get(room_id) or {}
+        validation = validation_rooms.get(room_id) or {}
+        forecast = forecast_rooms.get(room_id) or {}
+        response = response_rooms.get(room_id) or {}
+        live_temperature = _number((current_rooms.get(room_id) or {}).get("temperature"))
+        has_envelope = (_number(room.get("envelope_conductance_w_per_k")) or 0) > 0
+        capacity = _number(fit.get("effective_room_capacity_wh_per_k"))
+        accepted_capacity = capacity is not None and capacity > 0
+        forecast_available = forecast.get("status") == "forecast_available_experimental"
+        valid_intervals = int(validation.get("valid_intervals") or 0)
+        blockers = []
+        if not has_envelope:
+            blockers.append("missing_room_envelope_conductance")
+        if not accepted_capacity:
+            blockers.append("missing_accepted_effective_room_capacity")
+        if live_temperature is None:
+            blockers.append("missing_live_room_temperature")
+        if _number((predictive_forecast or {}).get("outdoor_temperature_c")) is None:
+            blockers.append("missing_live_outdoor_temperature")
+        if not forecast_available and not blockers:
+            blockers.append("forecast_not_generated")
+        if valid_intervals == 0:
+            blockers.append("no_chronological_validation_intervals")
+        if valid_intervals > 0:
+            status = "validated_one_step"
+        elif forecast_available:
+            status = "experimental_simulation_available"
+        elif accepted_capacity and has_envelope:
+            status = "awaiting_live_inputs"
+        else:
+            status = "awaiting_parameters"
+        audited[room_id] = {
+            "status": status,
+            "live_temperature_c": live_temperature,
+            "temperature_source": "live_room_sensor" if live_temperature is not None else
+                ("fixed_scenario_assumption_only" if room_id in FIXED_ROOM_TEMPERATURES_C else "unavailable"),
+            "envelope_conductance_configured": has_envelope,
+            "effective_capacity_wh_per_k": capacity,
+            "effective_capacity_source": fit.get("effective_room_capacity_source"),
+            "response_identification_status": response.get("status"),
+            "forecast_status": forecast.get("status"),
+            "validation_intervals": valid_intervals,
+            "mae_c": validation.get("mae_c"),
+            "rmse_c": validation.get("rmse_c"),
+            "blockers": blockers,
+        }
+    simulated = sum(item["status"] == "experimental_simulation_available" for item in audited.values())
+    validated = sum(item["status"] == "validated_one_step" for item in audited.values())
+    return {
+        "status": "simulation_activity_available" if simulated or validated else "awaiting_parameters_or_live_inputs",
+        "rooms_configured": len(audited),
+        "rooms_simulated": simulated,
+        "rooms_validated": validated,
+        "rooms_awaiting_parameters": sum(item["status"] == "awaiting_parameters" for item in audited.values()),
+        "rooms_awaiting_live_inputs": sum(item["status"] == "awaiting_live_inputs" for item in audited.values()),
+        "dataset_status": (identification_dataset or {}).get("status"),
+        "dataset_samples": (identification_dataset or {}).get("aligned_sample_count", 0),
+        "core_eligible_samples": (identification_dataset or {}).get("core_eligible_sample_count", 0),
+        "complete_room_state_samples": (identification_dataset or {}).get("complete_room_state_sample_count", 0),
+        "method": "per_room_readiness_plus_experimental_envelope_forecast_and_chronological_validation",
+        "rooms": audited,
+        "interpretation": "Experimental simulation availability is not calibration or validation; bathroom fixed values are scenario assumptions only.",
+    }

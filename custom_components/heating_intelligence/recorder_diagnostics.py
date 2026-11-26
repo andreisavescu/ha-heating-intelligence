@@ -4,10 +4,13 @@ from __future__ import annotations
 
 SUCCESS_CACHE_TTL_SECONDS = 6 * 60 * 60
 FAILURE_RETRY_TTL_SECONDS = 5 * 60
+RECORDER_HISTORY_ANALYSIS_VERSION = 2
 
 
 def recorder_history_cache_ttl(summary: dict | None) -> int:
     """Retry failed Recorder/history passes quickly; cache successful analysis longer."""
+    if (summary or {}).get("analysis_schema_version") != RECORDER_HISTORY_ANALYSIS_VERSION:
+        return 0
     status = (summary or {}).get("status")
     if status in {"recorder_query_failed", "history_processing_failed"}:
         return FAILURE_RETRY_TTL_SECONDS

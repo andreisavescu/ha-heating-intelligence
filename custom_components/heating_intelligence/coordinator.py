@@ -193,21 +193,22 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             normalized_demand_entity = entity_registry.async_get_entity_id(
                 "binary_sensor", DOMAIN, f"{DOMAIN}_{room_id}_heating_demand"
             )
+            recorder_room["source_demand_entity"] = room.get(CONF_DEMAND_ENTITY)
+            # Recorder-backed analytics must use the integration's normalized
+            # room-demand entity exclusively. If it is not registered yet,
+            # leave demand unavailable rather than silently falling back to
+            # the raw hardware relay.
+            recorder_room[CONF_DEMAND_ENTITY] = normalized_demand_entity
             if normalized_demand_entity:
-                recorder_room["source_demand_entity"] = room.get(CONF_DEMAND_ENTITY)
-                recorder_room[CONF_DEMAND_ENTITY] = normalized_demand_entity
                 entity_ids.add(normalized_demand_entity)
-                room_demand_entity_map[room_id] = {
-                    "source_entity": room.get(CONF_DEMAND_ENTITY),
-                    "canonical_entity": normalized_demand_entity,
-                    "history_source": "heating_intelligence_room_demand",
-                }
-            else:
-                room_demand_entity_map[room_id] = {
-                    "source_entity": room.get(CONF_DEMAND_ENTITY),
-                    "canonical_entity": None,
-                    "history_source": "canonical_entity_not_found",
-                }
+            room_demand_entity_map[room_id] = {
+                "source_entity": room.get(CONF_DEMAND_ENTITY),
+                "canonical_entity": normalized_demand_entity,
+                "history_source": (
+                    "heating_intelligence_room_demand"
+                    if normalized_demand_entity else "canonical_entity_not_found"
+                ),
+            }
             recorder_rooms.append(recorder_room)
         for room in configured_rooms:
             for key in (

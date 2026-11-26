@@ -199,8 +199,18 @@ def build_thermal_readiness_audit(
         rid for rid in upstairs_ids
         if _number(attic_shares.get(rid)) is None or _number(attic_shares.get(rid)) <= 0
     ]
+    surface_review_required = bool(
+        envelope_audit.get("status") == "review_required"
+        or any(item["outdoor_opaque_surface_count"] == 0 for item in room_parameters.values())
+        or any(
+            item["attic_surface_reconciliation_status"] == "discrepancy_requires_review"
+            or item["attic_surface_reconciliation_status"] == "surface_record_missing_or_flagged_suspect"
+            for item in room_parameters.values()
+            if item["room_to_attic_configured_w_per_k"] is not None
+        )
+    )
     return {
-        "status": "incomplete" if missing_envelope or missing_attic or not connections or any(item["missing"] for item in room_parameters.values()) else "configured",
+        "status": "incomplete" if missing_envelope or missing_attic or not connections or any(item["missing"] for item in room_parameters.values()) else "review_required" if surface_review_required else "configured",
         "room_parameters": room_parameters,
         "rooms_missing_envelope_conductance": missing_envelope,
         "rooms_missing_opaque_outdoor_surfaces": [rid for rid, item in room_parameters.items() if item["outdoor_opaque_surface_count"] == 0],

@@ -879,6 +879,128 @@ def build_recorder_calibration_dataset(
 
 
 
+
+def build_recorder_event_calibration_dataset(
+    history: dict[str, list[Any]],
+    rooms: list[dict[str, Any]],
+    channels: dict[str, str | None],
+    start: datetime,
+    end: datetime,
+    max_age_minutes: float = 90.0,
+    include_samples: bool = False,
+) -> dict[str, Any]:
+    """Build event-timestamped observations without imposing a synthetic cadence.
+
+    Every configured room-temperature state change contributes an event. Other
+    channels are sampled at their latest genuine Recorder state at that instant
+    and are accepted only within the freshness bound. Each room carries the
+    timestamp of its own temperature observation, allowing independent room
+    intervals even when another room has no reading.
+    """
+    if max_age_minutes < 0 or end <= start:
+        raise ValueError("Invalid event dataset bounds or freshness limit")
+    room_fields = {
+        str(room.get("id", "unknown")): {
+            "temperature": room.get("temperature_entity"),
+            "demand": room.get("demand_entity"),
+            "window": room.get("window_entity"),
+            "humidity": room.get("humidity_entity"),
+            "co2": room.get("co2_entity"),
+        } for room in rooms
+    }
+    timelines: dict[str, list[tuple[datetime, Any, Any]]] = {}
+    for key, entity_id in channels.items():
+        points = []
+        if entity_id:
+            for state in history.get(entity_id, []):
+                stamp = _timestamp(state)
+                raw = state.get("state") if isinstance(state, dict) else getattr(state, "state", None)
+                attrs = state.get("attributes", {}) if isinstance(state, dict) else getattr(state, "attributes", {})
+                unit = attrs.get("unit_of_measurement") if isinstance(attrs, dict) else None
+                if stamp is not None:
+                    points.append((stamp, raw, unit))
+        timelines[key] = sorted(points, key=lambda item: item[0])
+    for rid, fields in room_fields.items():
+        for field, entity_id in fields.items():
+            points = []
+            if entity_id:
+                for state in history.get(entity_id, []):
+                    stamp = _timestamp(state)
+                    raw = state.get("state") if isinstance(state, dict) else getattr(state, "state", None)
+                    attrs = state.get("attributes", {}) if isinstance(state, dict) else getattr(state, "attributes", {})
+                    unit = attrs.get("unit_of_measurement") if isinstance(attrs, dict) else None
+                    if stamp is not None:
+                        points.append((stamp, raw, unit))
+            timelines[f"room:{rid}:{field}"] = sorted(points, key=lambda item: item[0])
+
+    first, last = start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+    event_stamps = sorted({
+        stamp
+        for rid in room_fields
+        for stamp, raw, _ in timelines.get(f"room:{rid}:temperature", [])
+        if first <= stamp <= last and raw not in (None, "unknown", "unavailable")
+    })
+    samples = []
+    fresh_counts = {key: 0 for key in timelines}
+    for stamp in event_stamps:
+        row = {"timestamp": stamp.isoformat(), "channels": {}, "rooms": {}}
+        for key, points in timelines.items():
+            index = bisect_right(points, stamp, key=lambda item: item[0]) - 1
+            raw = unit = source_stamp = None
+            if index >= 0:
+                source_stamp, raw, unit = points[index]
+            age = (stamp - source_stamp).total_seconds() / 60 if source_stamp else None
+            valid = (
+                raw not in (None, "unknown", "unavailable")
+                and age is not None and age <= max_age_minutes
+            )
+            value = _state_value({"state": raw}) if valid else None
+            if valid and value is None:
+                value = raw
+            if valid:
+                fresh_counts[key] += 1
+            if key.startswith("room:"):
+                _, rid, field = key.split(":", 2)
+                room_row = row["rooms"].setdefault(rid, {})
+                room_row[field] = value
+                room_row[field + "_age_minutes"] = round(age, 2) if age is not None else None
+                room_row[field + "_timestamp"] = source_stamp.isoformat() if source_stamp else None
+                room_row[field + "_unit"] = unit
+            else:
+                row["channels"][key] = value
+                row["channels"][key + "_age_minutes"] = round(age, 2) if age is not None else None
+                row["channels"][key + "_timestamp"] = source_stamp.isoformat() if source_stamp else None
+                row["channels"][key + "_unit"] = unit
+        samples.append(row)
+    coverage = {
+        key: {
+            "fresh_event_samples": count,
+            "coverage_percent": round(100 * count / len(event_stamps), 1) if event_stamps else 0.0,
+        } for key, count in fresh_counts.items()
+    }
+    return {
+        "status": "event_dataset_available" if event_stamps else "insufficient_room_temperature_events",
+        "source": "home_assistant_recorder_native_state_change_timestamps",
+        "window_start": first.isoformat(),
+        "window_end": last.isoformat(),
+        "sampling_method": "union_of_actual_room_temperature_state_change_timestamps",
+        "cadence_minutes": None,
+        "maximum_input_age_minutes": max_age_minutes,
+        "event_sample_count": len(event_stamps),
+        "room_temperature_event_counts": {
+            rid: len(timelines.get(f"room:{rid}:temperature", [])) for rid in room_fields
+        },
+        "channel_event_coverage": coverage,
+        "raw_history_retained": False,
+        "note": (
+            "Rows are timestamped from actual Recorder room-temperature state changes. "
+            "Other rooms may be absent without invalidating a target room; each channel "
+            "retains its own source timestamp and age. No interpolation or synthetic cadence is used."
+        ),
+        **({"samples": samples} if include_samples else {}),
+    }
+
+
 def build_floor_thermal_output_observability(
     samples: list[dict[str, Any]],
     interval_minutes: int = 30,

@@ -525,6 +525,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                     "boiler_context": current.get("boiler_context", {}),
                     "pumps": current.get("pumps", {}),
                     "ufh_slab_observability": validation.get("ufh_slab_observability", {}),
+                    "stage5_ufh_slab_model": current.get("stage5_ufh_slab_model", {}),
                     "house_heat_loss_coefficient_w_k": (
                         heat_loss_u * envelope_area
                         if heat_loss_u is not None and envelope_area is not None else None

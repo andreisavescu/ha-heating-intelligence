@@ -8,6 +8,7 @@ from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -182,9 +183,36 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             entity_id = self.entry.options.get(key)
             if entity_id:
                 entity_ids.add(entity_id)
-        for room in self.entry.options.get(CONF_ROOMS, []):
+        configured_rooms = self.entry.options.get(CONF_ROOMS, [])
+        entity_registry = er.async_get(self.hass)
+        recorder_rooms = []
+        room_demand_entity_map = {}
+        for room in configured_rooms:
+            recorder_room = dict(room)
+            room_id = str(room.get("id", "unknown"))
+            normalized_demand_entity = entity_registry.async_get_entity_id(
+                "binary_sensor", DOMAIN, f"{DOMAIN}_{room_id}_heating_demand"
+            )
+            recorder_room["source_demand_entity"] = room.get(CONF_DEMAND_ENTITY)
+            # Recorder-backed analytics must use the integration's normalized
+            # room-demand entity exclusively. If it is not registered yet,
+            # leave demand unavailable rather than silently falling back to
+            # the raw hardware relay.
+            recorder_room[CONF_DEMAND_ENTITY] = normalized_demand_entity
+            if normalized_demand_entity:
+                entity_ids.add(normalized_demand_entity)
+            room_demand_entity_map[room_id] = {
+                "source_entity": room.get(CONF_DEMAND_ENTITY),
+                "canonical_entity": normalized_demand_entity,
+                "history_source": (
+                    "heating_intelligence_room_demand"
+                    if normalized_demand_entity else "canonical_entity_not_found"
+                ),
+            }
+            recorder_rooms.append(recorder_room)
+        for room in configured_rooms:
             for key in (
-                CONF_TEMPERATURE_ENTITY, CONF_DEMAND_ENTITY, CONF_WINDOW_ENTITY,
+                CONF_TEMPERATURE_ENTITY, CONF_WINDOW_ENTITY,
                 CONF_HUMIDITY_ENTITY, CONF_CO2_ENTITY,
             ):
                 entity_id = room.get(key)
@@ -227,9 +255,9 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             summary["control_event_note"] = ("State changes retain their original Recorder timestamps; "
                 "they are not downsampled to the 30-minute thermal-model cadence. "
                 "Use the raw event timestamps to reconstruct PWM pulse timing.")
-            configured_rooms = self.entry.options.get(CONF_ROOMS, [])
+            summary["room_demand_entity_map"] = room_demand_entity_map
             control_entity_roles = {}
-            for room in configured_rooms:
+            for room in recorder_rooms:
                 demand_entity = room.get(CONF_DEMAND_ENTITY)
                 if demand_entity:
                     control_entity_roles.setdefault(demand_entity, []).append(
@@ -264,14 +292,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 calibration_channels[f"pump:{pump_id}:power"] = pump.get("power_entity")
                 calibration_channels[f"pump:{pump_id}:energy"] = pump.get("energy_entity")
             aligned_dataset = build_recorder_calibration_dataset(
-                history, configured_rooms, calibration_channels, start, now,
+                history, recorder_rooms, calibration_channels, start, now,
                 interval_minutes=30, max_age_minutes=45, include_samples=True,
             )
             self._calibration_dataset_samples = aligned_dataset.pop("samples", [])
             summary["calibration_dataset"] = aligned_dataset
             summary["thermal_storage_response_analysis"] = build_thermal_storage_response_analysis(
                 self._calibration_dataset_samples,
-                configured_rooms,
+                recorder_rooms,
                 self.entry.options.get(CONF_PUMPS, []),
                 interval_minutes=30,
                 max_age_minutes=45,
@@ -280,33 +308,33 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 minimum_period_samples=4,
             )
             summary["room_level_excitation_identifiability"] = build_room_level_excitation_identifiability(
-                self._calibration_dataset_samples, configured_rooms, interval_minutes=30, minimum_mode_intervals=4,
+                self._calibration_dataset_samples, recorder_rooms, interval_minutes=30, minimum_mode_intervals=4,
             )
             summary["thermal_input_room_response_alignment"] = build_thermal_input_room_response_alignment(
-                self._calibration_dataset_samples, configured_rooms, interval_minutes=30, max_age_minutes=45,
+                self._calibration_dataset_samples, recorder_rooms, interval_minutes=30, max_age_minutes=45,
             )
             summary["thermal_input_energy_observability"] = build_thermal_input_energy_observability(
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
             )
             summary["solar_room_response_analysis"] = build_solar_room_response_analysis(
-                self._calibration_dataset_samples, configured_rooms,
+                self._calibration_dataset_samples, recorder_rooms,
                 interval_minutes=30, max_age_minutes=45,
                 maximum_lag_intervals=4, minimum_pairs=32,
             )
             summary["solar_internal_gain_diagnostics"] = build_gain_diagnostics(
                 self._calibration_dataset_samples,
-                configured_rooms,
+                recorder_rooms,
                 self.entry.options.get("house_assessment", {}),
             )
             summary["floor_thermal_output_observability"] = build_floor_thermal_output_observability(
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
             )
             summary["floor_room_heat_allocation_inference"] = build_floor_room_heat_allocation_inference(
-                self._calibration_dataset_samples, configured_rooms,
+                self._calibration_dataset_samples, recorder_rooms,
                 interval_minutes=30, max_age_minutes=45, minimum_intervals=24,
             )
             summary["floor_room_demand_lag_analysis"] = build_floor_room_demand_lag_analysis(
-                self._calibration_dataset_samples, configured_rooms,
+                self._calibration_dataset_samples, recorder_rooms,
                 interval_minutes=30, max_age_minutes=45,
                 maximum_lag_intervals=4, minimum_pairs=20,
             )
@@ -314,21 +342,21 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 self._calibration_dataset_samples, interval_minutes=30, max_age_minutes=45,
             )
             summary["ufh_slab_observability"] = build_ufh_slab_observability(
-                self._calibration_dataset_samples, configured_rooms, interval_minutes=30,
+                self._calibration_dataset_samples, recorder_rooms, interval_minutes=30,
             )
             # Identification uses native Recorder event timestamps, not a
             # synthetic 10-minute grid. Each room contributes its own actual
             # temperature observations; missing temperatures in other rooms
             # do not invalidate the target room.
             identification_dataset = build_recorder_event_calibration_dataset(
-                history, configured_rooms, calibration_channels, start, now,
+                history, recorder_rooms, calibration_channels, start, now,
                 max_age_minutes=90, include_samples=True,
             )
             identification_samples = identification_dataset.pop("samples", [])
             summary["multizone_identification_dataset"] = identification_dataset
             response_identification = build_multizone_response_identification(
                 identification_samples,
-                configured_rooms,
+                recorder_rooms,
                 interval_minutes=30,
                 train_fraction=0.7,
                 minimum_train_intervals=24,
@@ -355,7 +383,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             summary["multizone_response_identification"] = response_identification
             envelope_inventory = build_envelope_conductance(self.entry.options)
             absolute_anchor_rooms = []
-            for room in configured_rooms:
+            for room in recorder_rooms:
                 rid = str(room.get("id", "unknown"))
                 surface_room = (envelope_inventory.get("rooms") or {}).get(rid) or {}
                 boundaries = surface_room.get("conductance_by_boundary_w_per_k") or {}
@@ -379,7 +407,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             summary["multi_zone_historical_replay"] = build_multizone_historical_replay(
                 self._calibration_dataset_samples,
-                configured_rooms,
+                recorder_rooms,
                 summary["multizone_response_identification"],
                 interval_minutes=30,
                 max_age_minutes=45,
@@ -398,16 +426,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             ac_state = self.hass.states.get(ac_power_entity) if ac_power_entity else None
             ac_unit = (ac_state.attributes.get("unit_of_measurement") or "") if ac_state else ""
             ac_scale = {"kW": 1000.0, "MW": 1_000_000.0, "mW": 0.001}.get(ac_unit.strip(), 1.0)
-            configured_rooms = self.entry.options.get(CONF_ROOMS, [])
             summary["room_response"] = build_recorder_room_response(
-                history, configured_rooms, ac_power_entity, ac_scale,
+                history, recorder_rooms, ac_power_entity, ac_scale,
             )
             outdoor_entity = self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY)
             summary["preliminary_calibration"] = build_preliminary_room_calibration(
-                history, configured_rooms, outdoor_entity,
+                history, recorder_rooms, outdoor_entity,
             )
             summary["held_out_validation"] = build_held_out_room_validation(
-                history, configured_rooms, outdoor_entity,
+                history, recorder_rooms, outdoor_entity,
             )
             efficiency = efficiency or {}
             house_u = _as_float(efficiency.get("heat_loss_u_value_7d"))
@@ -418,13 +445,13 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 or (efficiency.get("heat_loss_assumption_sensitivity_7d") or {}).get("heat_loss_coefficient_range_w_k")
             )
             summary["house_effective_rc_calibration"] = build_house_effective_rc_calibration(
-                history, configured_rooms, outdoor_entity, house_heat_loss,
+                history, recorder_rooms, outdoor_entity, house_heat_loss,
                 self.entry.options.get(CONF_SOLAR_RADIATION_ENTITY),
                 heat_loss_sensitivity_range_w_k=h_sensitivity,
             )
             summary["multizone_physical_calibration_readiness"] = build_multizone_physical_calibration_readiness(
                 self._calibration_dataset_samples,
-                configured_rooms,
+                recorder_rooms,
                 summary["multizone_response_identification"],
                 summary["thermal_input_energy_observability"],
                 summary["ufh_slab_observability"],

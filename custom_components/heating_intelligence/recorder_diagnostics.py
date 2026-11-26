@@ -4,7 +4,7 @@ from __future__ import annotations
 
 SUCCESS_CACHE_TTL_SECONDS = 6 * 60 * 60
 FAILURE_RETRY_TTL_SECONDS = 5 * 60
-RECORDER_HISTORY_ANALYSIS_VERSION = 3
+RECORDER_HISTORY_ANALYSIS_VERSION = 4
 
 
 def recorder_history_cache_ttl(summary: dict | None) -> int:

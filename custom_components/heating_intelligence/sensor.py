@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), PhysicalModelExperimentsDiagnosticsSensor(coordinator), PhysicalModelSimulationAuditSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), PhysicalModelExperimentsMultizoneSensor(coordinator), PhysicalModelExperimentsDiagnosticsSensor(coordinator), PhysicalModelSimulationAuditSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -1325,12 +1325,42 @@ class PhysicalModelExperimentsSensor(AuditDeviceMixin, CoordinatorEntity, Sensor
     def extra_state_attributes(self):
         return {
             "physical_model_validation": self.coordinator.data.get("physical_model_validation", {}),
-            "multizone_response_identification": self.coordinator.data.get("multizone_response_identification", {}),
             "absolute_parameter_identification": self.coordinator.data.get("absolute_parameter_identification", {}),
             "predictive_forecast": self.coordinator.data.get("predictive_forecast", {}),
             "what_if_simulator": self.coordinator.data.get("what_if_simulator", {}),
             "fixed_scenario_temperatures_c": {"baie_matr": 22.0, "baie_parter": 20.5},
             "fixed_temperature_policy": "scenario_initial_conditions_only_never_historical_measurements",
+        }
+
+
+class PhysicalModelExperimentsMultizoneSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Detailed multi-zone response identification results, separated for easier copying."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "rooms"
+    _attr_icon = "mdi:home-thermometer-outline"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Physical Model Experiments Multizone"
+        self._attr_unique_id = f"{DOMAIN}_physical_model_experiments_multizone"
+
+    @property
+    def native_value(self):
+        response = self.coordinator.data.get("multizone_response_identification", {})
+        rooms = response.get("rooms") or {}
+        return sum(
+            1 for item in rooms.values()
+            if item.get("eligible_intervals", 0) > 0
+        )
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "multizone_response_identification": self.coordinator.data.get(
+                "multizone_response_identification", {}
+            ),
         }
 
 

@@ -172,9 +172,15 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
         f"{DOMAIN}_thermal_readiness_audit",
         f"{DOMAIN}_measurement_audit",
         f"{DOMAIN}_physical_model_experiments",
+        f"{DOMAIN}_physical_model_experiments_multizone",
+        f"{DOMAIN}_physical_model_experiments_diagnostics",
+        f"{DOMAIN}_physical_model_experiments_dataset",
+        f"{DOMAIN}_physical_model_experiments_exclusions",
+        f"{DOMAIN}_physical_model_simulation_audit",
         f"{DOMAIN}_envelope_conductance",
         f"{DOMAIN}_stage3_thermal_capacity",
         f"{DOMAIN}_stage5_ufh_slab_model",
+        f"{DOMAIN}_stage6_gain_model",
     }
 
     repaired = 0

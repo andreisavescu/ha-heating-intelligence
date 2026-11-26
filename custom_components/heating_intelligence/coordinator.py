@@ -315,7 +315,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             )
             identification_samples = identification_dataset.pop("samples", [])
             summary["multizone_identification_dataset"] = identification_dataset
-            summary["multizone_response_identification"] = build_multizone_response_identification(
+            response_identification = build_multizone_response_identification(
                 identification_samples,
                 configured_rooms,
                 interval_minutes=30,
@@ -328,6 +328,20 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 max_age_minutes=90,
                 max_interval_minutes=120,
             )
+            # Make the actual input path auditable. This is deliberately
+            # distinct from the legacy fixed-cadence calibration dataset used
+            # by the other historical diagnostics.
+            response_identification["input_dataset"] = {
+                "source": identification_dataset.get("source"),
+                "sampling_method": identification_dataset.get("sampling_method"),
+                "cadence_minutes": identification_dataset.get("cadence_minutes"),
+                "event_sample_count": identification_dataset.get("event_sample_count", 0),
+                "samples_passed_to_fitter": len(identification_samples),
+                "room_temperature_event_counts": identification_dataset.get(
+                    "room_temperature_event_counts", {}
+                ),
+            }
+            summary["multizone_response_identification"] = response_identification
             envelope_inventory = build_envelope_conductance(self.entry.options)
             absolute_anchor_rooms = []
             for room in configured_rooms:

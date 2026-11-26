@@ -2729,7 +2729,7 @@ def test_event_dataset_includes_intermediate_demand_and_window_transitions():
     )
     samples = dataset["samples"]
     event_times = [row["timestamp"] for row in samples]
-    assert len(event_times) == 7
+    assert len(event_times) == 8
     assert (start + timedelta(minutes=12)).isoformat() in event_times
     assert (start + timedelta(minutes=15)).isoformat() in event_times
 

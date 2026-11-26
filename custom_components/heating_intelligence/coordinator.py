@@ -328,9 +328,23 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 max_age_minutes=90,
                 max_interval_minutes=120,
             )
+            envelope_inventory = build_envelope_conductance(self.entry.options)
+            absolute_anchor_rooms = []
+            for room in configured_rooms:
+                rid = str(room.get("id", "unknown"))
+                surface_room = (envelope_inventory.get("rooms") or {}).get(rid) or {}
+                boundaries = surface_room.get("conductance_by_boundary_w_per_k") or {}
+                opaque_count = int((surface_room.get("opaque_surface_counts") or {}).get("outdoor") or 0)
+                # A present surface inventory is authoritative. Window-only
+                # outdoor UA is incomplete and must not anchor an absolute C.
+                outdoor_anchor = boundaries.get("outdoor") if opaque_count > 0 else None
+                absolute_anchor_rooms.append({
+                    **room,
+                    "envelope_conductance_w_per_k": outdoor_anchor,
+                })
             summary["absolute_parameter_identification"] = identify_absolute_room_parameters(
                 summary["multizone_response_identification"],
-                configured_rooms,
+                absolute_anchor_rooms,
             )
             summary["stage6_gain_model"] = build_stage6_gain_model(
                 self._calibration_dataset_samples,
@@ -437,6 +451,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         snapshot["multizone_identification_dataset"] = validation.get("multizone_identification_dataset", {})
         snapshot["multizone_response_identification"] = validation.get("multizone_response_identification", {})
         snapshot["absolute_parameter_identification"] = absolute_parameters
+        snapshot["stage6_gain_model"] = validation.get("stage6_gain_model", {})
         snapshot["stage3_thermal_capacity"] = build_stage3_thermal_capacity(
             validation.get("multizone_response_identification", {}),
             configured_rooms,

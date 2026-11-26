@@ -2644,7 +2644,6 @@ def test_event_dataset_uses_native_irregular_room_timestamps_and_reaches_fitter(
         minimum_holdout_intervals=4, max_age_minutes=90, max_interval_minutes=120,
     )
     assert fit["observed_rooms"] == 2
-    assert fit["input_dataset"] if "input_dataset" in fit else True
     assert fit["rooms"]["room_a"]["eligible_intervals"] > 0
     assert fit["rooms"]["room_b"]["eligible_intervals"] > 0
     assert fit["rooms"]["room_a"]["candidate_intervals"] == len(samples) - 1

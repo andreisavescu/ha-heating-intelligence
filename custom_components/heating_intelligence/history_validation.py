@@ -950,9 +950,10 @@ def build_recorder_event_calibration_dataset(
             if index >= 0:
                 source_stamp, raw, unit = points[index]
             age = (stamp - source_stamp).total_seconds() / 60 if source_stamp else None
+            is_latched_control = key.endswith(":demand") or key.endswith(":window")
             valid = (
                 raw not in (None, "unknown", "unavailable")
-                and age is not None and age <= max_age_minutes
+                and (is_latched_control or (age is not None and age <= max_age_minutes))
             )
             value = _state_value({"state": raw}) if valid else None
             if valid and value is None:
@@ -3206,10 +3207,11 @@ def build_multizone_response_identification(
     excluded_unobserved_rooms = [
         room_id for room_id in configured_room_ids if room_id not in observed_room_ids
     ]
-    attic_predictor_available = any(
+    attic_valid_samples = sum(
         _finite_number_or_none((sample.get("channels") or {}).get("attic_temperature")) is not None
         for sample in samples
     )
+    attic_predictor_available = attic_valid_samples > 0
     if len(room_ids) < 1:
         return {
             "status": "insufficient_zones",
@@ -3244,6 +3246,10 @@ def build_multizone_response_identification(
         "temperature_timestamp" in ((sample.get("rooms") or {}).get(room_id) or {})
         for sample in samples for room_id in configured_room_ids
     )
+    if event_mode:
+        attic_predictor_available = (
+            bool(samples) and attic_valid_samples / len(samples) >= 0.7
+        )
     room_results = {}
     all_interval_counts = {"candidate": max(0, len(parsed) - 1), "eligible": 0, "excluded": {}}
     for room_id in room_ids:
@@ -4028,6 +4034,7 @@ def build_multizone_response_identification(
         "method": "nonnegative_multizone_free_coasting_regression",
         "interval_minutes": interval_minutes,
         "interval_policy": {"minimum_minutes": 5, "maximum_minutes": max_interval_minutes, "basis": "actual_consecutive_target_temperature_timestamps"},
+        "sampling_mode": "native_recorder_events" if event_mode else "legacy_aligned_samples",
         "train_fraction": train_fraction,
         "max_predictor_correlation_threshold": max_predictor_correlation,
         "identifiability_method": "pairwise_correlation_and_full_standardized_training_matrix_condition_number",

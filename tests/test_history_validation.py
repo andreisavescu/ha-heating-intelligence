@@ -2579,7 +2579,7 @@ def test_multizone_identification_accepts_variable_target_intervals_and_missing_
     )
     room = fit["rooms"]["room"]
     assert room["candidate_intervals"] > 0
-    assert room["eligible_intervals"] >= 8, room
+    assert room["eligible_intervals"] >= 8, room["excluded_intervals"]
     assert room["predictors"] == ["envelope"]
     assert room["excluded_intervals"]["solar_missing_intervals_retained"] > 0
     assert room["excluded_intervals"]["ac_power_missing_intervals_retained"] > 0

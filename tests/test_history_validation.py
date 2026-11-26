@@ -2530,8 +2530,13 @@ def test_event_dataset_uses_actual_temperature_timestamps_and_keeps_rooms_indepe
         (start + timedelta(minutes=37)).isoformat(),
         (start + timedelta(minutes=91)).isoformat(),
     ]
-    # The bedroom's sparse history does not erase otherwise valid living data.
-    assert all(row["temperature"] is not None for row in living_rows)
+    # Control-only event rows may precede a room's first temperature event;
+    # they must not erase or fabricate that room's native observations.
+    assert all(
+        row["temperature"] is not None
+        for row in living_rows if row["temperature_timestamp"]
+    )
+    assert any(row["temperature"] is None for row in living_rows)
 
 
 def test_multizone_identification_accepts_variable_target_intervals_and_missing_other_room():

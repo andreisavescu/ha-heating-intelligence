@@ -2643,6 +2643,15 @@ def test_event_dataset_uses_native_irregular_room_timestamps_and_reaches_fitter(
     assert dataset["event_sample_count"] == len(samples)
     assert dataset["room_temperature_event_counts"]["room_a"] == 41
     assert dataset["room_temperature_event_counts"]["room_b"] == 24
+    assert dataset["native_room_temperature_event_count"] == 65
+    assert sum(
+        sample["rooms"]["room_a"]["temperature_is_event"] is True
+        for sample in samples
+    ) == 41
+    assert sum(
+        sample["rooms"]["room_b"]["temperature_is_event"] is True
+        for sample in samples
+    ) == 24
 
     fit = MODULE.build_multizone_response_identification(
         samples, rooms, interval_minutes=30, minimum_train_intervals=8,
@@ -2652,6 +2661,9 @@ def test_event_dataset_uses_native_irregular_room_timestamps_and_reaches_fitter(
     assert fit["rooms"]["room_a"]["eligible_intervals"] > 0
     assert fit["rooms"]["room_b"]["eligible_intervals"] > 0
     assert fit["rooms"]["room_a"]["candidate_intervals"] == 40
+    assert fit["rooms"]["room_b"]["candidate_intervals"] == 23
+    assert fit["rooms"]["room_a"]["interval_audit"]["native_temperature_event_marker_used"] is True
+    assert fit["rooms"]["room_a"]["interval_audit"]["temperature_events"] == 41
     assert fit["rooms"]["room_a"]["excluded_intervals"]["non_contiguous_or_missing_temperature"] < len(samples) - 1
 
 

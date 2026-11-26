@@ -1353,11 +1353,13 @@ class PhysicalModelSimulationAuditSensor(AuditDeviceMixin, CoordinatorEntity, Se
     @property
     def native_value(self):
         audit = self.coordinator.data.get("physical_model_simulation_audit", {})
-        return audit.get("rooms_simulated", 0)
+        return audit.get("rooms_configured", 0)
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data.get("physical_model_simulation_audit", {})
+        audit = dict(self.coordinator.data.get("physical_model_simulation_audit", {}))
+        audit["state_metric"] = "configured_rooms_audited"
+        return audit
 
 
 class MeasurementAuditSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):

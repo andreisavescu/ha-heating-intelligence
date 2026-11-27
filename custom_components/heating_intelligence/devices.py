@@ -7,6 +7,22 @@ from homeassistant.helpers import entity_registry as er
 from .const import CONF_PUMPS, CONF_ROOMS, DOMAIN
 
 
+def _enable_config_entry_disabled_device(device_registry, device) -> bool:
+    """Re-enable an integration-owned device disabled by its config entry.
+
+    The config entry is actively setting up at this point, so a stale
+    CONFIG_ENTRY disable marker must not keep the device and all its entities
+    unavailable. User-disabled devices are deliberately left untouched.
+    """
+    if device.disabled_by != dr.DeviceEntryDisabler.CONFIG_ENTRY:
+        return False
+    device_registry.async_update_device(
+        device.id,
+        disabled_by=None,
+    )
+    return True
+
+
 def _house_identifier(coordinator) -> tuple[str, str]:
     return (DOMAIN, f"{coordinator.entry.entry_id}_house")
 
@@ -165,6 +181,12 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
         model="Diagnostics and audits",
         via_device_id=house.id,
     )
+    # Clear stale config-entry disable markers on all devices owned by this
+    # active entry. Home Assistant otherwise disables every entity attached
+    # to those devices, and the entity-level enable switch cannot override it.
+    for device in (house, *room_devices.values(), *pump_devices.values(), audit_device):
+        _enable_config_entry_disabled_device(device_registry, device)
+
     audit_unique_ids = {
         f"{DOMAIN}_ufh_hydraulic_audit",
         f"{DOMAIN}_house_audit",

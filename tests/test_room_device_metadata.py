@@ -119,3 +119,25 @@ def test_device_registry_parent_uses_registered_device_id():
         and value.attr == "id"
         for value in parent_values
     )
+
+
+def test_device_repair_clears_only_config_entry_disabled_devices():
+    devices_path = (
+        Path(__file__).parents[1]
+        / "custom_components"
+        / "heating_intelligence"
+        / "devices.py"
+    )
+    source = devices_path.read_text()
+    tree = ast.parse(source)
+    helper = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_enable_config_entry_disabled_device"
+    )
+    helper_source = ast.get_source_segment(source, helper)
+    assert "dr.DeviceEntryDisabler.CONFIG_ENTRY" in helper_source
+    assert "disabled_by=None" in helper_source
+    assert "async_update_device" in helper_source
+    assert "device.disabled_by" in helper_source
+    assert "for device in (house, *room_devices.values(), *pump_devices.values(), audit_device)" in source

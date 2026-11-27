@@ -26,10 +26,10 @@ def identify_absolute_room_parameters(
     """Convert normalized G/C rates to anchored absolute room RC estimates.
 
     A configured room-envelope conductance is the absolute scale anchor.
-    The envelope regression coefficient must be positive, have a usable
-    bootstrap range, and improve on the persistence baseline on chronological
-    holdout. Other fitted G/C coefficients are multiplied by the resulting
-    effective room capacity to produce conditional W/K estimates.
+    A positive envelope G/C rate with a usable bootstrap range and sufficient
+    training/holdout data produces a provisional capacity. Beating persistence
+    is a separate promotion gate: it must not prevent the model from obtaining
+    a starting estimate and testing it experimentally.
 
     These estimates remain provisional: the envelope anchor is configuration,
     not a new measurement, and free-coasting regressions can retain bias from
@@ -55,7 +55,7 @@ def identify_absolute_room_parameters(
             holdout_mae is not None and baseline_mae is not None
             and holdout_mae < baseline_mae
         )
-        gates = {
+        estimation_gates = {
             "configured_positive_envelope_anchor": envelope_g is not None and envelope_g > 0,
             "positive_identifiable_envelope_rate": envelope_rate is not None and envelope_rate > 1e-8,
             "bootstrap_range_available": (
@@ -63,15 +63,24 @@ def identify_absolute_room_parameters(
                 and rate_low > 0 and rate_high >= rate_low
                 and int(envelope_range.get("successful_replicates") or 0) >= 40
             ),
-            "chronological_holdout_beats_persistence": holdout_better,
             "fit_has_training_and_holdout": (
                 int(fit.get("training_intervals") or 0) >= 8
                 and int(fit.get("holdout_intervals") or 0) >= 4
             ),
         }
+        promotion_gates = {
+            **estimation_gates,
+            "chronological_holdout_beats_persistence": holdout_better,
+        }
+        gates = {
+            **estimation_gates,
+            "chronological_holdout_beats_persistence": holdout_better,
+            "capacity_estimate_available": all(estimation_gates.values()),
+            "capacity_validation_passed": all(promotion_gates.values()),
+        }
         capacity = capacity_low = capacity_high = None
         conductances: dict[str, Any] = {}
-        if all(gates.values()):
+        if all(estimation_gates.values()):
             capacity = envelope_g / envelope_rate
             capacity_low = envelope_g / rate_high
             capacity_high = envelope_g / rate_low
@@ -99,8 +108,11 @@ def identify_absolute_room_parameters(
             identified += 1
         results[room_id] = {
             "status": (
-                "anchored_absolute_estimate_provisional"
-                if capacity is not None else "absolute_parameters_withheld"
+                "anchored_absolute_estimate_provisional_validated"
+                if capacity is not None and holdout_better
+                else "anchored_absolute_estimate_provisional_unvalidated"
+                if capacity is not None
+                else "absolute_parameters_withheld"
             ),
             "effective_room_capacity_wh_per_k": round(capacity, 2) if capacity is not None else None,
             "effective_room_capacity_range_wh_per_k": (
@@ -116,12 +128,12 @@ def identify_absolute_room_parameters(
             "training_intervals": int(fit.get("training_intervals") or 0),
             "holdout_intervals": int(fit.get("holdout_intervals") or 0),
             "interpretation": (
-                "Conditional absolute RC estimate anchored to the configured envelope conductance. "
-                "Bootstrap ranges propagate normalized-rate resampling only; they exclude uncertainty "
-                "in the configured anchor, hidden gains and model structure. Not yet promoted for simulation."
+                "Provisional absolute RC estimate anchored to configured outdoor conductance. It is "
+                "available for experimental simulation, but is not promoted as validated unless the "
+                "chronological holdout beats persistence. Bootstrap ranges omit anchor and model uncertainty."
                 if capacity is not None else
-                "Insufficient independent excitation, envelope anchor or holdout evidence. No capacity "
-                "or absolute conductance is inferred."
+                "Insufficient positive response rate, bootstrap uncertainty or training/holdout coverage "
+                "to estimate capacity. No capacity or absolute conductance is inferred."
             ),
         }
     return {
@@ -146,6 +158,7 @@ def identify_absolute_room_parameters(
         "solver_parameter_promotion": "withheld_pending_independent_physical_validation",
         "limitations": [
             "Room capacity is conditional on the configured envelope conductance being accurate.",
+            "A provisional estimate may be used for experimental simulation even when it fails the persistence promotion gate.",
             "Normalized free-coasting rates may include unmodelled coupling and residual gains.",
             "Bootstrap ranges do not include anchor, sensor-bias or model-structure uncertainty.",
             "UFH slab capacities are not inferred from pump timing or room-air response alone.",

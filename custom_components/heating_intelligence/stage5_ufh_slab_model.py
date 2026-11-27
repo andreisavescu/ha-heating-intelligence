@@ -56,6 +56,8 @@ def build_stage5_ufh_slab_model(
         capacity_low = 0.0
         capacity_high = 0.0
         room_capacity = {}
+        finish_capacity_wh_k = 0.0
+        finish_zone_records = {}
         for room in floor_rooms:
             area = _positive(room.get("area_m2"))
             thickness = _positive(room.get("ufh_screed_thickness_cm")) or DEFAULT_SCREED_THICKNESS_CM
@@ -71,6 +73,26 @@ def build_stage5_ufh_slab_model(
             low = volume * SCREED_CAPACITY_RANGE_WH_M3K[0]
             high = volume * SCREED_CAPACITY_RANGE_WH_M3K[1]
             area_total += area
+            room_finish_capacity = 0.0
+            room_finish_zones = []
+            for zone in (room.get("floor_finish_zones") or []):
+                zone_area = _positive(zone.get("area_m2"))
+                thickness_mm = _positive(zone.get("thickness_mm"))
+                density = _positive(zone.get("density_kg_m3"))
+                specific_heat = _positive(zone.get("specific_heat_j_kgk"))
+                conductivity = _positive(zone.get("conductivity_w_mk"))
+                if all(value is not None for value in (zone_area, thickness_mm, density, specific_heat, conductivity)):
+                    zone_capacity = zone_area * thickness_mm / 1000.0 * density * specific_heat / 3600.0
+                    zone_resistance = thickness_mm / 1000.0 / conductivity
+                    room_finish_capacity += zone_capacity
+                    room_finish_zones.append({
+                        "id": zone.get("id"), "area_m2": round(zone_area, 3),
+                        "thermal_resistance_m2k_w": round(zone_resistance, 5),
+                        "thermal_capacity_wh_per_k": round(zone_capacity, 3),
+                        "material": zone.get("material", "custom"),
+                    })
+            finish_capacity_wh_k += room_finish_capacity
+            finish_zone_records[str(room.get("id"))] = room_finish_zones
             capacity_wh_k += central
             capacity_low += low
             capacity_high += high
@@ -152,6 +174,10 @@ def build_stage5_ufh_slab_model(
                 if capacity_wh_k else None
             ),
             "room_screed_capacity": room_capacity,
+            "finish_capacity_wh_per_k": round(finish_capacity_wh_k, 2),
+            "room_finish_zones": finish_zone_records,
+            "combined_screed_and_finish_capacity_wh_per_k": round(capacity_wh_k + finish_capacity_wh_k, 2),
+            "finish_storage_status": "configured_material_estimate_separate_from_screed" if finish_capacity_wh_k else "no_finish_zones_configured",
             "slab_node": "one_latent_ufh_slab_node_per_floor",
             "slab_temperature_c": None,
             "slab_to_room_conductance_w_per_k": None,
@@ -189,6 +215,7 @@ def build_stage5_ufh_slab_model(
             "No individual circuit return temperatures are claimed because circuit-level heat absorption is not independently known.",
             "The 12 mm pipe internal diameter is an explicit volume/delay assumption, not a measured pipe dimension.",
             "Slab capacity is a screed-only geometry/material prior; it excludes structural slab, finish, water and temperature gradients.",
+            "Floor-finish heat capacity is estimated separately by room and zone; it is not merged into the screed node without a validated layer-coupling model.",
             "Slab-to-room and slab-to-lower-boundary conductances remain unidentified until the latent slab state can be constrained by independent measurements or sufficiently informative excitation and input data.",
         ],
     }

@@ -483,7 +483,16 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
     def _apply_physical_model_experiments(self, snapshot: dict, validation: dict) -> None:
         """Expose physical experiments on the coordinator snapshot using live inputs."""
         absolute_parameters = validation.get("absolute_parameter_identification") or {}
-        configured_rooms = self.entry.options.get(CONF_ROOMS, [])
+        configured_rooms = [
+            {
+                **room,
+                "floor_finish_zones": [
+                    zone for zone in self.entry.options.get("floor_finish_zones", [])
+                    if zone.get("room_id") == room.get("id")
+                ],
+            }
+            for room in self.entry.options.get(CONF_ROOMS, [])
+        ]
         current_room_snapshot = {
             room_id: {"temperature": room_data.get("temperature")}
             for room_id, room_data in (snapshot.get("rooms") or {}).items()
@@ -1260,8 +1269,18 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             float(self.entry.options.get(CONF_BOILER_EFFICIENCY, 0.90)),
             now_local,
         )
+        configured_rooms_with_finishes = [
+            {
+                **room,
+                "floor_finish_zones": [
+                    zone for zone in self.entry.options.get("floor_finish_zones", [])
+                    if zone.get("room_id") == room.get("id")
+                ],
+            }
+            for room in self.entry.options.get(CONF_ROOMS, [])
+        ]
         result["stage5_ufh_slab_model"] = build_stage5_ufh_slab_model(
-            self.entry.options.get(CONF_ROOMS, []),
+            configured_rooms_with_finishes,
             self.entry.options.get("ufh_circuits", []),
             result.get("ufh_hydraulics", {}),
             self._history.get("boiler_energy_experiment", {}),

@@ -220,7 +220,12 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             data["floor_finish_zones"] = [z for z in zones if z.get("id") != zone_id] + [record]
             return self.async_create_entry(title="", data=data)
 
-        material = existing.get("material", "ceramic_tile")
+        default_room = next(
+            (room for room in rooms if room["id"] == existing.get("room_id")),
+            rooms[0],
+        )
+        floor_default = "wood_parquet" if default_room.get(CONF_FLOOR) == "upstairs" else "ceramic_tile"
+        material = existing.get("material", floor_default)
         preset = presets.get(material, presets["custom"])
         def number_field(key, default, minimum, maximum, step, unit):
             return (vol.Optional(key, default=existing.get(key, default)),

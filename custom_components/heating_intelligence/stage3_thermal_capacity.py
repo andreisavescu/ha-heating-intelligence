@@ -96,6 +96,31 @@ def build_stage3_thermal_capacity(
             if volume is not None else None
         )
         anchored = absolute.get("rooms", {}).get(rid, {})
+        finish_zones = []
+        finish_resistance_area = 0.0
+        finish_capacity = 0.0
+        for zone in (room.get("floor_finish_zones") or []):
+            zone_area = _positive(zone.get("area_m2"))
+            thickness_mm = _positive(zone.get("thickness_mm"))
+            conductivity = _positive(zone.get("conductivity_w_mk"))
+            density = _positive(zone.get("density_kg_m3"))
+            specific_heat = _positive(zone.get("specific_heat_j_kgk"))
+            valid = all(value is not None for value in (zone_area, thickness_mm, conductivity, density, specific_heat))
+            resistance = thickness_mm / 1000.0 / conductivity if valid else None
+            capacity = zone_area * thickness_mm / 1000.0 * density * specific_heat / 3600.0 if valid else None
+            if valid:
+                finish_resistance_area += resistance * zone_area
+                finish_capacity += capacity
+            finish_zones.append({
+                "id": zone.get("id"), "name": zone.get("name", zone.get("id")),
+                "material": zone.get("material", "custom"), "area_m2": zone_area,
+                "thickness_mm": thickness_mm, "conductivity_w_mk": conductivity,
+                "density_kg_m3": density, "specific_heat_j_kgk": specific_heat,
+                "thermal_resistance_m2k_w": round(resistance, 5) if resistance is not None else None,
+                "thermal_capacity_wh_per_k": round(capacity, 3) if capacity is not None else None,
+                "status": "configured" if valid else "withheld_invalid_or_incomplete_zone",
+            })
+        finish_area = sum(z["area_m2"] or 0 for z in finish_zones)
         results[rid] = {
             "name": room.get("name", rid),
             "effective_room_capacity": anchored,
@@ -122,6 +147,13 @@ def build_stage3_thermal_capacity(
                     "temperature-gradient effects."
                 ),
             },
+            "floor_finish": {
+                "status": "configured" if finish_zones else "not_configured",
+                "zones": finish_zones, "configured_area_m2": round(finish_area, 3),
+                "area_weighted_resistance_m2k_w": round(finish_resistance_area / finish_area, 5) if finish_area > 0 else None,
+                "total_finish_capacity_wh_per_k": round(finish_capacity, 3) if finish_zones else None,
+                "interpretation": "Per-zone finish resistance is in series between the UFH screed and room air; finish heat capacity is separate from screed capacity. These estimates do not imply an identified slab-to-room conductance.",
+            },
             "envelope_anchor_source": room["envelope_anchor_source"],
             "envelope_anchor_status": (
                 "configured_anchor_inventory_incomplete"
@@ -145,6 +177,7 @@ def build_stage3_thermal_capacity(
             "The bootstrap interval propagates response-rate resampling only; it excludes anchor uncertainty and model bias.",
             "UFH screed capacity is a geometry/material prior, not a measured or dynamically identified slab capacity.",
             "The screed estimate excludes other floor layers and assumes uniform thickness across each room.",
+            "Floor-finish resistance and heat capacity are calculated per configured zone; they remain distinct from screed capacity and are not yet a calibrated dynamic coupling.",
             "Ground, attic and adjacent-heated conductances are not folded into the outdoor-temperature regression coefficient.",
         ],
     }

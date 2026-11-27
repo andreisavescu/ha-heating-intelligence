@@ -92,7 +92,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["house_assessment", "windows", "envelope_surfaces", "thermal_topology", "add_room", "edit_rooms", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
+            menu_options=["house_assessment", "windows", "envelope_surfaces", "floor_finishes", "thermal_topology", "add_room", "edit_rooms", "remove_room", "global_settings", "pump_settings", "ufh_circuits"],
         )
 
     async def async_step_envelope_surfaces(self, user_input=None):
@@ -157,6 +157,89 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             u_marker: u_selector,
         }
         return self.async_show_form(step_id="envelope_surface_details", data_schema=vol.Schema(fields))
+
+    async def async_step_floor_finishes(self, user_input=None):
+        """Add, edit or remove per-room floor-finish zones."""
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        zones = list(self.config_entry.options.get("floor_finish_zones", []))
+        if not rooms:
+            return self.async_abort(reason="no_rooms")
+        actions = {"add": "Add a floor zone", "edit": "Edit a floor zone", "remove": "Remove a floor zone"}
+        if user_input is not None:
+            action = user_input["action"]
+            if action == "add":
+                self._floor_finish_edit_id = None
+                return await self.async_step_floor_finish_details()
+            self._floor_finish_edit_id = user_input.get("zone")
+            if not self._floor_finish_edit_id or self._floor_finish_edit_id not in {z.get("id") for z in zones}:
+                return self.async_show_form(step_id="floor_finishes", data_schema=vol.Schema({
+                    vol.Required("action", default=action): vol.In(actions),
+                    vol.Required("zone"): vol.In({z["id"]: f'{z.get("name", z["id"])} — {next((r[CONF_NAME] for r in rooms if r["id"] == z.get("room_id")), z.get("room_id"))}' for z in zones}),
+                }), errors={"zone": "required"})
+            if action == "remove":
+                data = dict(self.config_entry.options)
+                data["floor_finish_zones"] = [z for z in zones if z.get("id") != self._floor_finish_edit_id]
+                return self.async_create_entry(title="", data=data)
+            return await self.async_step_floor_finish_details()
+        fields = {vol.Required("action", default="add"): vol.In(actions)}
+        if zones:
+            fields[vol.Optional("zone")] = vol.In({z["id"]: f'{z.get("name", z["id"])} — {next((r[CONF_NAME] for r in rooms if r["id"] == z.get("room_id")), z.get("room_id"))}' for z in zones})
+        return self.async_show_form(step_id="floor_finishes", data_schema=vol.Schema(fields))
+
+    async def async_step_floor_finish_details(self, user_input=None):
+        """Store one independently editable finish zone over the UFH floor."""
+        zones = list(self.config_entry.options.get("floor_finish_zones", []))
+        rooms = list(self.config_entry.options.get(CONF_ROOMS, []))
+        existing = next((z for z in zones if z.get("id") == self._floor_finish_edit_id), {}) if self._floor_finish_edit_id else {}
+        presets = {
+            "ceramic_tile": {"label": "Ceramic tile", "conductivity": 1.3, "density": 2300.0, "specific_heat": 840.0, "thickness": 10.0},
+            "wood_parquet": {"label": "Wood / parquet", "conductivity": 0.15, "density": 700.0, "specific_heat": 1600.0, "thickness": 10.0},
+            "custom": {"label": "Custom material", "conductivity": 0.5, "density": 1200.0, "specific_heat": 1000.0, "thickness": 10.0},
+        }
+        if user_input is not None:
+            material = user_input["material"]
+            preset = presets[material]
+            name = str(user_input.get("name") or preset["label"]).strip()
+            slug = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_") or "floor_zone"
+            zone_id = self._floor_finish_edit_id or slug
+            if not self._floor_finish_edit_id:
+                base, suffix = slug, 2
+                ids = {z.get("id") for z in zones}
+                while zone_id in ids:
+                    zone_id = f"{base}_{suffix}"
+                    suffix += 1
+            record = {
+                "id": zone_id, "name": name, "room_id": user_input["room_id"],
+                "material": material, "area_m2": float(user_input["area_m2"]),
+                "thickness_mm": float(user_input.get("thickness_mm") or preset["thickness"]),
+                "conductivity_w_mk": float(user_input.get("conductivity_w_mk") or preset["conductivity"]),
+                "density_kg_m3": float(user_input.get("density_kg_m3") or preset["density"]),
+                "specific_heat_j_kgk": float(user_input.get("specific_heat_j_kgk") or preset["specific_heat"]),
+            }
+            data = dict(self.config_entry.options)
+            data["floor_finish_zones"] = [z for z in zones if z.get("id") != zone_id] + [record]
+            return self.async_create_entry(title="", data=data)
+
+        material = existing.get("material", "ceramic_tile")
+        preset = presets.get(material, presets["custom"])
+        def number_field(key, default, minimum, maximum, step, unit):
+            return (vol.Optional(key, default=existing.get(key, default)),
+                selector.NumberSelector(selector.NumberSelectorConfig(min=minimum, max=maximum, step=step, unit_of_measurement=unit, mode=selector.NumberSelectorMode.BOX)))
+        fields = {
+            vol.Required("room_id", default=existing.get("room_id", rooms[0]["id"])): vol.In({r["id"]: r[CONF_NAME] for r in rooms}),
+            vol.Optional("name", default=existing.get("name", preset["label"])): str,
+            vol.Required("material", default=material): vol.In({key: value["label"] for key, value in presets.items()}),
+        }
+        for key, default, minimum, maximum, step, unit in [
+            ("area_m2", 1.0, 0.01, 500, 0.01, "m²"),
+            ("thickness_mm", preset["thickness"], 1, 100, 0.5, "mm"),
+            ("conductivity_w_mk", preset["conductivity"], 0.01, 10, 0.01, "W/m·K"),
+            ("density_kg_m3", preset["density"], 50, 5000, 10, "kg/m³"),
+            ("specific_heat_j_kgk", preset["specific_heat"], 100, 5000, 10, "J/kg·K"),
+        ]:
+            marker, control = number_field(key, default, minimum, maximum, step, unit)
+            fields[marker] = control
+        return self.async_show_form(step_id="floor_finish_details", data_schema=vol.Schema(fields))
 
     async def async_step_windows(self, user_input=None):
         """Add, edit or remove individual physical window records."""

@@ -181,7 +181,7 @@ def build_room_boundary_heat_loss(
             "missing_or_incomplete_boundaries": [
                 key for key, complete in (
                     ("outdoor_surface_inventory", outdoor_inventory_complete),
-                    ("ground_surface_ua", ground_inventory_configured),
+                    ("ground_surface_ua", ground_inventory_configured if "ground" in expected_boundaries else True),
                     ("attic_surface_ua", attic_inventory_configured if "attic" in expected_boundaries else True),
                 ) if not complete
             ],

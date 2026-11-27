@@ -141,7 +141,7 @@ def build_stage5_ufh_slab_model(
             "node_status": "room_level_node_configured",
             "floor_area_m2": area,
             "screed": {
-                "status": "geometry_material_prior" if screed_capacity is not None else "withheld_missing_room_area",
+                "status": "geometry_material_prior" if screed_capacity is not None else "withheld_missing_area",
                 "thickness_cm": round(thickness, 2),
                 "thickness_source": "configured_per_room" if _positive(room.get("ufh_screed_thickness_cm")) else "default_4.5_cm",
                 "volume_m3": round(volume, 4) if volume is not None else None,

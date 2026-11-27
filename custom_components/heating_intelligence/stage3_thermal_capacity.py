@@ -33,24 +33,26 @@ def build_stage3_thermal_capacity(
     """
     envelope_rooms = (envelope_conductance or {}).get("rooms") or {}
     anchored_rooms = []
+    anchor_audits: dict[str, dict[str, Any]] = {}
     for room in rooms:
         rid = str(room.get("id", "unknown"))
-        boundaries = (envelope_rooms.get(rid) or {}).get(
-            "conductance_by_boundary_w_per_k"
-        ) or {}
+        surface_room = envelope_rooms.get(rid) or {}
+        boundaries = surface_room.get("conductance_by_boundary_w_per_k") or {}
         outdoor_ua = _positive(boundaries.get("outdoor"))
         legacy_anchor = _positive(room.get("envelope_conductance_w_per_k"))
-        surface_room = envelope_rooms.get(rid) or {}
         opaque_outdoor_count = int(
             ((surface_room.get("opaque_surface_counts") or {}).get("outdoor") or 0)
         )
-        has_surface_inventory = bool(envelope_rooms)
+        # Inventory presence is room-specific. A global non-empty inventory
+        # must not make rooms with no records appear to have complete geometry.
+        has_surface_inventory = bool(
+            surface_room.get("configured_surface_count")
+            or surface_room.get("window_record_count")
+            or any((surface_room.get("boundary_surface_counts") or {}).values())
+        )
         anchor_incomplete = has_surface_inventory and opaque_outdoor_count == 0
-        # A room with a populated surface inventory must have an opaque
-        # outdoor surface before its outdoor UA can anchor absolute capacity.
-        # Do not substitute the legacy room total for intentionally incomplete
-        # downstairs records. Rooms without any surface inventory retain the
-        # legacy configured anchor for backward compatibility.
+        # A populated but incomplete room inventory cannot anchor absolute C.
+        # Do not substitute the legacy room total for window-only records.
         anchor = (
             None if anchor_incomplete
             else outdoor_ua if has_surface_inventory
@@ -64,10 +66,20 @@ def build_stage3_thermal_capacity(
             "legacy_configured_room_envelope_conductance"
             if not has_surface_inventory and legacy_anchor is not None else "missing"
         )
+        withheld_reason = (
+            "no_opaque_outdoor_surface_record" if anchor_incomplete else
+            "missing_or_invalid_outdoor_surface_ua" if anchor is None else None
+        )
+        anchor_audits[rid] = {
+            "outdoor_opaque_surface_count": opaque_outdoor_count,
+            "outdoor_window_record_count": int(surface_room.get("window_record_count") or 0),
+            "surface_inventory_present": has_surface_inventory,
+            "outdoor_surface_ua_w_per_k": outdoor_ua,
+            "anchor_used_w_per_k": anchor,
+            "withheld_reason": withheld_reason,
+        }
         anchored_rooms.append({
             **room,
-            # A populated but incomplete surface inventory is deliberately
-            # withheld; do not infer a replacement from a partial record.
             "envelope_conductance_w_per_k": anchor,
             "envelope_anchor_source": anchor_source,
         })
@@ -96,6 +108,7 @@ def build_stage3_thermal_capacity(
             if volume is not None else None
         )
         anchored = absolute.get("rooms", {}).get(rid, {})
+        anchor_audit = anchor_audits.get(rid, {})
         finish_zones = []
         finish_conductance_area = 0.0
         finish_capacity = 0.0
@@ -159,22 +172,10 @@ def build_stage3_thermal_capacity(
                 "available"
                 if _positive(anchored.get("envelope_anchor_w_per_k")) is not None
                 else "withheld_incomplete_surface_inventory"
-                if anchor_incomplete
+                if anchor_audit.get("withheld_reason") == "no_opaque_outdoor_surface_record"
                 else "missing"
             ),
-            "envelope_anchor_audit": {
-                "outdoor_opaque_surface_count": opaque_outdoor_count,
-                "outdoor_window_record_count": int(surface_room.get("window_record_count") or 0),
-                "surface_inventory_present": has_surface_inventory,
-                "outdoor_surface_ua_w_per_k": outdoor_ua,
-                "anchor_used_w_per_k": _positive(anchored.get("envelope_anchor_w_per_k")),
-                "withheld_reason": (
-                    "no_opaque_outdoor_surface_record"
-                    if anchor_incomplete else
-                    "missing_or_invalid_outdoor_surface_ua"
-                    if _positive(anchored.get("envelope_anchor_w_per_k")) is None else None
-                ),
-            },
+            "envelope_anchor_audit": anchor_audit,
         }
 
     return {

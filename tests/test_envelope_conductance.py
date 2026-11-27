@@ -77,3 +77,22 @@ def test_building_level_attic_surface_can_be_intentionally_allocated_to_room():
     assert room["conductance_by_boundary_w_per_k"]["attic"] == 2.7633
     assert result["suspect_records"] == []
     assert result["surfaces"][0]["allocation_scope"] == "building_level"
+
+
+def test_legacy_confirmed_baie_cada_ceiling_is_included_without_manual_migration():
+    result = build_envelope_conductance({
+        "rooms": [{"id": "baie_cada", "area_m2": 8.97}],
+        "envelope_surfaces": [{
+            "id": "tavan_baie_cada_cs", "name": "Baie Cada ceiling including hall and stairs",
+            "room_id": "baie_cada", "boundary": "attic",
+            "area_m2": 15.1, "u_value_w_m2k": 0.183,
+        }],
+    })
+    room = result["rooms"]["baie_cada"]
+    assert room["conductance_by_boundary_w_per_k"]["attic"] == 2.7633
+    assert result["suspect_records"] == []
+    assert result["intentional_allocation_overrides"] == [{
+        "id": "tavan_baie_cada_cs", "room_id": "baie_cada",
+        "boundary": "attic", "allocation_scope": "building_level",
+        "source": "user_confirmed_legacy_override",
+    }]

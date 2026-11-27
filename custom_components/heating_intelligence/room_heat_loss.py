@@ -108,9 +108,18 @@ def build_room_boundary_heat_loss(
         outdoor_inventory_complete = opaque_count > 0
         ground_inventory_configured = ground_ua is not None
         attic_inventory_configured = attic_ua is not None
-        expected_boundaries = ["outdoor", "ground"]
+        # Boundary expectations follow the actual room position in the house.
+        # Upstairs rooms face outdoors and the attic; downstairs rooms face
+        # outdoors and the ground. Bucătărie is the one downstairs exception:
+        # its configured ceiling also borders the attic.
+        room_name = str(room.get("name") or "").strip().casefold()
+        is_kitchen = room_name in {"bucătărie", "bucatarie", "kitchen"} or room_id.casefold() in {"bucatarie", "bucătărie", "kitchen"}
         if room.get("floor") == "upstairs":
-            expected_boundaries.append("attic")
+            expected_boundaries = ["outdoor", "attic"]
+        elif is_kitchen:
+            expected_boundaries = ["outdoor", "ground", "attic"]
+        else:
+            expected_boundaries = ["outdoor", "ground"]
         boundary_complete = (
             outdoor_inventory_complete and ground_inventory_configured
             and (attic_inventory_configured if "attic" in expected_boundaries else True)

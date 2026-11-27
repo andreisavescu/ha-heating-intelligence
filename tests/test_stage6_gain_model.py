@@ -100,3 +100,24 @@ def test_stage6_withholds_when_absolute_room_parameters_are_missing():
     )
     assert result["rooms"]["living"]["status"] == "insufficient_gated_coasting_intervals"
     assert result["rooms"]["living"]["excluded_intervals"]["missing_absolute_parameters"] == 1
+
+
+
+def test_stage6_normalizes_both_solar_endpoints_and_reports_coverage():
+    samples = [
+        _sample("2026-01-01T00:00:00+00:00", 20.0, solar=0.1),
+        _sample("2026-01-01T00:30:00+00:00", 20.2, solar=0.2),
+    ]
+    for sample in samples:
+        sample["channels"]["solar_radiation_unit"] = "kW/m²"
+    result = MODULE.build_stage6_gain_model(
+        samples,
+        [{"id": "living", "window_entity": "binary_sensor.living_window",
+          "envelope_conductance_w_per_k": 10.0}],
+        {"rooms": {"living": {"effective_room_capacity_wh_per_k": 100.0}}},
+        minimum_intervals=1,
+    )
+    room = result["rooms"]["living"]
+    assert room["solar_irradiance_coverage_intervals"] == 1
+    assert room["median_solar_irradiance_w_m2"] == 150.0
+    assert room["solar_irradiance_coverage_percent"] == 100.0

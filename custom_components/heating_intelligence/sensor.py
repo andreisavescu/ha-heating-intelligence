@@ -84,7 +84,7 @@ def _calculation_attributes(metric: str) -> dict:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), PhysicalModelExperimentsMultizoneSensor(coordinator), PhysicalModelExperimentsDiagnosticsSensor(coordinator), PhysicalModelExperimentsDatasetSensor(coordinator), PhysicalModelExperimentsExclusionsSensor(coordinator), PhysicalModelSimulationAuditSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
+    entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), PhysicalModelExperimentsMultizoneSensor(coordinator), PhysicalModelExperimentsMultizonePart2Sensor(coordinator), PhysicalModelExperimentsDiagnosticsSensor(coordinator), PhysicalModelExperimentsDatasetSensor(coordinator), PhysicalModelExperimentsExclusionsSensor(coordinator), PhysicalModelSimulationAuditSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -1334,7 +1334,7 @@ class PhysicalModelExperimentsSensor(AuditDeviceMixin, CoordinatorEntity, Sensor
 
 
 class PhysicalModelExperimentsMultizoneSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
-    """Detailed multi-zone response identification results, separated for easier copying."""
+    """Copy-friendly Part 1: fit summary and chronological holdout results."""
 
     _attr_should_poll = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -1343,24 +1343,90 @@ class PhysicalModelExperimentsMultizoneSensor(AuditDeviceMixin, CoordinatorEntit
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = "Physical Model Experiments Multizone"
+        self._attr_name = "Physical Model Experiments Multizone Part 1"
         self._attr_unique_id = f"{DOMAIN}_physical_model_experiments_multizone"
 
     @property
     def native_value(self):
         response = self.coordinator.data.get("multizone_response_identification", {})
-        rooms = response.get("rooms") or {}
-        return sum(
-            1 for item in rooms.values()
-            if item.get("eligible_intervals", 0) > 0
-        )
+        return sum(1 for item in (response.get("rooms") or {}).values()
+                   if item.get("eligible_intervals", 0) > 0)
 
     @property
     def extra_state_attributes(self):
+        response = self.coordinator.data.get("multizone_response_identification", {})
+        global_keys = (
+            "status", "method", "interval_minutes", "interval_policy",
+            "sampling_mode", "train_fraction", "configured_rooms",
+            "observed_rooms", "excluded_unobserved_rooms",
+            "house_level_holdout_validation", "input_dataset",
+            "physical_parameter_identification_status",
+            "identifiability_note",
+        )
+        room_keys = (
+            "training_end", "holdout_start", "holdout_end", "status",
+            "candidate_intervals", "eligible_intervals", "training_intervals",
+            "holdout_intervals", "predictors", "normalized_rates_per_hour",
+            "training_r_squared", "holdout_mae_c", "holdout_rmse_c",
+            "persistence_baseline_mae_c", "max_abs_predictor_correlation",
+            "predictor_condition_number", "predictor_matrix_rank",
+            "physical_parameter_identification_status", "intercept_c_per_hour",
+            "nonzero_predictors", "interpretation",
+        )
         return {
-            "multizone_response_identification": self.coordinator.data.get(
-                "multizone_response_identification", {}
-            ),
+            "part": 1,
+            "multizone_response_identification_summary": {
+                key: response[key] for key in global_keys if key in response
+            },
+            "rooms": {
+                room_id: {key: item[key] for key in room_keys if key in item}
+                for room_id, item in (response.get("rooms") or {}).items()
+            },
+        }
+
+
+class PhysicalModelExperimentsMultizonePart2Sensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Copy-friendly Part 2: excitation, stability, uncertainty and exclusions."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "rooms"
+    _attr_icon = "mdi:chart-box-outline"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Physical Model Experiments Multizone Part 2"
+        self._attr_unique_id = f"{DOMAIN}_physical_model_experiments_multizone_part_2"
+
+    @property
+    def native_value(self):
+        response = self.coordinator.data.get("multizone_response_identification", {})
+        return len(response.get("rooms") or {})
+
+    @property
+    def extra_state_attributes(self):
+        response = self.coordinator.data.get("multizone_response_identification", {})
+        room_keys = (
+            "excluded_intervals", "interval_audit", "attic_predictor_excitation",
+            "predictor_excitation", "bidirectionally_excited_room_links",
+            "weakly_excited_room_links", "room_link_excitation_status",
+            "temporal_coefficient_stability", "temporal_training_windows",
+            "coefficient_uncertainty", "bootstrap_rejected_non_identifiable_replicates",
+            "holdout_residual_diagnostics",
+        )
+        return {
+            "part": 2,
+            "global_diagnostics": {
+                key: response[key] for key in (
+                    "max_predictor_correlation_threshold",
+                    "identifiability_method",
+                    "coefficient_uncertainty_method",
+                ) if key in response
+            },
+            "rooms": {
+                room_id: {key: item[key] for key in room_keys if key in item}
+                for room_id, item in (response.get("rooms") or {}).items()
+            },
         }
 
 

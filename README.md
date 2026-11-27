@@ -1,3 +1,13 @@
+## Unreleased — Room-Level UFH Model and Copyable Diagnostics
+
+- Migrate existing installations that have no saved floor-finish configuration to editable full-room material priors: wood/parquet upstairs and ceramic tile downstairs. Explicitly empty or user-configured finish-zone lists are preserved.
+- Represent UFH slab storage with one latent node per room. Floor-level capacity and hydraulic values remain aggregate reporting only; no shared floor slab state is implied.
+- Keep screed and finish-layer storage separate, with per-room finish resistance and heat capacity.
+- Split multizone response diagnostics into two smaller, copy-friendly audit entities.
+- Clarify Stage 3 outdoor-anchor eligibility and report the opaque outdoor surface count, outdoor UA and any withholding reason.
+- Preserve pump-off semantics: configured manual flow remains an allocation weight, while active flow and return-temperature estimates remain zero/withheld when the manifold pump is stopped.
+- Identification and promotion thresholds are unchanged; insufficient excitation, bootstrap ranges or chronological validation continue to withhold absolute parameters.
+
 ## v0.24.1 — Provisional Room Capacity and Floor-Finish Thermal Properties
 
 ### Added

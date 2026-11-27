@@ -1286,6 +1286,37 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             self._history.get("boiler_energy_experiment", {}),
             result.get("water_temperature"),
         )
+        # Rebuild the observation network after Stage 5 is available so its
+        # room-level slab nodes and finish priors reach the physical model.
+        live_house_profile = dict(self.entry.options.get("house_assessment", {}))
+        live_house_profile["house_effective_rc_calibration"] = (
+            result["thermal_model"]["historical_validation"].get("house_effective_rc_calibration", {})
+        )
+        live_heat_loss_u = _as_float(result["efficiency"].get("heat_loss_u_value_7d"))
+        live_envelope_area = _as_float(result["efficiency"].get("thermal_model_envelope_area_m2"))
+        result["thermal_model"]["multi_zone"] = build_multizone_observation_model(
+            result["rooms"],
+            result["weather"],
+            result["attic_thermal"],
+            live_house_profile,
+            {
+                "water_temperature": result.get("water_temperature"),
+                "water_return_temperature": result.get("water_return_temperature"),
+                "boiler_context": result.get("boiler_context", {}),
+                "pumps": result.get("pumps", {}),
+                "ufh_slab_observability": (
+                    result["thermal_model"]["historical_validation"].get("ufh_slab_observability", {})
+                ),
+                "stage5_ufh_slab_model": result["stage5_ufh_slab_model"],
+                "house_heat_loss_coefficient_w_k": (
+                    live_heat_loss_u * live_envelope_area
+                    if live_heat_loss_u is not None and live_envelope_area is not None
+                    else None
+                ),
+            },
+            self.entry.options.get("ufh_circuits", []),
+            build_envelope_conductance(self.entry.options),
+        )
         result["ufh_topology_audit"] = build_ufh_topology_audit(
             self.entry.options.get("ufh_circuits", []),
             result.get("rooms", {}),

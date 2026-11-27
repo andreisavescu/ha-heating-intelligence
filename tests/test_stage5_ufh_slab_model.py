@@ -102,3 +102,35 @@ def test_stage5_preserves_manual_configured_flow_when_pump_is_stopped():
     assert circuit["active_flow_l_min"] == 0.0
     assert circuit["flow_is_manual_input"] is True
     assert floor["estimated_return_temperature_c"] is None
+
+
+
+def test_stage5_creates_independent_room_level_slab_nodes_and_keeps_finish_storage_separate():
+    result = MODULE.build_stage5_ufh_slab_model(
+        [
+            {"id": "bedroom", "name": "Bedroom", "floor": "upstairs", "area_m2": 12.0,
+             "floor_finish_zones": [{
+                 "id": "parquet", "material": "wood_parquet", "area_m2": 12.0,
+                 "thickness_mm": 10, "conductivity_w_mk": 0.15,
+                 "density_kg_m3": 700, "specific_heat_j_kgk": 1600,
+             }]},
+            {"id": "bathroom", "name": "Bathroom", "floor": "upstairs", "area_m2": 5.0,
+             "floor_finish_zones": [{
+                 "id": "tiles", "material": "ceramic_tile", "area_m2": 5.0,
+                 "thickness_mm": 10, "conductivity_w_mk": 1.3,
+                 "density_kg_m3": 2300, "specific_heat_j_kgk": 840,
+             }]},
+        ],
+        [],
+        {},
+        {},
+        None,
+    )
+    assert result["slab_representation"] == "one_latent_ufh_slab_node_per_room"
+    assert set(result["rooms"]) == {"bedroom", "bathroom"}
+    assert result["rooms"]["bedroom"]["slab_node"] == "one_latent_ufh_slab_node_per_room"
+    assert result["rooms"]["bedroom"]["floor_finish"]["capacity_wh_per_k"] > 0
+    assert result["rooms"]["bathroom"]["floor_finish"]["capacity_wh_per_k"] > 0
+    assert result["floors"]["upstairs"]["slab_node"] == "room_level_nodes_aggregated_for_floor_reporting"
+    assert result["floors"]["upstairs"]["finish_capacity_wh_per_k"] > 0
+    assert result["rooms"]["bedroom"]["slab_temperature_c"] is None

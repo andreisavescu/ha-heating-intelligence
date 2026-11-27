@@ -393,3 +393,56 @@ def test_per_room_ground_surface_creates_separate_ground_boundary_path():
     )
     assert result["ground_paths"][0]["conductance_w_per_k"] == 10.0
     assert result["ground_paths"][0]["to"] == "boundary:ground"
+
+
+
+def test_observation_model_uses_one_ufh_slab_node_per_room_not_one_per_floor():
+    result = MODEL.build_multizone_observation_model(
+        {
+            "bedroom": {"name": "Bedroom", "floor": "upstairs", "temperature": 20.5},
+            "bathroom": {"name": "Bathroom", "floor": "upstairs", "temperature": 21.0},
+            "living": {"name": "Living", "floor": "ground_floor", "temperature": 21.5},
+        },
+        plant={
+            "stage5_ufh_slab_model": {
+                "rooms": {
+                    "bedroom": {
+                        "screed": {"capacity_wh_per_k": 318.0},
+                        "floor_finish": {"capacity_wh_per_k": 22.4,
+                                         "equivalent_parallel_resistance_m2k_w": 0.06667},
+                        "combined_screed_and_finish_capacity_wh_per_k": 340.4,
+                        "circuits": ["circuit_09", "circuit_10"],
+                        "active_flow_l_min": 0.0,
+                        "allocated_useful_heat_power_w": None,
+                    },
+                    "bathroom": {
+                        "screed": {"capacity_wh_per_k": 222.0},
+                        "floor_finish": {"capacity_wh_per_k": 9.0},
+                        "combined_screed_and_finish_capacity_wh_per_k": 231.0,
+                        "circuits": ["circuit_14"],
+                    },
+                    "living": {
+                        "screed": {"capacity_wh_per_k": 882.6},
+                        "floor_finish": {"capacity_wh_per_k": 72.0},
+                        "combined_screed_and_finish_capacity_wh_per_k": 954.6,
+                        "circuits": ["circuit_03"],
+                    },
+                }
+            }
+        },
+        circuits=[
+            {"id": "circuit_09", "floor": "upstairs", "served_rooms": ["bedroom"]},
+            {"id": "circuit_10", "floor": "upstairs", "served_rooms": ["bedroom"]},
+            {"id": "circuit_14", "floor": "upstairs", "served_rooms": ["bathroom"]},
+            {"id": "circuit_03", "floor": "ground_floor", "served_rooms": ["living"]},
+        ],
+    )
+    assert "slab:bedroom" in result["nodes"]
+    assert "slab:bathroom" in result["nodes"]
+    assert "slab:living" in result["nodes"]
+    assert "floor:upstairs" not in result["nodes"]
+    assert result["nodes"]["slab:bedroom"]["screed_capacity_prior_wh_per_k"] == 318.0
+    assert result["nodes"]["slab:bedroom"]["finish_capacity_prior_wh_per_k"] == 22.4
+    assert result["nodes"]["slab:bedroom"]["thermal_capacity_wh_per_k"] is None
+    assert result["floor_nodes"]["upstairs"] == ["slab:bedroom", "slab:bathroom"]
+    assert result["coverage"]["ufh_room_slab_nodes"] == 3

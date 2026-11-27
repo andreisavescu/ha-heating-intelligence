@@ -90,13 +90,18 @@ def test_maps_ufh_floor_and_heating_plant_without_inventing_slab_output():
         },
     )
     assert result["floor_nodes"] == {
-        "ground_floor": "floor:ground_floor",
-        "upstairs": "floor:upstairs",
+        "ground_floor": ["slab:living"],
+        "upstairs": ["slab:bedroom"],
     }
-    slab = result["nodes"]["floor:ground_floor"]
-    assert slab["adjacent_room_average_temperature_c"] == 21.0
+    assert result["room_ufh_topology"]["room_slab_nodes"]["slab:living"]["kind"] == "room_ufh_slab"
+    assert result["room_ufh_topology"]["room_slab_nodes"]["slab:bedroom"]["kind"] == "room_ufh_slab"
+    assert "floor:ground_floor" not in result["nodes"]
+    assert "floor:upstairs" not in result["nodes"]
+    slab = result["nodes"]["slab:living"]
+    assert slab["room_id"] == "living"
     assert slab["slab_temperature_c"] is None
-    assert slab["status"] == "awaiting_slab_sensor_or_identifiable_capacity"
+    assert slab["thermal_capacity_wh_per_k"] is None
+    assert slab["status"] == "room_level_topology_only"
     plant = result["plant"]
     assert plant["supply_water_temperature_c"] == 32.0
     assert plant["return_water_temperature_c"] == 27.0

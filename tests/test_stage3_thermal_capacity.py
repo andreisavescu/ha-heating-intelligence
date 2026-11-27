@@ -167,3 +167,21 @@ def test_stage3_reports_floor_finish_unconfigured_without_inventing_values():
     assert finish["status"] == "not_configured"
     assert finish["equivalent_parallel_resistance_m2k_w"] is None
     assert finish["total_finish_capacity_wh_per_k"] is None
+
+
+
+def test_stage3_anchor_audit_reports_complete_outdoor_boundary_independently():
+    result = MODULE.build_stage3_thermal_capacity(
+        {},
+        [{"id": "bedroom", "area_m2": 12.0}],
+        {"rooms": {"bedroom": {
+            "conductance_by_boundary_w_per_k": {"outdoor": 5.2, "attic": 1.4},
+            "opaque_surface_counts": {"outdoor": 1},
+            "window_record_count": 1,
+        }}},
+    )
+    room = result["rooms"]["bedroom"]
+    assert room["envelope_anchor_status"] == "available"
+    assert room["envelope_anchor_audit"]["outdoor_opaque_surface_count"] == 1
+    assert room["envelope_anchor_audit"]["outdoor_surface_ua_w_per_k"] == 5.2
+    assert room["envelope_anchor_audit"]["withheld_reason"] is None

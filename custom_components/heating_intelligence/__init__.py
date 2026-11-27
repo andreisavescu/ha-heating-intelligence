@@ -25,6 +25,7 @@ async def async_setup_entry(hass, entry) -> bool:
     from homeassistant.loader import async_get_loaded_integration
 
     from .const import CARD_FILENAME, CARD_URL, DOMAIN, PLATFORMS
+    from .floor_finish_defaults import default_floor_finish_zones
     from .coordinator import HeatingIntelligenceCoordinator
     from .devices import async_repair_entity_device_associations
     from homeassistant.helpers import entity_registry as er
@@ -43,6 +44,16 @@ async def async_setup_entry(hass, entry) -> bool:
         hass, lovelace_data_key=LOVELACE_DATA, storage_mode=MODE_STORAGE,
         get_loaded_integration=async_get_loaded_integration,
     )
+
+    # Existing v0.24.1 entries predate persisted finish zones. Seed one
+    # editable full-room material prior per room exactly once. An explicitly
+    # present empty list is respected as a user opt-out.
+    if "floor_finish_zones" not in entry.options:
+        migrated_options = dict(entry.options)
+        migrated_options["floor_finish_zones"] = default_floor_finish_zones(
+            migrated_options.get("rooms", [])
+        )
+        hass.config_entries.async_update_entry(entry, options=migrated_options)
 
     coordinator = HeatingIntelligenceCoordinator(hass, entry)
     await coordinator.async_load_history()

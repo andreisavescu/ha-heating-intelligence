@@ -82,5 +82,5 @@ def test_ground_heat_flow_waits_until_lagged_temperature_proxy_has_warmed_up():
     )
     assert result["rooms"]["living"]["ground"]["heat_flow_w"] is None
     assert result["rooms"]["living"]["ground"]["status"] == (
-        "unavailable_missing_explicit_ground_ua_or_ground_temperature"
+        "unavailable_ground_temperature_model_warming_up"
     )

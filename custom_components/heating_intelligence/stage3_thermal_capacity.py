@@ -156,12 +156,25 @@ def build_stage3_thermal_capacity(
             },
             "envelope_anchor_source": room["envelope_anchor_source"],
             "envelope_anchor_status": (
-                "withheld_incomplete_surface_inventory"
+                "available"
+                if _positive(anchored.get("envelope_anchor_w_per_k")) is not None
+                else "withheld_incomplete_surface_inventory"
                 if anchor_incomplete
-                else "available"
-                if _positive(room.get("envelope_conductance_w_per_k")) is not None
                 else "missing"
             ),
+            "envelope_anchor_audit": {
+                "outdoor_opaque_surface_count": opaque_outdoor_count,
+                "outdoor_window_record_count": int(surface_room.get("window_record_count") or 0),
+                "surface_inventory_present": has_surface_inventory,
+                "outdoor_surface_ua_w_per_k": outdoor_ua,
+                "anchor_used_w_per_k": _positive(anchored.get("envelope_anchor_w_per_k")),
+                "withheld_reason": (
+                    "no_opaque_outdoor_surface_record"
+                    if anchor_incomplete else
+                    "missing_or_invalid_outdoor_surface_ua"
+                    if _positive(anchored.get("envelope_anchor_w_per_k")) is None else None
+                ),
+            },
         }
 
     return {

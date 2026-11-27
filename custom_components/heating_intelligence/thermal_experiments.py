@@ -419,9 +419,13 @@ def build_coupled_network_validation(samples, rooms, absolute_parameters, multiz
     connections = model.get("configured_connections") or []
     results = {}
     errors = {str(room.get("id")): [] for room in rooms}
+    persistence_errors = {str(room.get("id")): [] for room in rooms}
     eligible = {str(room.get("id")): 0 for room in rooms}
     rejection = {str(room.get("id")): {} for room in rooms}
-    for previous, current in zip(samples or [], (samples or [])[1:]):
+    ordered_samples = list(samples or [])
+    holdout_start = max(1, int(len(ordered_samples) * 0.7))
+    holdout_samples = ordered_samples[holdout_start - 1:]
+    for previous, current in zip(holdout_samples, holdout_samples[1:]):
         try:
             t0 = datetime.fromisoformat(previous.get("timestamp"))
             t1 = datetime.fromisoformat(current.get("timestamp"))
@@ -477,18 +481,24 @@ def build_coupled_network_validation(samples, rooms, absolute_parameters, multiz
             continue
         for rid, actual in target_values.items():
             errors[rid].append(predicted["room:" + rid] - actual)
+            persistence_errors[rid].append(dynamic["room:" + rid]["temperature_c"] - actual)
             eligible[rid] += 1
 
     for room in rooms:
         rid = str(room.get("id"))
         values = errors[rid]
         if values:
+            mae = sum(abs(x) for x in values) / len(values)
+            persistence_mae = sum(abs(x) for x in persistence_errors[rid]) / len(persistence_errors[rid])
             results[rid] = {
-                "status": "scored_coupled_multizone_one_step",
+                "status": "chronological_holdout_one_step_evaluated",
+                "validation_scope": "final_30_percent_chronological_holdout",
                 "valid_intervals": len(values),
-                "mae_c": round(sum(abs(x) for x in values) / len(values), 4),
+                "mae_c": round(mae, 4),
                 "rmse_c": round(math.sqrt(sum(x*x for x in values) / len(values)), 4),
                 "mean_bias_c": round(sum(values) / len(values), 4),
+                "persistence_mae_c": round(persistence_mae, 4),
+                "beats_persistence": mae < persistence_mae,
                 "rejected_intervals": rejection[rid],
             }
         else:
@@ -500,7 +510,9 @@ def build_coupled_network_validation(samples, rooms, absolute_parameters, multiz
     scored = sum(bool(item["valid_intervals"]) for item in results.values())
     return {
         "status": "coupled_validation_scores_available" if scored else "awaiting_coupled_history_or_parameters",
-        "method": "chronological_coupled_multizone_rc_one_step_measured_room_targets",
+        "method": "chronological_holdout_coupled_multizone_rc_one_step_measured_room_targets",
+        "validation_scope": "final_30_percent_chronological_holdout",
+        "persistence_baseline": "previous_measured_room_temperature_held_constant",
         "rooms_scored": scored, "rooms_configured": len(rooms), "rooms": results,
         "limitations": [
             "Measured starting and target room temperatures only; uninstrumented bathrooms are not imputed.",

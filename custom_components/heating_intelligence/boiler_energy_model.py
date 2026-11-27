@@ -326,7 +326,7 @@ def update_boiler_energy_model(
         state["calibration_last_daily_modulation_kwh"] = modulation_yesterday
         state["calibration_last_daily_status"] = "withheld"
         state["calibration_last_daily_reason"] = "insufficient_complete_day_energy"
-        if gas_yesterday >= 1.0 and modulation_yesterday >= 1.0:
+        if gas_yesterday >= 0.5 and modulation_yesterday >= 0.5:
             observed = gas_yesterday / modulation_yesterday
             state["calibration_factor_observed_daily"] = observed
             if 0.25 <= observed <= 2.5:
@@ -341,10 +341,10 @@ def update_boiler_energy_model(
                 state["calibration_last_daily_reason"] = "complete_day_within_energy_and_ratio_limits"
             else:
                 state["calibration_last_daily_reason"] = "daily_ratio_outside_0_25_to_2_5"
-        elif gas_yesterday < 1.0:
-            state["calibration_last_daily_reason"] = "gas_reconciled_energy_below_1_kwh"
+        elif gas_yesterday < 0.5:
+            state["calibration_last_daily_reason"] = "gas_reconciled_energy_below_0_5_kwh"
         else:
-            state["calibration_last_daily_reason"] = "modulation_energy_below_1_kwh"
+            state["calibration_last_daily_reason"] = "modulation_energy_below_0_5_kwh"
 
     for key in ("daily_room_energy_kwh", "daily_generated_heat_kwh", "daily_allocated_heat_kwh", "daily_unallocated_heat_kwh", "daily_modulation_room_energy_kwh", "daily_modulation_generated_heat_kwh"):
         mapping = state.setdefault(key, {})

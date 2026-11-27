@@ -117,6 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(AtticHumiditySensor(coordinator))
     if entry.options.get("water_temperature_entity"):
         entities.append(WaterTemperatureSensor(coordinator))
+        entities.append(EstimatedWaterReturnTemperatureSensor(coordinator))
     for room in entry.options.get(CONF_ROOMS, []):
         if room.get("temperature_entity"):
             entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
@@ -619,6 +620,34 @@ class AtticThermalMetricSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity
     def extra_state_attributes(self):
         return {**self.coordinator.data.get("attic_thermal", {}), **_calculation_attributes(self.metric)}
 
+
+class EstimatedWaterReturnTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Flow-weighted estimated UFH return temperature; never a measured input."""
+
+    _attr_native_unit_of_measurement = "°C"
+    _attr_should_poll = False
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:thermometer-chevron-down"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Estimated Water Return Temperature"
+        self._attr_unique_id = f"{DOMAIN}_estimated_water_return_temperature"
+
+    @property
+    def native_value(self):
+        estimate = self.coordinator.data.get("estimated_water_return_temperature", {})
+        value = estimate.get("value_c")
+        return round(value, 2) if value is not None else None
+
+    @property
+    def available(self):
+        return super().available and self.native_value is not None
+
+    @property
+    def extra_state_attributes(self):
+        estimate = self.coordinator.data.get("estimated_water_return_temperature", {})
+        return {"status": estimate.get("status"), "active_flow_l_min": estimate.get("active_flow_l_min"), "method": estimate.get("method"), "floor_estimates": estimate.get("floor_estimates", {}), "limitations": estimate.get("limitations", [])}
 
 class WaterTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "°C"
@@ -1391,7 +1420,7 @@ class PhysicalModelExperimentsMultizonePart2Sensor(AuditDeviceMixin, Coordinator
     """Copy-friendly Part 2: excitation, stability, uncertainty and exclusions."""
 
     _attr_should_poll = False
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_category = None
     _attr_native_unit_of_measurement = "rooms"
     _attr_icon = "mdi:chart-box-outline"
 
@@ -1408,8 +1437,9 @@ class PhysicalModelExperimentsMultizonePart2Sensor(AuditDeviceMixin, Coordinator
     @property
     def extra_state_attributes(self):
         response = self.coordinator.data.get("multizone_response_identification", {})
+        # Exclusions and interval audits are owned by the dedicated Exclusions entity.
         room_keys = (
-            "excluded_intervals", "interval_audit", "attic_predictor_excitation",
+            "attic_predictor_excitation",
             "predictor_excitation", "bidirectionally_excited_room_links",
             "weakly_excited_room_links", "room_link_excitation_status",
             "temporal_coefficient_stability", "temporal_training_windows",

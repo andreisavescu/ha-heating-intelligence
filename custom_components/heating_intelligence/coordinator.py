@@ -366,6 +366,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 require_boiler_modulation_zero=False,
                 max_age_minutes=90,
                 max_interval_minutes=120,
+                room_connections=(self.entry.options.get("house_assessment", {}) or {}).get("room_connections", []),
             )
             # Make the actual input path auditable. This is deliberately
             # distinct from the legacy fixed-cadence calibration dataset used

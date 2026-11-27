@@ -6,7 +6,7 @@ from typing import Any
 _SECTIONS = {
     "envelope": (
         "wall_construction", "roof_type", "floor_construction", "construction_year",
-        "wall_insulation_cm", "wall_insulation_material", "roof_insulation_cm", "roof_insulation_material", "floor_insulation_cm", "floor_insulation_material",
+        "wall_insulation_cm", "wall_insulation_material", "roof_insulation_cm", "roof_insulation_material", "roof_construction", "attic_floor_insulation_cm", "attic_floor_insulation_material", "floor_insulation_cm", "floor_insulation_material",
         "roof_area_m2", "roof_u_value", "attic_floor_area_m2", "attic_floor_u_value",
         "window_glazing", "window_frame", "main_orientation", "shading",
         "window_area_north_m2", "window_area_south_m2",
@@ -79,11 +79,20 @@ def build_house_assessment(
     floor = _number(profile.get("floor_insulation_cm"))
     wall_material = profile.get("wall_insulation_material")
     roof_material = profile.get("roof_insulation_material")
+    attic_floor_insulation = _number(profile.get("attic_floor_insulation_cm"))
+    attic_floor_material = profile.get("attic_floor_insulation_material")
     floor_material = profile.get("floor_insulation_material")
     if _known(wall_material):
         observations.append(f"Wall insulation material recorded as {wall_material}.")
     if _known(roof_material):
         observations.append(f"Roof insulation material recorded as {roof_material}.")
+    roof_construction = profile.get("roof_construction")
+    if _known(roof_construction):
+        observations.append(f"Roof construction recorded as {roof_construction}.")
+    if _known(attic_floor_material):
+        observations.append(f"Attic-floor insulation material recorded as {attic_floor_material}.")
+    if attic_floor_insulation is not None:
+        observations.append(f"Attic-floor insulation thickness recorded as {attic_floor_insulation:g} cm.")
     if _known(floor_material):
         observations.append(f"Floor insulation material recorded as {floor_material}.")
     if wall is not None:
@@ -97,7 +106,7 @@ def build_house_assessment(
     if _number(profile.get("attic_floor_u_value")) is not None and _number(profile.get("attic_floor_area_m2")) is not None:
         observations.append("Upstairs-to-attic heat-flow estimate uses the explicitly configured ceiling U-value and area.")
     else:
-        observations.append("Roof insulation thickness is not recorded; the envelope profile is incomplete.")
+        observations.append("Attic-floor U-value is not recorded; the upstairs-to-attic boundary remains incomplete.")
     if floor is not None:
         observations.append(f"Recorded floor insulation thickness: {floor:g} cm.")
     else:
@@ -179,6 +188,9 @@ def build_house_assessment(
             "wall_insulation_cm": wall,
             "wall_insulation_material": profile.get("wall_insulation_material"),
             "roof_insulation_material": profile.get("roof_insulation_material"),
+            "roof_construction": roof_construction,
+            "attic_floor_insulation_cm": attic_floor_insulation,
+            "attic_floor_insulation_material": attic_floor_material,
             "floor_insulation_material": profile.get("floor_insulation_material"),
             "roof_insulation_cm": roof,
             "roof_area_m2": _number(profile.get("roof_area_m2")),

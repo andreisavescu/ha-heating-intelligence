@@ -51,7 +51,8 @@ def build_stage3_thermal_capacity(
         # The incomplete inventory is reported separately; it must not erase
         # an explicitly configured conductance or deadlock capacity fitting.
         anchor = (
-            outdoor_ua if has_surface_inventory and outdoor_ua is not None
+            legacy_anchor if anchor_incomplete and legacy_anchor is not None
+            else outdoor_ua if has_surface_inventory and outdoor_ua is not None
             else legacy_anchor
         )
         anchor_source = (

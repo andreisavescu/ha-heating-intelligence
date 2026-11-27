@@ -129,22 +129,40 @@ def build_stage6_gain_model(
                 mean_outside = (outside0 + outside1) / 2
                 slope_k_per_hour = (temp1 - temp0) / (minutes / 60)
                 residual_w = capacity * slope_k_per_hour + envelope * (mean_temp - mean_outside)
-                solar = _number(channels0.get("solar_radiation"))
-                solar_unit = str(channels0.get("solar_radiation_unit") or "").strip().lower().replace(" ", "")
-                if solar is not None and solar_unit in ("w/m2", "w/m²"):
-                    solar = max(0.0, solar)
-                else:
-                    solar = None
+                channels1 = second.get("channels") or {}
+                solar_values = []
+                solar_diagnostics = {"valid_endpoint_count": 0, "missing_or_stale_endpoint_count": 0, "unsupported_unit_endpoint_count": 0}
+                solar_scales = {"w/m2": 1.0, "w/m²": 1.0, "kw/m2": 1000.0, "kw/m²": 1000.0}
+                for solar_channels in (channels0, channels1):
+                    raw_solar = _number(solar_channels.get("solar_radiation"))
+                    solar_age = _number(solar_channels.get("solar_radiation_age_minutes"))
+                    solar_unit = str(solar_channels.get("solar_radiation_unit") or "").strip().lower().replace(" ", "")
+                    if raw_solar is None or raw_solar < 0 or (solar_age is not None and solar_age > maximum_interval_minutes):
+                        solar_diagnostics["missing_or_stale_endpoint_count"] += 1
+                        continue
+                    if solar_unit not in solar_scales:
+                        solar_diagnostics["unsupported_unit_endpoint_count"] += 1
+                        continue
+                    solar_values.append(raw_solar * solar_scales[solar_unit])
+                    solar_diagnostics["valid_endpoint_count"] += 1
+                solar = sum(solar_values) / len(solar_values) if solar_values else None
                 eligible.append({
                     "timestamp": t0.isoformat(),
                     "net_unattributed_gain_w": round(residual_w, 2),
                     "solar_irradiance_w_m2": solar,
+                    "solar_valid_endpoint_count": solar_diagnostics["valid_endpoint_count"],
+                    "solar_missing_or_stale_endpoint_count": solar_diagnostics["missing_or_stale_endpoint_count"],
+                    "solar_unsupported_unit_endpoint_count": solar_diagnostics["unsupported_unit_endpoint_count"],
                     "room_temperature_c": round(mean_temp, 3),
                     "outdoor_temperature_c": round(mean_outside, 3),
                     "interval_minutes": round(minutes, 2),
                 })
         values = [item["net_unattributed_gain_w"] for item in eligible]
         solar_pairs = [item for item in eligible if item["solar_irradiance_w_m2"] is not None]
+        solar_missing_endpoints = sum(item["solar_missing_or_stale_endpoint_count"] for item in eligible)
+        solar_unsupported_endpoints = sum(item["solar_unsupported_unit_endpoint_count"] for item in eligible)
+        solar_zero_intervals = sum(item["solar_irradiance_w_m2"] == 0 for item in solar_pairs)
+        median_solar = median(item["solar_irradiance_w_m2"] for item in solar_pairs) if solar_pairs else None
         median_gain = median(values) if values else None
         results[room_id] = {
             "status": "residual_gain_evidence_available" if len(values) >= minimum_intervals else "insufficient_gated_coasting_intervals",
@@ -154,6 +172,11 @@ def build_stage6_gain_model(
             "p10_net_unattributed_gain_w": round(sorted(values)[max(0, int((len(values)-1)*0.1))], 2) if values else None,
             "p90_net_unattributed_gain_w": round(sorted(values)[min(len(values)-1, int((len(values)-1)*0.9))], 2) if values else None,
             "solar_irradiance_coverage_intervals": len(solar_pairs),
+            "solar_irradiance_coverage_percent": round(100 * len(solar_pairs) / len(eligible), 1) if eligible else 0.0,
+            "solar_missing_or_stale_endpoint_count": solar_missing_endpoints,
+            "solar_unsupported_unit_endpoint_count": solar_unsupported_endpoints,
+            "solar_zero_irradiance_intervals": solar_zero_intervals,
+            "median_solar_irradiance_w_m2": round(median_solar, 2) if median_solar is not None else None,
             "coasting_residual_samples": eligible[-96:],
             "excluded_intervals": excluded,
             "solar_gain_w": None,

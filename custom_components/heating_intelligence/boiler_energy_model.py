@@ -321,7 +321,8 @@ def update_boiler_energy_model(
     if previous_day != state.get("last_daily_calibration_day"):
         gas_yesterday = max(0.0, float(daily_gas.get(previous_day, 0.0) or 0.0))
         modulation_yesterday = max(0.0, float(daily_modulation.get(previous_day, 0.0) or 0.0))
-        state["last_daily_calibration_day"] = previous_day
+        if gas_yesterday > 0 or modulation_yesterday > 0:
+            state["last_daily_calibration_day"] = previous_day
         state["calibration_last_daily_gas_kwh"] = gas_yesterday
         state["calibration_last_daily_modulation_kwh"] = modulation_yesterday
         state["calibration_last_daily_status"] = "withheld"

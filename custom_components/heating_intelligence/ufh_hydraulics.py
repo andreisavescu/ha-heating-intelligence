@@ -29,7 +29,7 @@ def build_ufh_hydraulic_snapshot(
     circuit_state: dict[str, dict[str, Any]],
     now: datetime,
 ) -> dict[str, Any]:
-    """Apply the 7 W + 3 minute start rule without estimating thermal power."""
+    """Apply timed circuit activation and expose manual flow as a calculation input."""
     circuit_results: dict[str, dict[str, Any]] = {}
     pump_totals: dict[str, float] = {}
     now_ts = now.timestamp()

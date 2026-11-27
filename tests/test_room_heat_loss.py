@@ -66,3 +66,21 @@ def test_ground_temperature_model_is_lagged_and_explicitly_provisional():
     state, model = MODULE.update_ground_temperature_model(15.0, state, 3600.0)
     assert 5.0 < model["estimated_ground_boundary_temperature_c"] < 15.0
     assert model["method"].startswith("30-day first-order low-pass")
+
+
+def test_ground_heat_flow_waits_until_lagged_temperature_proxy_has_warmed_up():
+    result = MODULE.build_room_boundary_heat_loss(
+        {"living": {"name": "Living", "floor": "ground_floor", "temperature": 22.0}},
+        {"rooms": {"living": {
+            "conductance_by_boundary_w_per_k": {"outdoor": 4.0, "ground": 3.0},
+            "opaque_surface_counts": {"outdoor": 1},
+            "window_record_count": 1,
+        }}},
+        2.0, None,
+        {"estimated_ground_boundary_temperature_c": 8.0,
+         "status": "warming_up_lagged_outdoor_proxy"},
+    )
+    assert result["rooms"]["living"]["ground"]["heat_flow_w"] is None
+    assert result["rooms"]["living"]["ground"]["status"] == (
+        "unavailable_missing_explicit_ground_ua_or_ground_temperature"
+    )

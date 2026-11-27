@@ -89,11 +89,11 @@ def test_stage3_withholds_absolute_anchor_for_window_only_surface_inventory():
     assert room["envelope_anchor_source"] == (
         "withheld_incomplete_surface_inventory_missing_opaque_outdoor_surface"
     )
-    assert room["effective_room_capacity"]["envelope_anchor_w_per_k"] == 8.0
+    assert room["effective_room_capacity"]["envelope_anchor_w_per_k"] is None
 
 
 
-def test_stage3_keeps_configured_outdoor_anchor_when_surface_inventory_is_incomplete():
+def test_stage3_keeps_downstairs_incomplete_surface_inventory_withheld():
     result = MODULE.build_stage3_thermal_capacity(
         {},
         [{"id": "living", "area_m2": 35.66,
@@ -105,11 +105,11 @@ def test_stage3_keeps_configured_outdoor_anchor_when_surface_inventory_is_incomp
         }}},
     )
     room = result["rooms"]["living"]
-    assert room["effective_room_capacity"]["envelope_anchor_w_per_k"] == 7.42
+    assert room["effective_room_capacity"]["envelope_anchor_w_per_k"] is None
     assert room["envelope_anchor_source"] == (
-        "configured_room_outdoor_conductance_with_incomplete_surface_inventory"
+        "withheld_incomplete_surface_inventory_missing_opaque_outdoor_surface"
     )
-    assert room["envelope_anchor_status"] == "configured_anchor_inventory_incomplete"
+    assert room["envelope_anchor_status"] == "withheld_incomplete_surface_inventory"
 
 
 def test_stage3_does_not_require_persistence_win_to_estimate_provisional_capacity():

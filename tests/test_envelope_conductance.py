@@ -61,3 +61,19 @@ def test_building_scale_surface_assigned_to_small_room_is_flagged_and_excluded()
     assert result["status"] == "review_required"
     assert result["rooms"]["bedroom"]["conductance_by_boundary_w_per_k"]["outdoor"] is None
     assert result["suspect_records"][0]["status"] == "likely_building_level_surface_assigned_to_room"
+
+
+
+def test_building_level_attic_surface_can_be_intentionally_allocated_to_room():
+    result = build_envelope_conductance({
+        "rooms": [{"id": "baie_cada", "area_m2": 8.97}],
+        "envelope_surfaces": [{
+            "id": "attic_hall_stairs", "name": "Hallway and staircase attic ceiling",
+            "room_id": "baie_cada", "boundary": "attic", "area_m2": 15.1,
+            "u_value_w_m2k": 0.183, "allocation_scope": "building_level",
+        }],
+    })
+    room = result["rooms"]["baie_cada"]
+    assert room["conductance_by_boundary_w_per_k"]["attic"] == 2.7633
+    assert result["suspect_records"] == []
+    assert result["surfaces"][0]["allocation_scope"] == "building_level"

@@ -1,30 +1,24 @@
-## v0.25.0 — Room-Level UFH Slab Model and Copyable Diagnostics
+## v0.25.1 — Stage 3 Anchor Isolation and Building Profile Corrections
 
-- Migrate existing installations that have no saved floor-finish configuration to editable full-room material priors: wood/parquet upstairs and ceramic tile downstairs. Explicitly empty or user-configured finish-zone lists are preserved.
-- Represent UFH slab storage with one latent node per room. Floor-level capacity and hydraulic values remain aggregate reporting only; no shared floor slab state is implied.
-- Keep screed and finish-layer storage separate, with per-room finish resistance and heat capacity.
-- Split multizone response diagnostics into two smaller, copy-friendly audit entities.
-- Clarify Stage 3 outdoor-anchor eligibility and report the opaque outdoor surface count, outdoor UA and any withholding reason.
-- Preserve pump-off semantics: configured manual flow remains an allocation weight, while active flow and return-temperature estimates remain zero/withheld when the manifold pump is stopped.
-- Identification and promotion thresholds are unchanged; insufficient excitation, bootstrap ranges or chronological validation continue to withhold absolute parameters.
+- Fix Stage 3 outdoor-anchor diagnostics so every room reports its own surface-derived outdoor UA, opaque-surface count, window count, selected anchor and withholding reason. Metadata from one room can no longer leak into another room's audit.
+- Determine surface-inventory presence per room rather than from the global inventory. Rooms with no records retain the documented legacy fallback; rooms with an explicit but window-only inventory remain withheld from absolute outdoor anchoring.
+- Add separate attic-floor insulation thickness and material fields, plus a roof-construction description, so insulation above the upstairs rooms is not confused with roof insulation.
+- Preserve all existing identification gates, room-level UFH slab nodes, finish priors, pump-off flow semantics and the withholding of incomplete downstairs outdoor anchors.
 
-- Rebuild the live multi-zone RC observation network after Stage 5 so the room-level UFH slab nodes and finish-layer priors are included in the physical-model inventory.
-- Add explicit Stage 3 diagnostics for outdoor-anchor eligibility, including opaque outdoor surface count, surface-derived outdoor UA, selected anchor and withholding reason.
-- Keep floor-level hydraulic and capacity summaries as aggregates; they are not treated as a single shared slab state.
+### HA configuration follow-up
+- Review the new attic-floor insulation fields in House Assessment. Record the 20 cm mineral wool against the attic floor, not the roof. Keep roof insulation fields only for insulation that is actually in the roof assembly.
+- Enter the roof construction as timber, membrane and concrete tiles.
+- Complete the downstairs opaque outdoor-surface inventory when measurements are available. Do not invent missing surface areas or U-values.
+- Confirm each room's finish zones and UFH screed thickness. The 4.5 cm value remains a fallback prior where no per-room thickness is entered.
 
 ### Model scope and limitations
-- Parquet and ceramic-tile defaults are editable material priors, not measured properties. Defaults are seeded only when an installation has no saved finish-zone configuration; existing explicit configurations are preserved.
-- One latent UFH slab node is represented per room. Its temperature, dynamic capacity and slab-to-room/lower-boundary transfer coefficients remain unknown until independently constrained by measurements or sufficiently informative data.
-- Screed and finish-layer capacities are kept separate. Material priors are not silently promoted to identified dynamic capacities.
-- Configured circuit flow remains a manual allocation weight. Active flow and return-temperature estimates remain zero or withheld when the relevant manifold pump is stopped.
-- Multizone response-identification gates are unchanged. Weak excitation, bootstrap uncertainty and chronological holdout performance continue to limit absolute parameter identification.
-- Incomplete downstairs opaque outdoor-surface inventories remain excluded from absolute envelope anchoring.
+- Corrected anchor diagnostics do not make the response coefficients identifiable. Absolute room capacities and conductances remain withheld unless their existing evidence, uncertainty and chronological validation gates pass.
+- Surface-derived UA remains dependent on explicitly configured areas and U-values. Window contributions require whole-window Uw and gross frame-plus-glass area.
+- Screed and floor-finish capacities remain material estimates, not measured dynamic capacities. Return-water temperature and measured water flow remain optional measurement gaps.
 
 ### Upgrade
-- Update to v0.25.0 through HACS and restart Home Assistant or reload the integration.
-- Existing explicit floor-finish configurations are preserved. Installations without a saved finish-zone configuration receive editable parquet zones upstairs and ceramic-tile zones downstairs.
-- The multizone response experiment is now split into two smaller audit entities for easier copy/paste export.
-
+- Update to v0.25.1 through HACS, then restart Home Assistant or reload the integration.
+- Recheck the Stage 3 thermal-capacity audit. Each room's `outdoor_surface_ua_w_per_k`, `anchor_used_w_per_k`, opaque-surface count and withholding reason should now correspond to that same room.
 
 ## v0.24.1 — Provisional Room Capacity and Floor-Finish Thermal Properties
 

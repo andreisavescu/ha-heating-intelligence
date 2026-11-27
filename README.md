@@ -1,3 +1,35 @@
+## v0.26.0 — Physical Model Quality and Audit Usability
+
+### Physical-model lifecycle and validation
+- Report one-step prediction evaluation, experimental forecast availability, provisional parameter identification, validated physical model and live simulation execution as separate states. A one-step score or experimental forecast never promotes parameters or validates the physical model.
+- Count actual forecast points and live-sensor initial states in the simulation audit.
+- Keep parameter promotion conservative: provisional parameters remain provisional until independent validation gates are met.
+- Identify the what-if simulator as single-room envelope-only; its baseline is not directly comparable to the coupled multi-zone forecast.
+- Add chronological holdout scoring against a persistence baseline for coupled one-step prediction.
+
+### Envelope and gain diagnostics
+- Add explicit room-vs-building-level allocation scope for opaque envelope surfaces. Existing records default to room scope; intentionally building-level surfaces must be explicitly marked.
+- Add Stage 6 solar endpoint diagnostics, support W/m² and kW/m², and use both endpoints when estimating interval irradiance coverage.
+- Bump Recorder analysis schema to 6 so cached summaries are rebuilt.
+
+### Return temperature and audit layout
+- Add `sensor.heating_intelligence_estimated_water_return_temperature`, a flow-weighted estimate from active floor-level Stage 5 return estimates. It is not a measured input and is never substituted for a measured return-temperature entity.
+- Move Multizone Part 2 out of the Diagnostic entity category so it appears in the Audit device's normal sensor list.
+- Remove duplicated exclusion/interval details from Multizone Part 2; those remain in the dedicated Exclusions audit.
+- Remove repeated Stage 3, Stage 5 and Stage 6 payloads from Physical Model Experiments Diagnostics; each remains in its own audit entity. Remove duplicated Recorder dataset details from Multizone Part 1.
+
+### Home Assistant follow-up
+- Set the Baie Cada hallway/staircase attic ceiling surface allocation scope to **Building-level surface intentionally allocated to this room**. Keep the entire surface allocated to Baie Cada.
+- Review Birou's floor finish: the prior audit showed a wood/parquet material label but ceramic-tile naming and conductivity of 1.5 W/m·K.
+- Enable AC heating in House Assessment because AC is occasionally used for heating.
+- Recheck Stage 6 solar endpoint diagnostics after Recorder analysis refresh.
+
+### Validation
+- Regression tests cover intentional building-level surfaces, simulation lifecycle status separation, solar endpoint units/coverage, and flow-weighted return temperature.
+- GitHub Actions CI must pass before installation.
+
+## v0.25.6 — Fix Coupled Forecast Recursion and Room Slab Mapping
+
 ## v0.26.0 — Physical Model Quality and Independent Simulation States
 
 ### Fixed

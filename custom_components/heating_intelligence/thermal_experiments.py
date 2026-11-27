@@ -251,3 +251,141 @@ def build_simulation_audit(rooms, current_rooms, absolute_parameters, physical_v
         "rooms": audited,
         "interpretation": "Experimental simulation availability is not calibration or validation; bathroom fixed values are scenario assumptions only.",
     }
+
+
+def build_coupled_network_forecast(current_rooms, rooms, absolute_parameters,
+                                   outdoor_temperature_c, multizone_model,
+                                   room_heat_inputs_w=None,
+                                   horizons_hours=(1, 3, 6, 12, 24)):
+    """Run a coupled room-air RC forecast using configured network paths.
+
+    Only rooms with a live temperature and accepted effective capacity are
+    dynamic states. Conductances come from the house assessment/envelope
+    inventory; room heat inputs are the calibrated modulation allocation
+    supplied by the integration. Missing paths and latent slab parameters are
+    reported rather than silently invented.
+    """
+    from .multizone_thermal_model import simulate_thermal_step
+
+    outside = _number(outdoor_temperature_c)
+    model = multizone_model if isinstance(multizone_model, dict) else {}
+    source_nodes = model.get("nodes") or {}
+    connections = model.get("configured_connections") or []
+    room_heat_inputs_w = room_heat_inputs_w or {}
+    params = _parameters(rooms, absolute_parameters)
+    dynamic = {}
+    room_ids = []
+    excluded = {}
+    for room in rooms:
+        room_id = str(room.get("id", "unknown"))
+        temp = _number((current_rooms.get(room_id) or {}).get("temperature"))
+        parameter = params.get(room_id)
+        if temp is None:
+            excluded[room_id] = "missing_live_room_temperature"
+            continue
+        if parameter is None:
+            excluded[room_id] = "missing_accepted_effective_capacity"
+            continue
+        dynamic["room:" + room_id] = {
+            "temperature_c": temp,
+            "capacity_wh_per_k": parameter["capacity"],
+            "gains_w": max(0.0, _number(room_heat_inputs_w.get(room_id)) or 0.0),
+        }
+        room_ids.append(room_id)
+
+    if outside is None:
+        return {"status": "withheld_missing_outdoor_temperature",
+                "method": "coupled_multi_zone_rc_with_calibrated_room_heat_inputs",
+                "rooms": {}, "rooms_simulated": 0, "excluded_rooms": excluded}
+    if not dynamic:
+        return {"status": "withheld_no_rooms_with_live_temperature_and_accepted_capacity",
+                "method": "coupled_multi_zone_rc_with_calibrated_room_heat_inputs",
+                "rooms": {}, "rooms_simulated": 0, "excluded_rooms": excluded}
+
+    nodes = dict(dynamic)
+    nodes["boundary:outdoors"] = {"fixed_temperature_c": outside}
+    usable_paths = []
+    skipped_paths = []
+    for path in connections:
+        source, target = path.get("from"), path.get("to")
+        conductance = _number(path.get("conductance_w_per_k"))
+        if conductance is None or conductance <= 0:
+            continue
+        # The present live network has outdoor and inter-room air paths.
+        # Attic/ground paths are only used when their boundary temperature is
+        # actually observed; otherwise they are explicitly skipped.
+        if source in dynamic and target in dynamic:
+            usable_paths.append({**path, "from": source, "to": target,
+                                 "conductance_w_per_k": conductance})
+        elif source in dynamic and target == "boundary:outdoors":
+            usable_paths.append({**path, "from": source, "to": target,
+                                 "conductance_w_per_k": conductance})
+        elif target in dynamic and source == "boundary:outdoors":
+            usable_paths.append({**path, "from": source, "to": target,
+                                 "conductance_w_per_k": conductance})
+        else:
+            skipped_paths.append({"path": path.get("path"), "from": source,
+                                  "to": target, "reason": "boundary_or_node_not_observed"})
+
+    # Ventilation is a separate configured heat-loss path and is included
+    # alongside opaque/window envelope conductance.
+    for path in model.get("ventilation_paths") or []:
+        room_node = path.get("from")
+        g = _number(path.get("conductance_w_per_k"))
+        if room_node in dynamic and g is not None and g > 0:
+            usable_paths.append({"from": room_node, "to": "boundary:outdoors",
+                                 "conductance_w_per_k": g, "path": "ventilation"})
+
+    # Avoid duplicate links if a topology producer already included ventilation.
+    unique = {}
+    for link in usable_paths:
+        key = (link["from"], link["to"], round(link["conductance_w_per_k"], 6), link.get("path"))
+        unique[key] = link
+    usable_paths = list(unique.values())
+
+    room_points = {room_id: [] for room_id in room_ids}
+    energy_checks = []
+    for horizon in horizons_hours:
+        trial_nodes = {key: dict(value) for key, value in nodes.items()}
+        result = simulate_thermal_step(trial_nodes, usable_paths,
+                                       float(horizon) * 3600.0)
+        for room_id in room_ids:
+            room_points[room_id].append({
+                "hours": float(horizon),
+                "temperature_c": result["temperatures_c"]["room:" + room_id],
+            })
+        energy_checks.append({"hours": float(horizon),
+                              "status": result["energy_balance"]["status"],
+                              "error_wh": result["energy_balance"]["error_wh"]})
+
+    output = {}
+    for room_id in room_ids:
+        output[room_id] = {
+            "status": "coupled_forecast_available_experimental",
+            "initial_temperature_c": nodes["room:" + room_id]["temperature_c"],
+            "initial_temperature_source": "live_room_sensor",
+            "heat_input_w": nodes["room:" + room_id]["gains_w"],
+            "forecast": room_points[room_id],
+        }
+    for room_id, reason in excluded.items():
+        output[room_id] = {"status": "withheld_" + reason, "forecast": []}
+    return {
+        "status": "coupled_experimental_forecasts_available",
+        "method": "coupled_multi_zone_rc_with_calibrated_room_heat_inputs",
+        "rooms_simulated": len(room_ids),
+        "rooms_configured": len(rooms),
+        "rooms": output,
+        "network_paths_used": len(usable_paths),
+        "network_paths_skipped": skipped_paths,
+        "energy_balance_checks": energy_checks,
+        "outdoor_temperature_c": outside,
+        "boundary_assumption": "outdoor temperature held constant; future weather and gains are not forecast",
+        "heating_input_assumption": "current calibrated modulation room allocation held constant over each forecast horizon",
+        "limitations": [
+            "Only rooms with live temperature and accepted effective capacity are simulated.",
+            "Inter-room, envelope and configured ventilation conductances are included when both endpoints are available.",
+            "UFH slab storage is not yet a dynamic state: slab-to-room conductance and slab temperature are not identified, so allocated heat is applied as a room-side input proxy.",
+            "Solar and occupancy gains are not converted to watts without calibrated gain parameters.",
+            "This is an experimental coupled forecast, not a validated free-running prediction.",
+        ],
+    }

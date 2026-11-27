@@ -28,6 +28,10 @@
 - Regression tests cover intentional building-level surfaces, simulation lifecycle status separation, solar endpoint units/coverage, and flow-weighted return temperature.
 - GitHub Actions CI must pass before installation.
 
+### CI acceptance gate (v0.26.0)
+
+The pull request must have a successful GitHub Actions test run on its latest commit before merge. Results from earlier commits do not satisfy this gate.
+
 ## v0.25.6 — Fix Coupled Forecast Recursion and Room Slab Mapping
 
 ## v0.26.0 — Physical Model Quality and Independent Simulation States

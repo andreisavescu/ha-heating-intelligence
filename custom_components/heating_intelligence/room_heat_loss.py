@@ -141,7 +141,9 @@ def build_room_boundary_heat_loss(
                 "boundary_temperature_c": ground_temperature,
                 "heat_flow_w": ground_flow,
                 "status": "calculated" if ground_flow is not None
-                    else "unavailable_missing_explicit_ground_ua_or_ground_temperature",
+                    else "unavailable_missing_explicit_ground_ua" if ground_ua is None
+                    else "unavailable_ground_temperature_model_warming_up" if ground_temperature is None
+                    else "unavailable_missing_room_temperature",
                 "temperature_model_status": (ground_temperature_model or {}).get("status"),
             },
             "known_boundary_heat_flow_w": round(sum(known), 2) if known else None,

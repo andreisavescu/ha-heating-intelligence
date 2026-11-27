@@ -53,7 +53,8 @@
 
 ### Validation
 - Regression tests cover explicit building-level surface allocation, independent simulation states and solar endpoint/unit handling.
-- GitHub Actions CI must pass before installation.
+- GitHub Actions runs the complete pytest suite, Python compile check and Lovelace JavaScript syntax check on this pull request.
+- Installation is blocked until the final PR head passes all checks.
 
 ## v0.25.6 — Fix Coupled Forecast Recursion and Room Slab Mapping
 

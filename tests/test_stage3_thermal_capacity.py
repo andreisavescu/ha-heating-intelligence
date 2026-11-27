@@ -134,3 +134,35 @@ def test_stage3_does_not_require_persistence_win_to_estimate_provisional_capacit
     assert capacity["status"] == "anchored_absolute_estimate_provisional_unvalidated"
     assert capacity["gates"]["capacity_estimate_available"] is True
     assert capacity["gates"]["capacity_validation_passed"] is False
+
+
+def test_stage3_calculates_mixed_floor_finish_zones_independently():
+    result = MODULE.build_stage3_thermal_capacity(
+        {},
+        [{
+            "id": "hallway", "area_m2": 12.0,
+            "floor_finish_zones": [
+                {"id": "bathroom_tiles", "name": "Bathroom tiles", "material": "ceramic_tile",
+                 "area_m2": 4.8, "thickness_mm": 10, "conductivity_w_mk": 1.3,
+                 "density_kg_m3": 2300, "specific_heat_j_kgk": 840},
+                {"id": "hallway_parquet", "name": "Hallway parquet", "material": "wood_parquet",
+                 "area_m2": 7.2, "thickness_mm": 10, "conductivity_w_mk": 0.15,
+                 "density_kg_m3": 700, "specific_heat_j_kgk": 1600},
+            ],
+        }],
+    )
+    finish = result["rooms"]["hallway"]["floor_finish"]
+    assert finish["configured_area_m2"] == 12.0
+    assert finish["zones"][0]["thermal_resistance_m2k_w"] == 0.00769
+    assert finish["zones"][1]["thermal_resistance_m2k_w"] == 0.06667
+    assert finish["zones"][0]["thermal_capacity_wh_per_k"] == 2.68
+    assert finish["zones"][1]["thermal_capacity_wh_per_k"] == 2.24
+    assert finish["total_finish_capacity_wh_per_k"] == 4.92
+
+
+def test_stage3_reports_floor_finish_unconfigured_without_inventing_values():
+    result = MODULE.build_stage3_thermal_capacity({}, [{"id": "room", "area_m2": 10}])
+    finish = result["rooms"]["room"]["floor_finish"]
+    assert finish["status"] == "not_configured"
+    assert finish["area_weighted_resistance_m2k_w"] is None
+    assert finish["total_finish_capacity_wh_per_k"] is None

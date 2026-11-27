@@ -46,27 +46,28 @@ def build_stage3_thermal_capacity(
         )
         has_surface_inventory = bool(envelope_rooms)
         anchor_incomplete = has_surface_inventory and opaque_outdoor_count == 0
-        # A configured room-to-outdoor UA remains a usable provisional scale
-        # anchor even when the geometric surface inventory is incomplete.
-        # The incomplete inventory is reported separately; it must not erase
-        # an explicitly configured conductance or deadlock capacity fitting.
+        # A room with a populated surface inventory must have an opaque
+        # outdoor surface before its outdoor UA can anchor absolute capacity.
+        # Do not substitute the legacy room total for intentionally incomplete
+        # downstairs records. Rooms without any surface inventory retain the
+        # legacy configured anchor for backward compatibility.
         anchor = (
-            legacy_anchor if anchor_incomplete and legacy_anchor is not None
-            else outdoor_ua if has_surface_inventory and outdoor_ua is not None
+            None if anchor_incomplete
+            else outdoor_ua if has_surface_inventory
             else legacy_anchor
         )
         anchor_source = (
-            "configured_room_outdoor_conductance_with_incomplete_surface_inventory"
-            if anchor_incomplete and legacy_anchor is not None else
+            "withheld_incomplete_surface_inventory_missing_opaque_outdoor_surface"
+            if anchor_incomplete else
             "explicit_envelope_surface_outdoor_boundary"
             if has_surface_inventory and outdoor_ua is not None else
             "legacy_configured_room_envelope_conductance"
-            if legacy_anchor is not None else "missing"
+            if not has_surface_inventory and legacy_anchor is not None else "missing"
         )
         anchored_rooms.append({
             **room,
-            # Prefer explicit surface-derived outdoor UA; fall back to the
-            # configured room-level outdoor UA when the inventory is partial.
+            # A populated but incomplete surface inventory is deliberately
+            # withheld; do not infer a replacement from a partial record.
             "envelope_conductance_w_per_k": anchor,
             "envelope_anchor_source": anchor_source,
         })

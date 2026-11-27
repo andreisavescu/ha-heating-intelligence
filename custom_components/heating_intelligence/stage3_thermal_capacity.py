@@ -46,19 +46,26 @@ def build_stage3_thermal_capacity(
         )
         has_surface_inventory = bool(envelope_rooms)
         anchor_incomplete = has_surface_inventory and opaque_outdoor_count == 0
-        anchor = None if anchor_incomplete else (outdoor_ua if has_surface_inventory else legacy_anchor)
+        # A configured room-to-outdoor UA remains a usable provisional scale
+        # anchor even when the geometric surface inventory is incomplete.
+        # The incomplete inventory is reported separately; it must not erase
+        # an explicitly configured conductance or deadlock capacity fitting.
+        anchor = (
+            outdoor_ua if has_surface_inventory and outdoor_ua is not None
+            else legacy_anchor
+        )
         anchor_source = (
-            "withheld_incomplete_surface_inventory_missing_opaque_outdoor_surface"
-            if anchor_incomplete else
+            "configured_room_outdoor_conductance_with_incomplete_surface_inventory"
+            if anchor_incomplete and legacy_anchor is not None else
             "explicit_envelope_surface_outdoor_boundary"
             if has_surface_inventory and outdoor_ua is not None else
             "legacy_configured_room_envelope_conductance"
-            if not has_surface_inventory and legacy_anchor is not None else "missing"
+            if legacy_anchor is not None else "missing"
         )
         anchored_rooms.append({
             **room,
-            # When a surface inventory exists it is authoritative. A window-
-            # only partial outdoor inventory is not a complete envelope anchor.
+            # Prefer explicit surface-derived outdoor UA; fall back to the
+            # configured room-level outdoor UA when the inventory is partial.
             "envelope_conductance_w_per_k": anchor,
             "envelope_anchor_source": anchor_source,
         })
@@ -114,7 +121,13 @@ def build_stage3_thermal_capacity(
                 ),
             },
             "envelope_anchor_source": room["envelope_anchor_source"],
-            "envelope_anchor_status": "withheld_incomplete_surface_inventory" if room["envelope_anchor_source"].startswith("withheld_") else "available" if _positive(room.get("envelope_conductance_w_per_k")) is not None else "missing",
+            "envelope_anchor_status": (
+                "configured_anchor_inventory_incomplete"
+                if anchor_incomplete and _positive(room.get("envelope_conductance_w_per_k")) is not None
+                else "available"
+                if _positive(room.get("envelope_conductance_w_per_k")) is not None
+                else "missing"
+            ),
         }
 
     return {

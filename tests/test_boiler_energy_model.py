@@ -403,3 +403,36 @@ def test_daily_calibration_keeps_66_34_smoothing_and_next_day_effective_date():
     following_day = MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 0, {}, {}, 0,
         now=datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc))
     assert abs(following_day["boiler_calibration_factor"] - (0.66 * 0.9 + 0.34 * 0.8)) < 1e-8
+
+def test_malformed_persisted_modulation_room_ledgers_are_sanitized():
+    history = {}
+    MODEL.update_boiler_energy_model(history, None, None, False, None, {}, {}, 0)
+    state = history["boiler_energy_experiment"]
+    state["daily_modulation_room_energy_kwh"] = {
+        "2026-11-26": {"living": 1.25, "kitchen": {"nested": 0.5}, "bad": "not-energy"},
+        "2026-11-27": {"living": 0.75},
+    }
+    state["modulation_room_energy_kwh"] = {
+        "living": 4.0,
+        "kitchen": {"nested": 2.0},
+        "bad": float("nan"),
+    }
+    state["heating_season_modulation_room_energy_kwh"] = {
+        "2026-09-01/2027-05-01": {
+            "living": 3.0,
+            "kitchen": {"nested": 1.0},
+        }
+    }
+    result = MODEL.update_boiler_energy_model(
+        history, None, None, False, None, {}, {}, 0
+    )
+    state = history["boiler_energy_experiment"]
+    assert state["daily_modulation_room_energy_kwh"]["2026-11-26"] == {"living": 1.25}
+    assert state["daily_modulation_room_energy_kwh"]["2026-11-27"] == {"living": 0.75}
+    assert state["modulation_room_energy_kwh"] == {"living": 4.0}
+    assert state["heating_season_modulation_room_energy_kwh"]["2026-09-01/2027-05-01"] == {"living": 3.0}
+    # The current-day ledger is retained and exposed in the returned sensor data.
+    assert result["boiler_modulation_daily_room_energy_kwh"] == {"living": 0.75}
+    # Weekly and monthly totals include both retained dates in the fixture.
+    assert result["boiler_modulation_weekly_room_energy_kwh"] == {"living": 2.0}
+    assert result["boiler_modulation_monthly_room_energy_kwh"] == {"living": 2.0}

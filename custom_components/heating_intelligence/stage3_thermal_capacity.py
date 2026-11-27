@@ -156,8 +156,8 @@ def build_stage3_thermal_capacity(
             },
             "envelope_anchor_source": room["envelope_anchor_source"],
             "envelope_anchor_status": (
-                "configured_anchor_inventory_incomplete"
-                if anchor_incomplete and _positive(room.get("envelope_conductance_w_per_k")) is not None
+                "withheld_incomplete_surface_inventory"
+                if anchor_incomplete
                 else "available"
                 if _positive(room.get("envelope_conductance_w_per_k")) is not None
                 else "missing"

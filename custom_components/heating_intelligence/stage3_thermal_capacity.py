@@ -49,6 +49,7 @@ def build_stage3_thermal_capacity(
             surface_room.get("configured_surface_count")
             or surface_room.get("window_record_count")
             or any((surface_room.get("boundary_surface_counts") or {}).values())
+            or any((surface_room.get("opaque_surface_counts") or {}).values())
         )
         anchor_incomplete = has_surface_inventory and opaque_outdoor_count == 0
         # A populated but incomplete room inventory cannot anchor absolute C.

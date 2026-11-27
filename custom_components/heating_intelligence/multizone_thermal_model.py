@@ -243,50 +243,59 @@ def build_multizone_observation_model(
             "status": "observed" if outdoor_c is not None else "temperature_unavailable",
         }
 
-    # Room-level UFH topology is a parallel inventory; it does not replace
-    # legacy floor nodes or feed the solver until physical parameters exist.
+    # Room-level UFH topology is the physical representation. Each room
+    # receives its own latent slab node; floor summaries are never treated as
+    # a shared thermal storage state.
     room_ufh_topology = build_room_ufh_topology(rooms, circuits)
-
-    # Floor-level observations remain separate from room air. A screed node
-    # is pending until its temperature/capacity can be identified.
-    floor_nodes = {}
-    for floor_id in ('ground_floor', 'upstairs'):
-        floor_rooms = [room for room in rooms.values() if room.get('floor', 'unassigned') == floor_id and _finite_or_none(room.get('temperature')) is not None]
-        if not floor_rooms:
-            continue
-        pump = (plant.get('pumps') or {}).get(floor_id, {})
-        average_c = sum(float(room['temperature']) for room in floor_rooms) / len(floor_rooms)
-        screed_cm = _finite_or_none(profile.get('ufh_screed_cm'))
-        floor_node_id = 'floor:' + floor_id
-        nodes[floor_node_id] = {
-            'kind': 'ufh_slab',
-            'name': 'Downstairs UFH slab' if floor_id == 'ground_floor' else 'Upstairs UFH slab',
-            'floor': floor_id,
-            'adjacent_room_average_temperature_c': round(average_c, 3),
-            'slab_temperature_c': None,
-            'screed_thickness_cm': screed_cm,
-            'thermal_capacity_wh_per_k': None,
-            'screed_capacity_prior_wh_per_k': _finite_or_none(
-                (((plant.get('stage5_ufh_slab_model') or {}).get('floors') or {}).get(floor_id) or {}).get('screed_capacity_wh_per_k')
+    stage5_rooms = (
+        ((plant.get("stage5_ufh_slab_model") or {}).get("rooms") or {})
+    )
+    room_slab_nodes = {}
+    floor_nodes = {"ground_floor": [], "upstairs": []}
+    for room_id, room in rooms.items():
+        stage5_room = stage5_rooms.get(room_id) or {}
+        screed = stage5_room.get("screed") or {}
+        finish = stage5_room.get("floor_finish") or {}
+        topology = (room_ufh_topology.get("room_slab_nodes") or {}).get(room_id) or {}
+        floor_id = room.get("floor", "unassigned")
+        slab_node_id = f"slab:{room_id}"
+        nodes[slab_node_id] = {
+            "kind": "ufh_slab",
+            "name": f"{room.get('name', room_id)} UFH slab",
+            "room_id": room_id,
+            "floor": floor_id,
+            "slab_temperature_c": _finite_or_none(stage5_room.get("slab_temperature_c")),
+            "temperature_c": _finite_or_none(stage5_room.get("slab_temperature_c")),
+            # Material priors are visible but never silently promoted to an
+            # identified dynamic capacity or a solver-ready temperature.
+            "thermal_capacity_wh_per_k": None,
+            "screed_capacity_prior_wh_per_k": _finite_or_none(screed.get("capacity_wh_per_k")),
+            "finish_capacity_prior_wh_per_k": _finite_or_none(finish.get("capacity_wh_per_k")),
+            "combined_material_capacity_prior_wh_per_k": _finite_or_none(
+                stage5_room.get("combined_screed_and_finish_capacity_wh_per_k")
             ),
-            'estimated_heat_input_w': _finite_or_none(
-                (((plant.get('stage5_ufh_slab_model') or {}).get('floors') or {}).get(floor_id) or {}).get('allocated_useful_heat_power_w')
+            "finish_resistance_m2k_w": _finite_or_none(
+                finish.get("equivalent_parallel_resistance_m2k_w")
             ),
-            'estimated_room_heat_allocation_w': (
-                (((plant.get('stage5_ufh_slab_model') or {}).get('floors') or {}).get(floor_id) or {}).get('allocated_room_power_w') or {}
+            "circuit_ids": topology.get("circuit_ids") or stage5_room.get("circuits") or [],
+            "active_flow_l_min": _finite_or_none(stage5_room.get("active_flow_l_min")) or 0.0,
+            "allocated_useful_heat_power_w": _finite_or_none(
+                stage5_room.get("allocated_useful_heat_power_w")
             ),
-            'heat_input_source': 'calibrated_boiler_modulation_allocation_estimate',
-            'pump_running': pump.get('running'),
-            'observability': (
-                (plant.get('ufh_slab_observability') or {}).get('floors', {}).get(floor_id, {})
+            "slab_to_room_conductance_w_per_k": None,
+            "slab_to_lower_boundary_conductance_w_per_k": None,
+            "transfer_coefficients_status": (
+                stage5_room.get("transfer_coefficients_status")
+                or "not_identifiable_without_room_slab_temperature_or_independent_room_heat_input"
             ),
-            'transfer_coefficients_status': (
-                (((plant.get('stage5_ufh_slab_model') or {}).get('floors') or {}).get(floor_id) or {}).get('transfer_coefficients_status')
-                or 'not_identifiable_without_slab_temperature_or_independent_heat_input'
+            "status": (
+                "awaiting_room_slab_temperature_and_identifiable_capacity"
+                if stage5_room else "room_level_topology_only"
             ),
-            'status': 'awaiting_slab_sensor_or_identifiable_capacity' if screed_cm is not None else 'screed_profile_incomplete',
         }
-        floor_nodes[floor_id] = floor_node_id
+        room_slab_nodes[room_id] = slab_node_id
+        if floor_id in floor_nodes:
+            floor_nodes[floor_id].append(slab_node_id)
 
     # Plant telemetry is not equated with delivered heat: flow rate is absent.
     boiler_context = plant.get('boiler_context') or {}
@@ -807,7 +816,7 @@ def build_multizone_observation_model(
             ),
         },
         "pending_paths": pending_paths,
-        "floor_nodes": floor_nodes,
+        "floor_nodes": floor_nodes,  # compatibility grouping; values are room slab node IDs\n        "room_slab_nodes": room_slab_nodes,
         "plant": plant_node,
         "gain_context": gain_context,
         "coverage": {
@@ -821,7 +830,8 @@ def build_multizone_observation_model(
             "rooms_with_air_capacity_estimate": rooms_with_volume,
             "attic_temperature_available": attic_c is not None,
             "outdoor_temperature_available": outdoor_c is not None,
-            "ufh_floor_nodes": len(floor_nodes),
+            "ufh_room_slab_nodes": len(room_slab_nodes),
+            "ufh_floor_groups": {key: len(value) for key, value in floor_nodes.items()},
             "plant_supply_temperature_available": plant_node["supply_water_temperature_c"] is not None,
             "plant_return_temperature_available": plant_node["return_water_temperature_c"] is not None,
         },

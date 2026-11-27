@@ -117,6 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(AtticHumiditySensor(coordinator))
     if entry.options.get("water_temperature_entity"):
         entities.append(WaterTemperatureSensor(coordinator))
+        entities.append(EstimatedWaterReturnTemperatureSensor(coordinator))
     for room in entry.options.get(CONF_ROOMS, []):
         if room.get("temperature_entity"):
             entities.append(RoomTemperatureSensor(coordinator, room["id"], room["name"]))
@@ -124,6 +125,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.extend(
             RoomConductanceSensor(coordinator, room["id"], room["name"], metric)
             for metric in ("envelope_conductance_w_per_k", "attic_floor_conductance_w_per_k")
+        )
+        room_floor = str(room.get("floor") or "").strip().casefold()
+        room_name = str(room.get("name") or "").strip().casefold()
+        room_id = str(room.get("id") or "").strip().casefold()
+        is_kitchen = room_name in {"bucătărie", "bucatarie", "kitchen"} or room_id in {"bucatarie", "bucătărie", "kitchen"}
+        if room_floor == "upstairs":
+            boundary_metrics = ("outdoor", "attic")
+        elif is_kitchen:
+            boundary_metrics = ("outdoor", "ground", "attic")
+        else:
+            boundary_metrics = ("outdoor", "ground")
+        entities.extend(
+            RoomBoundaryHeatLossSensor(coordinator, room["id"], room["name"], metric)
+            for metric in (*boundary_metrics, "known_boundary_heat_flow_w")
         )
         if room.get("humidity_entity"):
             entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "humidity"))
@@ -830,6 +845,300 @@ class RoomConductanceSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
                 else "explicit_house_assessment_room_share"
             ),
             "note": "Configured conductance, not an automatically identified physical parameter.",
+        }
+
+
+class EstimatedWaterReturnTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Flow-weighted estimated UFH return temperature; never a measured input."""
+
+    _attr_native_unit_of_measurement = "°C"
+    _attr_should_poll = False
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:thermometer-chevron-down"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Estimated Water Return Temperature"
+        self._attr_unique_id = f"{DOMAIN}_estimated_water_return_temperature"
+
+    @property
+    def native_value(self):
+        estimate = self.coordinator.data.get("estimated_water_return_temperature", {})
+        value = estimate.get("value_c")
+        return round(value, 2) if value is not None else None
+
+    @property
+    def available(self):
+        return super().available and self.native_value is not None
+
+    @property
+    def extra_state_attributes(self):
+        estimate = self.coordinator.data.get("estimated_water_return_temperature", {})
+        return {"status": estimate.get("status"), "active_flow_l_min": estimate.get("active_flow_l_min"), "method": estimate.get("method"), "floor_estimates": estimate.get("floor_estimates", {}), "limitations": estimate.get("limitations", [])}
+
+class WaterTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
+    _attr_native_unit_of_measurement = "°C"
+    _attr_should_poll = False
+    _attr_icon = "mdi:thermometer-water"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Heating Water Inlet Temperature"
+        self._attr_unique_id = f"{DOMAIN}_water_inlet_temperature"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("water_temperature")
+
+    @property
+    def available(self):
+        return super().available and self.coordinator.data.get("water_temperature") is not None
+
+
+class RoomModulationPowerSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Live room heat-power estimate allocated from calibrated boiler modulation."""
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "W"
+    _attr_icon = "mdi:heat-wave"
+
+    def __init__(self, coordinator, room_id: str, room_name: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.room_name = room_name
+        self._attr_name = f"{room_name} Estimated Modulation Heating Power"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_modulation_heating_power_w"
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data
+        experiment = data.get("boiler_energy_experiment", {})
+        circuits = data.get("ufh_hydraulics", {}).get("circuits", {})
+        rooms = data.get("rooms", {})
+        output_kw = experiment.get(
+            "boiler_modulation_calibrated_output_kw",
+            experiment.get("boiler_modulation_estimated_output_kw"),
+        )
+        if output_kw is None or self.room_id not in rooms:
+            return None
+        output_w = max(0.0, float(output_kw)) * 1000.0
+        eligible = []
+        for circuit in circuits.values():
+            flow = max(0.0, float(
+                circuit.get("active_configured_flow_l_min")
+                or circuit.get("configured_flow_l_min") or 0.0
+            ))
+            served = [
+                room_id for room_id in (circuit.get("served_rooms") or [])
+                if room_id in rooms
+            ]
+            if circuit.get("flow_active") and flow > 0 and served:
+                eligible.append((flow, served))
+        total_flow = sum(flow for flow, _ in eligible)
+        if output_w <= 0 or total_flow <= 0:
+            return 0.0
+        room_power = 0.0
+        for flow, served in eligible:
+            if self.room_id in served:
+                room_power += output_w * flow / total_flow / len(served)
+        return round(room_power, 1)
+
+    @property
+    def extra_state_attributes(self):
+        experiment = self.coordinator.data.get("boiler_energy_experiment", {})
+        return {
+            "estimate": True,
+            "method": "Gas-calibrated boiler output from modulation, allocated by active configured UFH flow and split equally among each circuit's served rooms.",
+            "source": "boiler_modulation",
+            "modulation_percent": experiment.get("boiler_modulation_percent"),
+            "boiler_output_kw": experiment.get("boiler_modulation_calibrated_output_kw")
+                if experiment.get("boiler_modulation_calibrated_output_kw") is not None
+                else experiment.get("boiler_modulation_estimated_output_kw"),
+            "calibration_factor": experiment.get("boiler_calibration_factor"),
+            **_calculation_attributes("boiler_modulation_calibrated_output_kw"),
+        }
+
+
+class RoomTemperatureSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    _attr_native_unit_of_measurement = "°C"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator, room_id: str, room_name: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.room_name = room_name
+        self._attr_name = f"{room_name} Temperature"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_temperature"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("temperature")
+
+    @property
+    def available(self):
+        return super().available and self.coordinator.data.get("rooms", {}).get(self.room_id, {}).get("temperature") is not None
+
+
+ROOM_ANALYTICS_METRICS = {
+    "demand_seconds_today": ("Heating Demand Today", "h", 3600, "mdi:clock-outline"),
+    "demand_seconds_week": ("Heating Demand This Week", "h", 3600, "mdi:calendar-week"),
+    "demand_seconds_month": ("Heating Demand This Month", "h", 3600, "mdi:calendar-month"),
+    "cycles_today": ("Heating Cycles Today", "cycles", 1, "mdi:counter"),
+    "cycles_week": ("Heating Cycles This Week", "cycles", 1, "mdi:counter"),
+    "cycles_month": ("Heating Cycles This Month", "cycles", 1, "mdi:counter"),
+    "average_cycle_seconds_week": ("Average Heating Cycle This Week", "min", 60, "mdi:timer-outline"),
+    "shortest_cycle_seconds_week": ("Shortest Heating Cycle This Week", "min", 60, "mdi:timer-sand"),
+    "longest_cycle_seconds_week": ("Longest Heating Cycle This Week", "min", 60, "mdi:timer"),
+    "active_cycle_seconds": ("Current Heating Cycle Duration", "min", 60, "mdi:timer-play-outline"),
+    "total_cycles": ("Heating Cycles Total", "cycles", 1, "mdi:counter"),
+}
+
+
+class RoomAnalyticsSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """One room-level demand or cycle statistic."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = "measurement"
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.room_name = room_name
+        self.metric = metric
+        label, unit, divisor, icon = ROOM_ANALYTICS_METRICS[metric]
+        self.divisor = divisor
+        if metric == "total_cycles":
+            self._attr_state_class = "total_increasing"
+        self._attr_name = f"{room_name} {label}"
+        self._attr_native_unit_of_measurement = unit
+        self._attr_icon = icon
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+
+    @property
+    def native_value(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        value = room.get(self.metric)
+        return round(value / self.divisor, 2) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        return {
+            "shortest_cycle_seconds_this_week": room.get("shortest_cycle_seconds_week"),
+            "longest_cycle_seconds_this_week": room.get("longest_cycle_seconds_week"),
+            "active_cycle_seconds": room.get("active_cycle_seconds", 0),
+            "source_entity": room.get("demand_entity"),
+            "source_state": room.get("demand_state"),
+            **_calculation_attributes(self.metric),
+        }
+
+
+
+ROOM_THERMAL_METRICS = {
+    "temperature_change_1h": ("Temperature Change 1h", "°C", 1, "mdi:thermometer-chevron-up"),
+    "temperature_change_6h": ("Temperature Change 6h", "°C", 1, "mdi:thermometer"),
+    "temperature_change_24h": ("Temperature Change 24h", "°C", 1, "mdi:thermometer"),
+    "heating_response_minutes": ("Heating Response", "min", 1, "mdi:timer-play-outline"),
+    "cooling_rate_c_per_hour": ("Cooling Rate", "°C/h", 1, "mdi:snowflake-thermometer"),
+    "heat_retention_hours_per_degree": ("Heat Retention", "h/°C", 1, "mdi:home-thermometer"),
+    "window_open_demand_seconds_today": ("Window Open During Demand Today", "h", 3600, "mdi:window-open"),
+}
+
+
+class RoomConductanceSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Explicitly configured room envelope or attic-floor conductance."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "W/K"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    METRICS = {
+        "envelope_conductance_w_per_k": "External Envelope Conductance",
+        "attic_floor_conductance_w_per_k": "Attic-Floor Conductance",
+    }
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.room_name = room_name
+        self.metric = metric
+        self._attr_name = f"{room_name} {self.METRICS[metric]}"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+        self._attr_icon = "mdi:home-thermometer"
+
+    @property
+    def native_value(self):
+        room = self.coordinator.data.get("rooms", {}).get(self.room_id, {})
+        value = room.get(self.metric)
+        return round(float(value), 3) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "unit": "W/K",
+            "source": (
+                "explicit_room_configuration"
+                if self.metric == "envelope_conductance_w_per_k"
+                else "explicit_house_assessment_room_share"
+            ),
+            "note": "Configured conductance, not an automatically identified physical parameter.",
+        }
+
+
+
+class RoomBoundaryHeatLossSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Signed surface-derived heat flow for one room boundary."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "W"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    METRICS = {
+        "outdoor": "Outdoor Surface Heat Flow",
+        "attic": "Attic Surface Heat Flow",
+        "ground": "Ground Surface Heat Flow",
+        "known_boundary_heat_flow_w": "Known Boundary Heat Flow",
+    }
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.room_name = room_name
+        self.metric = metric
+        self._attr_name = f"{room_name} {self.METRICS[metric]}"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+        self._attr_icon = "mdi:heat-wave"
+
+    @property
+    def native_value(self):
+        room = (self.coordinator.data.get("room_heat_loss") or {}).get("rooms", {}).get(self.room_id, {})
+        if self.metric == "known_boundary_heat_flow_w":
+            value = room.get(self.metric)
+        else:
+            value = (room.get(self.metric) or {}).get("heat_flow_w")
+        return round(float(value), 2) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        audit = self.coordinator.data.get("room_heat_loss") or {}
+        room = (audit.get("rooms") or {}).get(self.room_id, {})
+        if self.metric == "known_boundary_heat_flow_w":
+            return {
+                "is_complete": room.get("known_boundary_heat_flow_is_complete", False),
+                "missing_or_incomplete_boundaries": room.get("missing_or_incomplete_boundaries", []),
+                "method": audit.get("method"),
+                "interpretation": room.get("interpretation"),
+            }
+        return {
+            **(room.get(self.metric) or {}),
+            "method": audit.get("method"),
+            "interpretation": room.get("interpretation"),
+            "ground_temperature_model": audit.get("ground_temperature_model") if self.metric == "ground" else None,
         }
 
 

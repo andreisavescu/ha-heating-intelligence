@@ -816,7 +816,8 @@ def build_multizone_observation_model(
             ),
         },
         "pending_paths": pending_paths,
-        "floor_nodes": floor_nodes,  # compatibility grouping; values are room slab node IDs\n        "room_slab_nodes": room_slab_nodes,
+        "floor_nodes": floor_nodes,  # compatibility grouping; values are room slab node IDs
+        "room_slab_nodes": room_slab_nodes,
         "plant": plant_node,
         "gain_context": gain_context,
         "coverage": {

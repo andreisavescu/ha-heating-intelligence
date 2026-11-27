@@ -167,3 +167,37 @@ def test_coupled_validation_scores_measured_rooms_and_reports_missing_sensor_rea
     assert result["rooms"]["living"]["status"] == "scored_coupled_multizone_one_step"
     assert result["rooms"]["baie_matr"]["valid_intervals"] == 0
     assert result["rooms"]["baie_matr"]["rejected_intervals"]["room_temperature_unobserved"] == 1
+
+
+def test_coupled_forecast_selection_never_creates_a_recursive_mapping():
+    import json
+
+    coupled = {
+        "status": "coupled_forecast_available",
+        "rooms_simulated": 2,
+        "rooms": {"living": {"forecast": []}},
+    }
+    fallback = {"status": "legacy_fallback", "rooms": {}}
+
+    selected = MODULE.select_predictive_forecast(coupled, fallback)
+
+    assert selected is coupled
+    assert "coupled_network_attempt" not in selected
+    json.dumps(selected)
+
+
+def test_legacy_fallback_retains_coupled_attempt_without_a_cycle():
+    import json
+
+    coupled = {
+        "status": "coupled_forecast_withheld",
+        "rooms_simulated": 0,
+        "rooms_withheld": 2,
+    }
+    fallback = {"status": "legacy_forecast_available", "rooms": {}}
+
+    selected = MODULE.select_predictive_forecast(coupled, fallback)
+
+    assert selected is not coupled
+    assert selected["coupled_network_attempt"] is coupled
+    json.dumps(selected)

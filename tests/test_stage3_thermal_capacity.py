@@ -90,3 +90,47 @@ def test_stage3_withholds_absolute_anchor_for_window_only_surface_inventory():
         "withheld_incomplete_surface_inventory_missing_opaque_outdoor_surface"
     )
     assert room["effective_room_capacity"]["effective_room_capacity_wh_per_k"] is None
+
+
+
+def test_stage3_keeps_configured_outdoor_anchor_when_surface_inventory_is_incomplete():
+    result = MODULE.build_stage3_thermal_capacity(
+        {},
+        [{"id": "living", "area_m2": 35.66,
+          "envelope_conductance_w_per_k": 7.42}],
+        {"rooms": {"living": {
+            "conductance_by_boundary_w_per_k": {"outdoor": 9.6945},
+            "opaque_surface_counts": {"outdoor": 0},
+            "window_record_count": 4,
+        }}},
+    )
+    room = result["rooms"]["living"]
+    assert room["effective_room_capacity"]["envelope_anchor_w_per_k"] == 9.6945
+    assert room["envelope_anchor_source"] == (
+        "explicit_envelope_surface_outdoor_boundary"
+    )
+    assert room["envelope_anchor_status"] == "configured_anchor_inventory_incomplete"
+
+
+def test_stage3_does_not_require_persistence_win_to_estimate_provisional_capacity():
+    response = {"rooms": {"bedroom": {
+        "normalized_rates_per_hour": {"envelope": 0.08},
+        "coefficient_uncertainty": {"envelope": {
+            "lower_90_percentile_1_per_hour": 0.06,
+            "upper_90_percentile_1_per_hour": 0.10,
+            "successful_replicates": 60,
+        }},
+        "training_intervals": 30,
+        "holdout_intervals": 12,
+        "holdout_mae_c": 0.03,
+        "persistence_baseline_mae_c": 0.02,
+    }}}
+    result = MODULE.build_stage3_thermal_capacity(
+        response, [{"id": "bedroom", "area_m2": 12.0,
+                    "envelope_conductance_w_per_k": 4.8}],
+    )
+    capacity = result["rooms"]["bedroom"]["effective_room_capacity"]
+    assert capacity["effective_room_capacity_wh_per_k"] == 60.0
+    assert capacity["status"] == "anchored_absolute_estimate_provisional_unvalidated"
+    assert capacity["gates"]["capacity_estimate_available"] is True
+    assert capacity["gates"]["capacity_validation_passed"] is False

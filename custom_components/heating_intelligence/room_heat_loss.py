@@ -92,7 +92,22 @@ def build_room_boundary_heat_loss(
         outdoor_ua = _number(conductances.get("outdoor"))
         attic_ua = _number(conductances.get("attic"))
         ground_ua = _number(conductances.get("ground"))
-        room_temp = _number(room.get("temperature"))
+        measured_room_temp = _number(room.get("temperature"))
+        # Bathrooms use stable design/reference temperatures for the envelope
+        # transmission calculation, rather than a fluctuating room sensor.
+        # These overrides affect heat-flow estimates only; room telemetry and
+        # the physical room-temperature model continue to use measured values.
+        room_name_key = str(room.get("name") or "").strip().casefold().replace("_", " ")
+        room_id_key = str(room_id or "").strip().casefold().replace("_", " ")
+        if "baie matr" in room_name_key or "baie matr" in room_id_key or room_id_key in {"baie_matr", "baie matr"}:
+            room_temp = 22.0
+            reference_temperature_source = "fixed_reference_temperature"
+        elif "baie parter" in room_name_key or "baie parter" in room_id_key or room_id_key in {"baie_parter", "baie parter"}:
+            room_temp = 20.5
+            reference_temperature_source = "fixed_reference_temperature"
+        else:
+            room_temp = measured_room_temp
+            reference_temperature_source = "measured_room_temperature"
 
         def flow(ua: float | None, boundary_temp: float | None):
             if ua is None or ua < 0 or room_temp is None or boundary_temp is None:
@@ -121,12 +136,17 @@ def build_room_boundary_heat_loss(
         else:
             expected_boundaries = ["outdoor", "ground"]
         boundary_complete = (
-            outdoor_inventory_complete and ground_inventory_configured
-            and (attic_inventory_configured if "attic" in expected_boundaries else True)
+            outdoor_inventory_complete
+            and all(
+                ground_inventory_configured if boundary == "ground" else attic_inventory_configured
+                for boundary in expected_boundaries if boundary != "outdoor"
+            )
         )
         results[room_id] = {
             "room_name": room.get("name", room_id),
             "room_temperature_c": room_temp,
+            "measured_room_temperature_c": measured_room_temp,
+            "reference_temperature_source": reference_temperature_source,
             "outdoor": {
                 "conductance_w_per_k": outdoor_ua,
                 "boundary_temperature_c": outside,
@@ -142,7 +162,7 @@ def build_room_boundary_heat_loss(
                 "boundary_temperature_c": attic,
                 "heat_flow_w": attic_flow,
                 "status": "calculated" if attic_flow is not None
-                    else "not_applicable" if room.get("floor") != "upstairs"
+                    else "not_applicable" if "attic" not in expected_boundaries
                     else "unavailable_missing_ua_or_temperature",
             },
             "ground": {

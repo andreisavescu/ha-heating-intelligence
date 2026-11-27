@@ -160,7 +160,9 @@ def build_what_if_simulator(current_rooms, rooms, absolute_parameters, outdoor_t
                     for scenario in results.values() for v in scenario["rooms"].values())
     return {
         "status": "experimental_scenarios_available" if available else "awaiting_accepted_parameters_or_live_inputs",
-        "horizon_hours": 6, "scenarios": results,
+        "horizon_hours": 6, "model_scope": "single_room_envelope_only",
+        "baseline_comparable_to_coupled_forecast": False,
+        "scenarios": results,
         "isolation": "read_only_no_home_assistant_state_or_heating_control_changes",
         "limitations": ["Envelope-only experimental scenarios, not a calibrated whole-house simulator.",
                         "The additional 200 W gain is applied independently to each simulated room.",
@@ -171,7 +173,7 @@ def build_what_if_simulator(current_rooms, rooms, absolute_parameters, outdoor_t
 
 def build_simulation_audit(rooms, current_rooms, absolute_parameters, physical_validation,
                            predictive_forecast, identification_dataset, response_identification):
-    """Summarize per-room simulation readiness without confusing scenarios with validation."""
+    """Report five independent model lifecycle states for every configured room."""
     parameter_rooms = (absolute_parameters or {}).get("rooms") or {}
     validation_rooms = (physical_validation or {}).get("rooms") or {}
     forecast_rooms = (predictive_forecast or {}).get("rooms") or {}
@@ -186,72 +188,82 @@ def build_simulation_audit(rooms, current_rooms, absolute_parameters, physical_v
         live_temperature = _number((current_rooms.get(room_id) or {}).get("temperature"))
         has_envelope = (_number(room.get("envelope_conductance_w_per_k")) or 0) > 0
         capacity = _number(fit.get("effective_room_capacity_wh_per_k"))
-        accepted_capacity = capacity is not None and capacity > 0
-        forecast_available = forecast.get("status") == "forecast_available_experimental"
+        has_provisional_parameters = capacity is not None and capacity > 0
+        forecast_status = str(forecast.get("status") or "not_available")
+        forecast_points = forecast.get("forecast") or []
+        experimental_forecast_available = (
+            "forecast_available_experimental" in forecast_status
+            or ("experimental" in forecast_status and bool(forecast_points))
+        )
+        live_simulation_executed = bool(forecast_points and forecast.get("initial_temperature_source") == "live_room_sensor")
         valid_intervals = int(validation.get("valid_intervals") or 0)
+        one_step_evaluated = valid_intervals > 0
+        physical_model_validated = (
+            validation.get("physical_model_validation_status") == "validated"
+            or validation.get("physical_model_validated") is True
+        )
+        parameter_state = (
+            "validated" if fit.get("parameter_state") == "validated"
+            else "provisional" if has_provisional_parameters else "withheld"
+        )
         blockers = []
-        if not has_envelope:
-            blockers.append("missing_room_envelope_conductance")
-        if not accepted_capacity:
-            blockers.append("missing_accepted_effective_room_capacity")
-        if live_temperature is None:
-            blockers.append("missing_live_room_temperature")
+        if not has_envelope: blockers.append("missing_room_envelope_conductance")
+        if not has_provisional_parameters: blockers.append("missing_provisional_effective_room_capacity")
+        if live_temperature is None: blockers.append("missing_live_room_temperature")
         if _number((predictive_forecast or {}).get("outdoor_temperature_c")) is None:
             blockers.append("missing_live_outdoor_temperature")
-        if not forecast_available and not blockers:
-            blockers.append("forecast_not_generated")
-        if valid_intervals == 0:
-            blockers.append("no_chronological_validation_intervals")
-        if valid_intervals > 0:
-            status = "validated_one_step"
-        elif forecast_available:
-            status = "experimental_simulation_available"
-        elif accepted_capacity and has_envelope:
-            status = "awaiting_live_inputs"
-        else:
-            status = "awaiting_parameters"
+        if not experimental_forecast_available and not any(x.startswith("missing_") for x in blockers):
+            blockers.append("experimental_forecast_not_available")
+        if not one_step_evaluated: blockers.append("one_step_prediction_not_evaluated")
+        if not physical_model_validated: blockers.append("physical_model_not_validated")
         audited[room_id] = {
-            "status": status,
+            "status": ("physical_model_validated" if physical_model_validated
+                       else "experimental_forecast_available" if experimental_forecast_available
+                       else "awaiting_parameters" if not has_provisional_parameters or not has_envelope
+                       else "awaiting_live_inputs"),
+            "one_step_prediction_evaluation_status": "evaluated" if one_step_evaluated else "not_evaluated",
+            "one_step_prediction_evaluation_method": physical_validation.get("method"),
+            "parameter_identification_status": fit.get("status", "not_identified"),
+            "parameter_state": parameter_state,
+            "experimental_forecast_status": "available" if experimental_forecast_available else forecast_status,
+            "physical_model_validation_status": "validated" if physical_model_validated else "not_validated",
+            "live_simulation_execution_status": "executed" if live_simulation_executed else "not_executed",
+            "live_simulation_horizons": [point.get("hours") for point in forecast_points],
             "live_temperature_c": live_temperature,
-            "temperature_source": "live_room_sensor" if live_temperature is not None else
-                ("fixed_scenario_assumption_only" if room_id in FIXED_ROOM_TEMPERATURES_C else "unavailable"),
+            "temperature_source": "live_room_sensor" if live_temperature is not None else ("fixed_scenario_assumption_only" if room_id in FIXED_ROOM_TEMPERATURES_C else "unavailable"),
             "envelope_conductance_configured": has_envelope,
             "effective_capacity_wh_per_k": capacity,
             "effective_capacity_source": fit.get("effective_room_capacity_source"),
             "response_identification_status": response.get("status"),
-            "forecast_status": forecast.get("status"),
+            "forecast_status": forecast_status,
             "validation_intervals": valid_intervals,
             "mae_c": validation.get("mae_c"),
             "rmse_c": validation.get("rmse_c"),
+            "persistence_mae_c": validation.get("persistence_mae_c"),
+            "beats_persistence": validation.get("beats_persistence"),
             "blockers": blockers,
         }
-    simulated = sum(item["status"] == "experimental_simulation_available" for item in audited.values())
-    validated = sum(item["status"] == "validated_one_step" for item in audited.values())
+    simulated = sum(item["live_simulation_execution_status"] == "executed" for item in audited.values())
+    evaluated = sum(item["one_step_prediction_evaluation_status"] == "evaluated" for item in audited.values())
+    forecasts = sum(item["experimental_forecast_status"] == "available" for item in audited.values())
+    provisional = sum(item["parameter_state"] == "provisional" for item in audited.values())
+    validated = sum(item["physical_model_validation_status"] == "validated" for item in audited.values())
     return {
-        "status": "simulation_activity_available" if simulated or validated else "awaiting_parameters_or_live_inputs",
-        "rooms_configured": len(audited),
-        "rooms_simulated": simulated,
-        "rooms_validated": validated,
+        "status": "model_activity_available" if simulated or evaluated or forecasts else "awaiting_parameters_or_live_inputs",
+        "rooms_configured": len(audited), "rooms_simulated": simulated,
+        "rooms_live_simulation_executed": simulated, "rooms_with_one_step_evaluation": evaluated,
+        "rooms_with_experimental_forecast": forecasts, "rooms_with_provisional_parameters": provisional,
+        "rooms_with_validated_physical_model": validated, "rooms_validated": validated,
         "rooms_awaiting_parameters": sum(item["status"] == "awaiting_parameters" for item in audited.values()),
         "rooms_awaiting_live_inputs": sum(item["status"] == "awaiting_live_inputs" for item in audited.values()),
         "dataset_status": (identification_dataset or {}).get("status"),
-        # This audit receives the native event dataset for the multi-zone
-        # fitter, not the legacy aligned-cadence dataset.
-        "dataset_samples": (
-            (identification_dataset or {}).get("event_sample_count")
-            or (identification_dataset or {}).get("aligned_sample_count", 0)
-        ),
-        "core_eligible_samples": (
-            (identification_dataset or {}).get("core_eligible_sample_count", 0)
-        ),
-        "complete_room_state_samples": (
-            (identification_dataset or {}).get("complete_room_state_sample_count", 0)
-        ),
-        "method": "per_room_readiness_plus_experimental_envelope_forecast_and_chronological_validation",
+        "dataset_samples": ((identification_dataset or {}).get("event_sample_count") or (identification_dataset or {}).get("aligned_sample_count", 0)),
+        "core_eligible_samples": (identification_dataset or {}).get("core_eligible_sample_count", 0),
+        "complete_room_state_samples": (identification_dataset or {}).get("complete_room_state_sample_count", 0),
+        "method": "independent_room_statuses_for_prediction_evaluation_forecast_parameters_validation_and_execution",
         "rooms": audited,
-        "interpretation": "Experimental simulation availability is not calibration or validation; bathroom fixed values are scenario assumptions only.",
+        "interpretation": "One-step evaluation, experimental forecast availability, provisional parameter identification, validated physical model and live simulation execution are separate states. A one-step score or experimental forecast never promotes parameters or validates the physical model.",
     }
-
 
 def build_coupled_network_forecast(current_rooms, rooms, absolute_parameters,
                                    outdoor_temperature_c, multizone_model,

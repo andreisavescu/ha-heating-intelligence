@@ -1,4 +1,4 @@
-## Unreleased — Room-Level UFH Model and Copyable Diagnostics
+## v0.25.0 — Room-Level UFH Slab Model and Copyable Diagnostics
 
 - Migrate existing installations that have no saved floor-finish configuration to editable full-room material priors: wood/parquet upstairs and ceramic tile downstairs. Explicitly empty or user-configured finish-zone lists are preserved.
 - Represent UFH slab storage with one latent node per room. Floor-level capacity and hydraulic values remain aggregate reporting only; no shared floor slab state is implied.
@@ -7,6 +7,24 @@
 - Clarify Stage 3 outdoor-anchor eligibility and report the opaque outdoor surface count, outdoor UA and any withholding reason.
 - Preserve pump-off semantics: configured manual flow remains an allocation weight, while active flow and return-temperature estimates remain zero/withheld when the manifold pump is stopped.
 - Identification and promotion thresholds are unchanged; insufficient excitation, bootstrap ranges or chronological validation continue to withhold absolute parameters.
+
+- Rebuild the live multi-zone RC observation network after Stage 5 so the room-level UFH slab nodes and finish-layer priors are included in the physical-model inventory.
+- Add explicit Stage 3 diagnostics for outdoor-anchor eligibility, including opaque outdoor surface count, surface-derived outdoor UA, selected anchor and withholding reason.
+- Keep floor-level hydraulic and capacity summaries as aggregates; they are not treated as a single shared slab state.
+
+### Model scope and limitations
+- Parquet and ceramic-tile defaults are editable material priors, not measured properties. Defaults are seeded only when an installation has no saved finish-zone configuration; existing explicit configurations are preserved.
+- One latent UFH slab node is represented per room. Its temperature, dynamic capacity and slab-to-room/lower-boundary transfer coefficients remain unknown until independently constrained by measurements or sufficiently informative data.
+- Screed and finish-layer capacities are kept separate. Material priors are not silently promoted to identified dynamic capacities.
+- Configured circuit flow remains a manual allocation weight. Active flow and return-temperature estimates remain zero or withheld when the relevant manifold pump is stopped.
+- Multizone response-identification gates are unchanged. Weak excitation, bootstrap uncertainty and chronological holdout performance continue to limit absolute parameter identification.
+- Incomplete downstairs opaque outdoor-surface inventories remain excluded from absolute envelope anchoring.
+
+### Upgrade
+- Update to v0.25.0 through HACS and restart Home Assistant or reload the integration.
+- Existing explicit floor-finish configurations are preserved. Installations without a saved finish-zone configuration receive editable parquet zones upstairs and ceramic-tile zones downstairs.
+- The multizone response experiment is now split into two smaller audit entities for easier copy/paste export.
+
 
 ## v0.24.1 — Provisional Room Capacity and Floor-Finish Thermal Properties
 

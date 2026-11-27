@@ -2365,7 +2365,7 @@ def test_absolute_room_parameters_use_configured_envelope_anchor_and_holdout_gat
         [{"id": "living", "envelope_conductance_w_per_k": 7.4}],
     )
     living = result["rooms"]["living"]
-    assert living["status"] == "anchored_absolute_estimate_provisional"
+    assert living["status"] == "anchored_absolute_estimate_provisional_validated"
     assert living["effective_room_capacity_wh_per_k"] == 370.0
     assert living["effective_room_capacity_range_wh_per_k"] == {
         "lower": 336.36, "upper": 411.11,

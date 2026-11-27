@@ -90,9 +90,15 @@ def test_maps_ufh_floor_and_heating_plant_without_inventing_slab_output():
         },
     )
     assert result["floor_nodes"] == {
-        "ground_floor": "floor:ground_floor",
-        "upstairs": "floor:upstairs",
+        "ground_floor": ["slab:living"],
+        "upstairs": ["slab:bedroom"],
     }
+    assert result["room_slab_nodes"] == {
+        "living": "slab:living",
+        "bedroom": "slab:bedroom",
+    }
+    assert "floor:ground_floor" not in result["nodes"]
+    assert "floor:upstairs" not in result["nodes"]
     slab = result["nodes"]["floor:ground_floor"]
     assert slab["adjacent_room_average_temperature_c"] == 21.0
     assert slab["slab_temperature_c"] is None

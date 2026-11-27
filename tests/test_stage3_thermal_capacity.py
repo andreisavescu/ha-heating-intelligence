@@ -185,3 +185,27 @@ def test_stage3_anchor_audit_reports_complete_outdoor_boundary_independently():
     assert room["envelope_anchor_audit"]["outdoor_opaque_surface_count"] == 1
     assert room["envelope_anchor_audit"]["outdoor_surface_ua_w_per_k"] == 5.2
     assert room["envelope_anchor_audit"]["withheld_reason"] is None
+
+
+def test_stage3_keeps_each_rooms_outdoor_anchor_and_audit_metadata_isolated():
+    result = MODULE.build_stage3_thermal_capacity(
+        {},
+        [
+            {"id": "bedroom_a", "area_m2": 12.0},
+            {"id": "bedroom_b", "area_m2": 14.0},
+            {"id": "window_only", "area_m2": 8.0, "envelope_conductance_w_per_k": 9.0},
+        ],
+        {"rooms": {
+            "bedroom_a": {"conductance_by_boundary_w_per_k": {"outdoor": 5.2}, "opaque_surface_counts": {"outdoor": 1}, "configured_surface_count": 1, "window_record_count": 1},
+            "bedroom_b": {"conductance_by_boundary_w_per_k": {"outdoor": 7.4}, "opaque_surface_counts": {"outdoor": 2}, "configured_surface_count": 2, "window_record_count": 0},
+            "window_only": {"conductance_by_boundary_w_per_k": {"outdoor": 0.9158}, "opaque_surface_counts": {"outdoor": 0}, "configured_surface_count": 1, "window_record_count": 1},
+        }},
+    )
+    rooms = result["rooms"]
+    assert rooms["bedroom_a"]["envelope_anchor_audit"]["outdoor_surface_ua_w_per_k"] == 5.2
+    assert rooms["bedroom_a"]["envelope_anchor_audit"]["anchor_used_w_per_k"] == 5.2
+    assert rooms["bedroom_b"]["envelope_anchor_audit"]["outdoor_surface_ua_w_per_k"] == 7.4
+    assert rooms["bedroom_b"]["envelope_anchor_audit"]["anchor_used_w_per_k"] == 7.4
+    assert rooms["window_only"]["envelope_anchor_audit"]["outdoor_surface_ua_w_per_k"] == 0.9158
+    assert rooms["window_only"]["envelope_anchor_audit"]["anchor_used_w_per_k"] is None
+    assert rooms["window_only"]["envelope_anchor_status"] == "withheld_incomplete_surface_inventory"

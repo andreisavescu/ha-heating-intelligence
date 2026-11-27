@@ -82,3 +82,40 @@ def test_device_registry_uses_current_via_device_id_api():
     assert via_keywords
     assert "via_device" not in via_keywords
     assert "via_device_id" in via_keywords
+
+
+
+def test_device_registry_parent_uses_registered_device_id():
+    devices_path = (
+        Path(__file__).parents[1]
+        / "custom_components"
+        / "heating_intelligence"
+        / "devices.py"
+    )
+    source = devices_path.read_text()
+    tree = ast.parse(source)
+
+    # DeviceInfo identifiers are not device registry IDs. Parent relationships
+    # are created only after the house device exists, using house.id.
+    assert "via_device_id=_house_identifier(coordinator)" not in source
+    assert "via_device_id=house.id" in source
+    assert "via_device=" not in source
+
+    registry_calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "async_get_or_create"
+    ]
+    parent_values = [
+        keyword.value for call in registry_calls for keyword in call.keywords
+        if keyword.arg == "via_device_id"
+    ]
+    assert len(parent_values) == 3
+    assert all(
+        isinstance(value, ast.Attribute)
+        and isinstance(value.value, ast.Name)
+        and value.value.id == "house"
+        and value.attr == "id"
+        for value in parent_values
+    )

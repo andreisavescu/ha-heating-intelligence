@@ -70,8 +70,8 @@ def test_simulation_audit_reports_room_readiness_and_keeps_validation_separate()
         {"rooms": {"living": {"effective_room_capacity_wh_per_k": 1200}}},
         {"rooms": {"living": {"valid_intervals": 0, "mae_c": None}}},
         {"outdoor_temperature_c": 5.0, "rooms": {
-            "living": {"status": "forecast_available_experimental"},
-            "baie_matr": {"status": "withheld_missing_temperature_weather_or_accepted_parameters"},
+            "living": {"status": "forecast_available_experimental", "initial_temperature_source": "live_room_sensor", "forecast": [{"hours": 1, "temperature_c": 20.8}]},
+            "baie_matr": {"status": "withheld_missing_temperature_weather_or_accepted_parameters", "initial_temperature_source": "fixed_scenario_assumption", "forecast": []},
         }},
         {"status": "aligned_dataset_available", "aligned_sample_count": 100,
          "core_eligible_sample_count": 12, "complete_room_state_sample_count": 0},
@@ -80,9 +80,12 @@ def test_simulation_audit_reports_room_readiness_and_keeps_validation_separate()
     assert audit["rooms_configured"] == 2
     assert audit["rooms_simulated"] == 1
     assert audit["rooms_validated"] == 0
-    assert audit["rooms"]["living"]["status"] == "experimental_simulation_available"
+    assert audit["rooms_with_experimental_forecast"] == 1
+    assert audit["rooms"]["living"]["experimental_forecast_status"] == "available"
+    assert audit["rooms"]["living"]["live_simulation_execution_status"] == "executed"
+    assert audit["rooms"]["living"]["physical_model_validation_status"] == "not_validated"
     assert audit["rooms"]["living"]["validation_intervals"] == 0
-    assert "no_chronological_validation_intervals" in audit["rooms"]["living"]["blockers"]
+    assert "one_step_prediction_not_evaluated" in audit["rooms"]["living"]["blockers"]
     assert audit["rooms"]["baie_matr"]["temperature_source"] == "fixed_scenario_assumption_only"
     assert audit["complete_room_state_samples"] == 0
 
@@ -164,7 +167,10 @@ def test_coupled_validation_scores_measured_rooms_and_reports_missing_sensor_rea
     ]}
     result = MODULE.build_coupled_network_validation(samples, rooms, params, network)
     assert result["rooms_scored"] == 1
-    assert result["rooms"]["living"]["status"] == "scored_coupled_multizone_one_step"
+    assert result["rooms"]["living"]["status"] == "chronological_holdout_one_step_evaluated"
+    assert result["rooms"]["living"]["validation_scope"] == "final_30_percent_chronological_holdout"
+    assert result["rooms"]["living"]["persistence_mae_c"] is not None
+    assert isinstance(result["rooms"]["living"]["beats_persistence"], bool)
     assert result["rooms"]["baie_matr"]["valid_intervals"] == 0
     assert result["rooms"]["baie_matr"]["rejected_intervals"]["room_temperature_unobserved"] == 1
 
@@ -201,3 +207,29 @@ def test_legacy_fallback_retains_coupled_attempt_without_a_cycle():
     assert selected is not coupled
     assert selected["coupled_network_attempt"] is coupled
     json.dumps(selected)
+
+
+
+def test_simulation_audit_keeps_evaluation_forecast_parameters_and_validation_separate():
+    audit = MODULE.build_simulation_audit(
+        [{"id": "bedroom", "envelope_conductance_w_per_k": 5.0}],
+        {"bedroom": {"temperature": 21.0}},
+        {"rooms": {"bedroom": {"effective_room_capacity_wh_per_k": 500.0,
+                               "status": "anchored_absolute_estimate_provisional_unvalidated"}}},
+        {"rooms": {"bedroom": {"valid_intervals": 12, "mae_c": 0.1,
+                               "persistence_mae_c": 0.12, "beats_persistence": True}}},
+        {"outdoor_temperature_c": 5.0, "rooms": {
+            "bedroom": {"status": "coupled_forecast_available_experimental",
+                        "initial_temperature_source": "live_room_sensor",
+                        "forecast": [{"hours": 1, "temperature_c": 20.9}]}}},
+        {"status": "event_dataset_available", "event_sample_count": 20},
+        {"rooms": {"bedroom": {"status": "identified"}}},
+    )
+    room = audit["rooms"]["bedroom"]
+    assert room["one_step_prediction_evaluation_status"] == "evaluated"
+    assert room["experimental_forecast_status"] == "available"
+    assert room["parameter_state"] == "provisional"
+    assert room["physical_model_validation_status"] == "not_validated"
+    assert room["live_simulation_execution_status"] == "executed"
+    assert audit["rooms_simulated"] == 1
+    assert audit["rooms_validated"] == 0

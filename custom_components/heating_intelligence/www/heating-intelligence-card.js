@@ -34,6 +34,44 @@ class HeatingIntelligenceCard extends HTMLElement {
     if (!entity) return `<strong>${value}</strong>`;
     return `<strong class="entity-value" role="button" tabindex="0" data-entity-id="${this._esc(entity[0])}" title="Open entity details" aria-label="Open ${this._esc(entity[1]?.attributes?.friendly_name || entity[0])} details">${value}</strong>`;
   }
+  _entityStateByName(friendlyName) {
+    const target = this._normalizeEntityName(friendlyName);
+    return Object.entries(this._hass?.states || {}).find(([, state]) =>
+      this._normalizeEntityName(state?.attributes?.friendly_name) === target
+    )?.[1] || null;
+  }
+  _roomBoundaryPanel(room) {
+    const metrics = [["Outdoor", "Outdoor Surface Heat Flow"], ["Attic", "Attic Surface Heat Flow"], ["Ground", "Ground Surface Heat Flow"]];
+    const rows = metrics.map(([label, suffix]) => {
+      const state = this._entityStateByName(room.name + " " + suffix);
+      if (!state) return "";
+      const value = state.state === "unknown" || state.state === "unavailable" ? null : Number(state.state);
+      const formatted = Number.isFinite(value) ? this._fmt(value, "W", 1) : "Unavailable";
+      const status = state.attributes?.status || (Number.isFinite(value) ? "calculated" : "waiting for inputs");
+      return `<div class="metric"><span>${label} boundary</span><strong>${formatted}</strong><small class="subtle">${this._esc(String(status).replaceAll("_", " "))}</small></div>`;
+    }).join("");
+    const total = this._entityStateByName(room.name + " Known Boundary Heat Flow");
+    if (!total) return "";
+    const value = total.state === "unknown" || total.state === "unavailable" ? null : Number(total.state);
+    const complete = total.attributes?.is_complete === true;
+    const missing = (total.attributes?.missing_or_incomplete_boundaries || []).map(x => x.replaceAll("_", " ")).join(", ");
+    return `<div class="boundary-panel"><div class="boundary-heading"><strong>Envelope heat flow</strong><span class="subtle">${complete ? "Applicable boundaries complete" : "Partial · missing data"}</span></div><div class="overview">${rows}<div class="metric"><span>Known boundary total</span><strong>${Number.isFinite(value) ? this._fmt(value, "W", 1) : "Unavailable"}</strong><small class="subtle">${complete ? "All applicable boundaries included" : this._esc(missing || "Some required boundary data is unavailable")}</small></div></div><div class="subtle">Signed transmission estimate: positive = heat leaving the room; negative = heat entering. Excludes ventilation, inter-room transfer, solar/internal gains and UFH slab storage.</div></div>`;
+  }
+  _houseBoundaryPanel(rooms) {
+    const definitions = [["Outdoor", "Outdoor Surface Heat Flow"], ["Attic", "Attic Surface Heat Flow"], ["Ground", "Ground Surface Heat Flow"], ["Known boundary total", "Known Boundary Heat Flow"]];
+    const rows = definitions.map(([label, suffix]) => {
+      const found = (rooms || []).map(room => this._entityStateByName(room.name + " " + suffix)).filter(Boolean);
+      if (!found.length) return "";
+      const valid = found.map(state => Number(state.state)).filter(Number.isFinite);
+      const total = valid.reduce((sum, value) => sum + value, 0);
+      const partial = suffix === "Known Boundary Heat Flow" && found.some(state => state.attributes?.is_complete !== true);
+      return `<div class="metric"><span>${label}</span><strong>${valid.length ? this._fmt(total, "W", 1) : "Unavailable"}</strong><small class="subtle">${valid.length}/${found.length} rooms with readings${partial ? " · some rooms incomplete" : ""}</small></div>`;
+    }).join("");
+    const returnState = this._entityStateByName("Estimated Water Return Temperature");
+    const returnValue = returnState && Number.isFinite(Number(returnState.state)) ? this._fmt(Number(returnState.state), "°C", 2) : "Unavailable";
+    const returnStatus = returnState?.attributes?.status || "Waiting for active heat and flow";
+    return `<div class="overview">${rows}<div class="metric"><span>Estimated UFH return temperature</span><strong>${returnValue}</strong><small class="subtle">${this._esc(String(returnStatus).replaceAll("_", " "))} · estimate, not a measured return sensor</small></div></div><div class="subtle">House totals sum available room estimates only. Coverage is shown so partial data is not mistaken for a complete building balance.</div>`;
+  }
   _duration(seconds) {
     if (seconds === null || seconds === undefined) return "—";
     const mins = Math.round(Number(seconds) / 60);
@@ -509,6 +547,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     const insightCards = insights.length ? insights.map((item) => '<article class="insight ' + (item.severity === "warning" ? "insight-warning" : "insight-info") + '"><div class="insight-top"><span class="insight-dot"></span><strong>' + this._esc(item.title) + '</strong><span class="severity">' + (item.severity === "warning" ? "Review" : "Insight") + '</span></div><p>' + this._esc(item.detail) + '</p><small>' + this._esc(item.recommendation) + '</small></article>').join("") : '<div class="empty-insights">No operational issues detected from the available observations.</div>';
     const roomOptions = entries.map((r) => `<option value="${this._esc(r.id)}" ${selected?.id === r.id ? "selected" : ""}>${this._esc(r.name)}</option>`).join("");
     const roomDetail = selected ? `
+      ${this._roomBoundaryPanel(selected)}
       <div class="detail-grid">
         <div class="metric"><span>Floor</span><strong>${this._esc(selected.floor_label || "Unassigned")}</strong></div>
         <div class="metric"><span>Room temperature</span>${this._entityValue(selected.name + " Temperature", this._fmt(selected.temperature))}</div>
@@ -579,6 +618,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         .simple-alert-row strong{color:var(--hi-amber)}
         ha-card.home-view .overview,ha-card.home-view details.section{display:none}
         .overview,.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+        .boundary-panel{margin:0 0 8px;padding:8px;border:1px solid var(--divider-color);border-radius:10px;background:var(--card-background-color)}.boundary-heading{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px;font-size:.8rem}.boundary-panel .overview{margin-bottom:5px}
         .metric,.pump{min-width:0;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:8px;padding:6px 7px}
         .metric{position:relative;overflow:hidden}
         .metric:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 4px 4px 0;background:var(--hi-blue);opacity:.8}
@@ -884,6 +924,7 @@ class HeatingIntelligenceCard extends HTMLElement {
           </div>
         </div>
         <div class="section"><div class="section-title">Weekly room-demand heatmap ${this._info("Weekly room-demand heatmap","Each cell represents one hour of the day. Darker green means more minutes with a recorded heating-demand cycle during that hour. It uses stored demand-cycle start/end times; missing history is not interpreted as zero demand.")}</div><div class="section-content"><div class="subtle">Demand minutes by room, day and hour. Select a cell to inspect its time and duration.</div>${this._demandHeatmap(entries)}</div></div>
+        <div class="section"><div class="section-title">Envelope heat-flow balance</div><div class="section-content">${this._houseBoundaryPanel(entries)}</div></div>
         <div class="section"><div class="section-title">UFH circuit flow</div><div class="subtle">Live circuit status and configured flow values, grouped by manifold.</div><div class="section-content">${this._ufhCircuitFlow(attrs.ufh_hydraulics)}</div></div>
         <div class="section"><div class="section-title">Demand timeline</div><div class="subtle">Recent room demand cycles. Blue shows completed cycles; green shows an ongoing request.</div><div class="demand-controls"><button data-hours="2" aria-pressed="${(this._demandHours||4)===2}">2 hours</button><button data-hours="4" aria-pressed="${(this._demandHours||4)===4}">4 hours</button><button data-hours="12" aria-pressed="${(this._demandHours||4)===12}">12 hours</button></div><div class="demand-timeline">${this._demandTimeline(entries,this._demandHours||4)}</div><div class="subtle">Demand means the configured source is available, regardless of its on/off value. Select a cycle to inspect its timing and duration.</div></div><div class="section"><div class="section-title">Instant power - modulation</div><div class="section-content">${this._modulationHeatFlowSankey(attrs.boiler_energy_experiment,attrs.ufh_hydraulics,rooms)}</div></div>
         <div class="section"><div class="section-title">Daily energy - modulation</div><div class="section-content">${this._modulationPeriodSankey(attrs.boiler_energy_experiment,rooms,"daily")}</div></div>

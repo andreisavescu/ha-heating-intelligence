@@ -8,7 +8,7 @@ def test_empty_profile_reports_missing_information_without_inventing_performance
     assert result["performance_status"] == "collecting_data"
     assert result["measured_performance"] == {}
     assert result["room_coverage"]["configured_room_area_m2"] == 0
-    assert any("Roof insulation" in item for item in result["observations"])
+    assert any("Attic-floor U-value" in item for item in result["observations"])
 
 
 def test_known_values_increase_completeness_and_are_reported():
@@ -66,3 +66,24 @@ def test_room_area_coverage_uses_only_configured_positive_areas():
     assert coverage["average_measured_ach"] is None
     assert coverage["minimum_measured_ach"] is None
     assert coverage["maximum_measured_ach"] is None
+
+
+def test_attic_floor_insulation_is_reported_separately_from_roof_insulation():
+    result = build_house_assessment(
+        {
+            "roof_construction": "Timber, membrane and concrete tiles",
+            "roof_insulation_cm": 0,
+            "attic_floor_insulation_cm": 20,
+            "attic_floor_insulation_material": "Mineral wool",
+            "attic_floor_u_value": 0.183,
+            "attic_floor_area_m2": 72,
+        },
+        {},
+        {},
+    )
+    characteristics = result["building_characteristics"]
+    assert characteristics["roof_construction"] == "Timber, membrane and concrete tiles"
+    assert characteristics["attic_floor_insulation_cm"] == 20
+    assert characteristics["attic_floor_insulation_material"] == "Mineral wool"
+    assert characteristics["attic_floor_u_value_w_m2k"] == 0.183
+    assert any("Attic-floor insulation thickness recorded as 20 cm" in item for item in result["observations"])

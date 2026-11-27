@@ -4,7 +4,9 @@ from __future__ import annotations
 
 SUCCESS_CACHE_TTL_SECONDS = 6 * 60 * 60
 FAILURE_RETRY_TTL_SECONDS = 5 * 60
-RECORDER_HISTORY_ANALYSIS_VERSION = 4
+# v0.23.9: force one fresh Recorder analysis after native-event room coupling
+# and intermediate AC-event rejection were added in v0.23.7.
+RECORDER_HISTORY_ANALYSIS_VERSION = 5
 
 
 def recorder_history_cache_ttl(summary: dict | None) -> int:

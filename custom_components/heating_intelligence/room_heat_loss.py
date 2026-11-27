@@ -78,7 +78,11 @@ def build_room_boundary_heat_loss(
     whenever a boundary inventory is missing or incomplete.
     """
     audited_rooms = (envelope_audit or {}).get("rooms") or {}
-    ground_temperature = _number((ground_temperature_model or {}).get("estimated_ground_boundary_temperature_c"))
+    ground_temperature = (
+        _number((ground_temperature_model or {}).get("estimated_ground_boundary_temperature_c"))
+        if (ground_temperature_model or {}).get("status") == "provisional_lagged_outdoor_proxy"
+        else None
+    )
     outside = _number(outdoor_temperature_c)
     attic = _number(attic_temperature_c)
     results = {}

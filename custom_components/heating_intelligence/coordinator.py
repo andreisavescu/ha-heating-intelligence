@@ -37,7 +37,7 @@ from .system_history import record_system_sample
 from .pump_countdown import start_deadline, timer_snapshot
 from .absolute_thermal_identification import identify_absolute_room_parameters
 from .stage3_thermal_capacity import build_stage3_thermal_capacity
-from .stage5_ufh_slab_model import build_stage5_ufh_slab_model
+from .stage5_ufh_slab_model import build_stage5_ufh_slab_model, build_estimated_water_return_temperature
 from .stage6_gain_model import build_stage6_gain_model
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator, build_simulation_audit, build_coupled_network_forecast, build_coupled_network_validation, select_predictive_forecast
 from .recorder_diagnostics import (
@@ -1284,23 +1284,8 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             self._history.get("boiler_energy_experiment", {}),
             result.get("water_temperature"),
         )
-        # Flow-weighted house estimate; never substitute for a measured return sensor.
-        estimated_return_floors = result["stage5_ufh_slab_model"].get("floors", {})
-        valid_return_floors = [
-            floor for floor in estimated_return_floors.values()
-            if _as_float(floor.get("estimated_return_temperature_c")) is not None
-            and (_as_float(floor.get("active_total_flow_l_min")) or 0) > 0
-        ]
-        estimated_return_flow = sum(float(floor.get("active_total_flow_l_min") or 0) for floor in valid_return_floors)
-        result["estimated_water_return_temperature"] = {
-            "value_c": (sum(float(floor["estimated_return_temperature_c"]) * float(floor["active_total_flow_l_min"]) for floor in valid_return_floors) / estimated_return_flow if estimated_return_flow > 0 else None),
-            "status": "estimated_from_modulation_power_and_configured_active_flow" if estimated_return_flow > 0 else "unavailable_insufficient_active_heat_or_flow",
-            "active_flow_l_min": round(estimated_return_flow, 3) if estimated_return_flow > 0 else None,
-            "floor_estimates": {floor_id: {"estimated_return_temperature_c": floor.get("estimated_return_temperature_c"), "active_total_flow_l_min": floor.get("active_total_flow_l_min"), "allocated_useful_heat_power_w": floor.get("allocated_useful_heat_power_w"), "status": floor.get("status")} for floor_id, floor in estimated_return_floors.items()},
-            "method": "flow_weighted_mean_of_floor_return_estimates",
-            "limitations": ["Estimated from calibrated boiler modulation heat allocation and configured circuit flow values while each manifold is active.", "Circuit flow values are manually configured calibrated values, not live flow-meter readings.", "This estimate is not a measured return temperature and is never substituted for the configured return-temperature sensor."],
-        }
-        # Rebuild the observation network after Stage 5 is available so its
+        result["estimated_water_return_temperature"] = build_estimated_water_return_temperature(result["stage5_ufh_slab_model"])
+                # Rebuild the observation network after Stage 5 is available so its
         # room-level slab nodes and finish priors reach the physical model.
         live_house_profile = dict(self.entry.options.get("house_assessment", {}))
         live_house_profile["house_effective_rc_calibration"] = (

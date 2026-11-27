@@ -26,7 +26,8 @@
           "edit_rooms": "Edit rooms",
           "ufh_circuits": "Configure UFH circuits",
           "thermal_topology": "Configure room thermal paths (W/K)",
-          "envelope_surfaces": "Configure explicit envelope surfaces (area × U-value)"
+          "envelope_surfaces": "Configure explicit envelope surfaces (area × U-value)",
+          "floor_finishes": "Configure per-room UFH floor finishes"
         }
       },
       "thermal_topology": {
@@ -240,6 +241,28 @@
           "shading": "Shading type",
           "shading_behaviour": "Typical shading behaviour",
           "whole_window_u_value_w_m2k": "Whole-window Uw (W/m²K), not center-of-glass Ug"
+        }
+      },
+      "floor_finishes": {
+        "title": "UFH floor-finish zones",
+        "description": "Add, edit or remove finish layers by room. Multiple zones can belong to one room, for example tile in the bathroom section and parquet in the connected hallway.",
+        "data": {
+          "action": "Action",
+          "zone": "Floor-finish zone"
+        }
+      },
+      "floor_finish_details": {
+        "title": "Floor-finish zone properties",
+        "description": "Enter the zone area and finish material properties. Preset values are starting estimates and can be edited.",
+        "data": {
+          "room_id": "Room",
+          "name": "Zone name",
+          "material": "Finish material",
+          "area_m2": "Zone area (m²)",
+          "thickness_mm": "Finish thickness (mm)",
+          "conductivity_w_mk": "Thermal conductivity (W/m·K)",
+          "density_kg_m3": "Density (kg/m³)",
+          "specific_heat_j_kgk": "Specific heat capacity (J/kg·K)"
         }
       }
     },

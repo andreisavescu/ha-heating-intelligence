@@ -445,4 +445,9 @@ def test_observation_model_uses_one_ufh_slab_node_per_room_not_one_per_floor():
     assert result["nodes"]["slab:bedroom"]["finish_capacity_prior_wh_per_k"] == 22.4
     assert result["nodes"]["slab:bedroom"]["thermal_capacity_wh_per_k"] is None
     assert result["floor_nodes"]["upstairs"] == ["slab:bedroom", "slab:bathroom"]
+    assert result["room_slab_nodes"] == {
+        "bedroom": "slab:bedroom",
+        "bathroom": "slab:bathroom",
+        "living": "slab:living",
+    }
     assert result["coverage"]["ufh_room_slab_nodes"] == 3

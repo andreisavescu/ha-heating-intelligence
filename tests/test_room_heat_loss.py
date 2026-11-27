@@ -84,3 +84,74 @@ def test_ground_heat_flow_waits_until_lagged_temperature_proxy_has_warmed_up():
     assert result["rooms"]["living"]["ground"]["status"] == (
         "unavailable_ground_temperature_model_warming_up"
     )
+
+
+def _room(room_id, name, floor):
+    return {room_id: {"name": name, "floor": floor, "temperature": 19.0}}
+
+
+def _audit(room_id, outdoor=2.0, attic=3.0, ground=4.0):
+    return {"rooms": {room_id: {
+        "conductance_by_boundary_w_per_k": {
+            "outdoor": outdoor, "attic": attic, "ground": ground,
+        },
+        "opaque_surface_counts": {"outdoor": 1},
+        "window_record_count": 1,
+    }}}
+
+
+def _model():
+    return {"estimated_ground_boundary_temperature_c": 8.0,
+            "status": "provisional_lagged_outdoor_proxy"}
+
+
+def test_upstairs_requires_outdoor_and_attic_not_ground():
+    room = MODULE.build_room_boundary_heat_loss(
+        _room("bedroom", "Bedroom", "upstairs"),
+        _audit("bedroom", ground=None), 2.0, 10.0, _model()
+    )["rooms"]["bedroom"]
+    assert room["known_boundary_heat_flow_is_complete"] is True
+    assert room["attic"]["status"] == "calculated"
+    assert room["ground"]["heat_flow_w"] is None
+    assert "ground_surface_ua" not in room["missing_or_incomplete_boundaries"]
+
+
+def test_downstairs_requires_outdoor_and_ground_not_attic():
+    room = MODULE.build_room_boundary_heat_loss(
+        _room("living", "Living", "ground_floor"),
+        _audit("living", attic=None), 2.0, None, _model()
+    )["rooms"]["living"]
+    assert room["known_boundary_heat_flow_is_complete"] is True
+    assert room["attic"]["status"] == "not_applicable"
+    assert room["ground"]["status"] == "calculated"
+
+
+def test_kitchen_requires_outdoor_ground_and_attic():
+    room = MODULE.build_room_boundary_heat_loss(
+        _room("bucatarie", "Bucătărie", "ground_floor"),
+        _audit("bucatarie"), 2.0, 10.0, _model()
+    )["rooms"]["bucatarie"]
+    assert room["known_boundary_heat_flow_is_complete"] is True
+    assert room["attic"]["status"] == "calculated"
+    assert room["ground"]["status"] == "calculated"
+
+
+def test_bathroom_reference_temperatures_only_override_heat_flow_temperature():
+    rooms = {
+        "baie_matr": {"name": "Baie Matr", "floor": "upstairs", "temperature": 19.0},
+        "baie_cada": {"name": "Baie Parter", "floor": "ground_floor", "temperature": 19.0},
+    }
+    audit = {"rooms": {
+        room_id: {
+            "conductance_by_boundary_w_per_k": {"outdoor": 2.0, "attic": 1.0, "ground": 1.0},
+            "opaque_surface_counts": {"outdoor": 1},
+            "window_record_count": 0,
+        } for room_id in rooms
+    }}
+    result = MODULE.build_room_boundary_heat_loss(rooms, audit, 0.0, 10.0, _model())["rooms"]
+    assert result["baie_matr"]["room_temperature_c"] == 22.0
+    assert result["baie_matr"]["measured_room_temperature_c"] == 19.0
+    assert result["baie_matr"]["outdoor"]["heat_flow_w"] == 44.0
+    assert result["baie_cada"]["room_temperature_c"] == 20.5
+    assert result["baie_cada"]["measured_room_temperature_c"] == 19.0
+    assert result["baie_cada"]["outdoor"]["heat_flow_w"] == 41.0

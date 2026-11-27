@@ -3186,6 +3186,7 @@ def build_multizone_response_identification(
     max_predictor_condition_number: float = 1_000_000.0,
     max_age_minutes: float = 45.0,
     max_interval_minutes: float = 120.0,
+    room_connections: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Identify normalized passive room-to-room and envelope response rates from actual room events.
 
@@ -3220,6 +3221,20 @@ def build_multizone_response_identification(
         )
     }
     room_ids = [room_id for room_id in configured_room_ids if room_id in observed_room_ids]
+    # Native-event fits use only explicitly configured room-to-room paths.
+    # This avoids fitting every possible pair and keeps unconfigured links out
+    # of the physical model. Legacy aligned datasets retain all observed rooms.
+    room_neighbors: dict[str, list[str]] = {room_id: [] for room_id in room_ids}
+    for link in room_connections or []:
+        left = str(link.get("from_room") or "")
+        right = str(link.get("to_room") or "")
+        conductance = _finite_number_or_none(link.get("conductance_w_per_k"))
+        if (left in room_neighbors and right in room_neighbors and left != right
+                and conductance is not None and conductance > 0):
+            if right not in room_neighbors[left]:
+                room_neighbors[left].append(right)
+            if left not in room_neighbors[right]:
+                room_neighbors[right].append(left)
     excluded_unobserved_rooms = [
         room_id for room_id in configured_room_ids if room_id not in observed_room_ids
     ]
@@ -3281,7 +3296,8 @@ def build_multizone_response_identification(
         # Event datasets fit target rooms independently. Legacy aligned datasets
         # retain their original multizone predictor behaviour for compatibility.
         predictors = ["envelope"] + (
-            [other for other in room_ids if other != room_id] if not event_mode else []
+            [other for other in room_ids if other != room_id]
+            if not event_mode else list(room_neighbors.get(room_id, []))
         )
         if room_by_id.get(room_id, {}).get("floor") == "upstairs" and attic_predictor_available:
             predictors.append("attic")
@@ -3513,8 +3529,26 @@ def build_multizone_response_identification(
                 ac0 *= ac_scales[ac_unit0]
             if ac1 is not None and ac_unit1 in ac_scales:
                 ac1 *= ac_scales[ac_unit1]
+            intermediate_ac_active = False
+            if event_mode:
+                # Native-event intervals can contain a short AC boost that starts
+                # and stops between the two room-temperature endpoints. Inspect
+                # every intervening Recorder event so a 5-10 minute boost is not
+                # misclassified as passive coasting.
+                for event_row in intermediate_rows:
+                    event_channels = event_row.get("channels", {}) or {}
+                    event_power = numeric(event_channels.get("ac_power"))
+                    event_unit = str(event_channels.get("ac_power_unit") or "W").strip()
+                    if event_unit not in ac_scales:
+                        exclusions["unsupported_ac_power_unit"] += 1
+                        intermediate_ac_active = True
+                        break
+                    if event_power is not None and event_power * ac_scales[event_unit] > ac_power_max_w:
+                        intermediate_ac_active = True
+                        break
             if ((ac0 is not None and ac0 > ac_power_max_w)
-                    or (ac1 is not None and ac1 > ac_power_max_w)):
+                    or (ac1 is not None and ac1 > ac_power_max_w)
+                    or intermediate_ac_active):
                 exclusions["ac_heating_active_or_unavailable"] += 1
                 continue
             if require_ac_power and (ac0 is None or ac1 is None):
@@ -3569,7 +3603,29 @@ def build_multizone_response_identification(
                 continue
             dt_hours = elapsed_minutes / 60
             x = [(outside0 + outside1) / 2 - (temps0[room_id] + temps1[room_id]) / 2]
-            if not event_mode:
+            if event_mode:
+                # A configured neighbour is a predictor only when both endpoint
+                # temperatures are present and fresh. Never substitute a stale
+                # carried-forward value for a missing room observation.
+                missing_neighbor = False
+                for other in room_neighbors.get(room_id, []):
+                    if temps0.get(other) is None or temps1.get(other) is None:
+                        missing_neighbor = True
+                        break
+                    left_data = (first_rooms.get(other) or {})
+                    right_data = (second_rooms.get(other) or {})
+                    neighbor_ages = (
+                        numeric(left_data.get("temperature_age_minutes")),
+                        numeric(right_data.get("temperature_age_minutes")),
+                    )
+                    if any(age is not None and age > max_age_minutes for age in neighbor_ages):
+                        missing_neighbor = True
+                        break
+                    x.append((temps0[other] + temps1[other] - temps0[room_id] - temps1[room_id]) / 2)
+                if missing_neighbor:
+                    exclusions["missing_or_stale_configured_room_neighbor"] = exclusions.get("missing_or_stale_configured_room_neighbor", 0) + 1
+                    continue
+            else:
                 x.extend(
                     (temps0[other] + temps1[other] - temps0[room_id] - temps1[room_id]) / 2
                     for other in room_ids if other != room_id

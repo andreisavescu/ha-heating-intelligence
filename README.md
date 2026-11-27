@@ -43,6 +43,15 @@ The pull request must have a successful GitHub Actions test run on its latest co
 - Add Stage 6 solar endpoint diagnostics for valid, missing/stale and unsupported solar readings; normalize W/m² and kW/m² and use both interval endpoints.
 - Label the what-if simulator as single-room envelope-only and explicitly state that its baseline is not directly comparable to the coupled multi-zone forecast.
 
+### Surface-derived room heat loss
+- Room boundary heat-flow sensors use accepted surface-audit UA values, not the legacy room-level configured conductance values displayed by the overview card.
+- Outdoor, attic and ground boundaries are reported separately. Positive watts mean heat leaves the room; negative watts mean heat enters from a warmer boundary.
+- The known-boundary total is explicitly marked partial whenever an outdoor opaque surface inventory or a required ground/attic UA is missing.
+- The confirmed legacy surface `tavan_baie_cada_cs` remains fully allocated to `baie_cada` as a building-level attic ceiling, so its 15.1 m² at U=0.183 W/m²K contributes 2.7633 W/K without requiring manual migration.
+- Ground boundary temperature currently uses a provisional 30-day low-pass of measured outdoor temperature. This is a lagged outdoor proxy, not a measured soil temperature or validated ground-coupling standard.
+- Ground heat flow remains unavailable until an explicit ground-boundary surface UA is configured; the known 7 cm XPS thickness alone is not enough to invent a floor-to-ground conductance.
+- New per-room diagnostic sensors: Outdoor Surface Heat Flow, Attic Surface Heat Flow, Ground Surface Heat Flow and Known Boundary Heat Flow.
+
 ### Model-quality safeguards
 - Experimental forecasts remain separate from validated model claims. Physical-model validation remains false unless an explicit independent validation result is supplied.
 - Provisional parameter status is preserved; absolute-identification, bootstrap, excitation and parameter-promotion gates are not relaxed.

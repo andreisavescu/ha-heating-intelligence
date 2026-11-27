@@ -31,8 +31,7 @@ def audit_device_info(coordinator) -> dr.DeviceInfo:
         identifiers={_audit_identifier(coordinator)},
         name="Heating Intelligence — Audits",
         manufacturer="Heating Intelligence",
-        model="Diagnostics and audits",
-        via_device_id=_house_identifier(coordinator),
+        model="Diagnostics and audits"
     )
 
 
@@ -43,7 +42,7 @@ def room_device_info(coordinator, room_id: str, room_name: str) -> dr.DeviceInfo
         name=room_name,
         manufacturer="Heating Intelligence",
         model="Heating room",
-        via_device_id=_house_identifier(coordinator),
+        
     )
 
 
@@ -54,7 +53,7 @@ def pump_device_info(coordinator, pump_id: str, pump_name: str) -> dr.DeviceInfo
         name=pump_name,
         manufacturer="Heating Intelligence",
         model="Manifold pump",
-        via_device_id=_house_identifier(coordinator),
+        
     )
 
 
@@ -118,7 +117,7 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
             name=room["name"],
             manufacturer="Heating Intelligence",
             model="Heating room",
-            via_device_id=_house_identifier(coordinator),
+            via_device_id=house.id
         )
 
     pump_devices = {}

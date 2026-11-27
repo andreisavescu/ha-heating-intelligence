@@ -126,6 +126,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             RoomConductanceSensor(coordinator, room["id"], room["name"], metric)
             for metric in ("envelope_conductance_w_per_k", "attic_floor_conductance_w_per_k")
         )
+        entities.extend(
+            RoomBoundaryHeatLossSensor(coordinator, room["id"], room["name"], metric)
+            for metric in ("outdoor", "attic", "ground", "known_boundary_heat_flow_w")
+        )
         if room.get("humidity_entity"):
             entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "humidity"))
         if room.get("co2_entity"):
@@ -859,6 +863,59 @@ class RoomConductanceSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
                 else "explicit_house_assessment_room_share"
             ),
             "note": "Configured conductance, not an automatically identified physical parameter.",
+        }
+
+
+
+class RoomBoundaryHeatLossSensor(RoomDeviceMixin, CoordinatorEntity, SensorEntity):
+    """Signed surface-derived heat flow for one room boundary."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "W"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    METRICS = {
+        "outdoor": "Outdoor Surface Heat Flow",
+        "attic": "Attic Surface Heat Flow",
+        "ground": "Ground Surface Heat Flow",
+        "known_boundary_heat_flow_w": "Known Boundary Heat Flow",
+    }
+
+    def __init__(self, coordinator, room_id: str, room_name: str, metric: str) -> None:
+        super().__init__(coordinator)
+        self.room_id = room_id
+        self.room_name = room_name
+        self.metric = metric
+        self._attr_name = f"{room_name} {self.METRICS[metric]}"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{metric}"
+        self._attr_icon = "mdi:heat-wave"
+
+    @property
+    def native_value(self):
+        room = (self.coordinator.data.get("room_heat_loss") or {}).get("rooms", {}).get(self.room_id, {})
+        if self.metric == "known_boundary_heat_flow_w":
+            value = room.get(self.metric)
+        else:
+            value = (room.get(self.metric) or {}).get("heat_flow_w")
+        return round(float(value), 2) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        audit = self.coordinator.data.get("room_heat_loss") or {}
+        room = (audit.get("rooms") or {}).get(self.room_id, {})
+        if self.metric == "known_boundary_heat_flow_w":
+            return {
+                "is_complete": room.get("known_boundary_heat_flow_is_complete", False),
+                "missing_or_incomplete_boundaries": room.get("missing_or_incomplete_boundaries", []),
+                "method": audit.get("method"),
+                "interpretation": room.get("interpretation"),
+            }
+        return {
+            **(room.get(self.metric) or {}),
+            "method": audit.get("method"),
+            "interpretation": room.get("interpretation"),
+            "ground_temperature_model": audit.get("ground_temperature_model") if self.metric == "ground" else None,
         }
 
 

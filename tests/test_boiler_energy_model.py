@@ -351,3 +351,55 @@ def test_modulation_and_gas_reconciled_heating_season_periods_are_independent():
     assert abs(second["boiler_gas_reconciled_energy_today_kwh"] - expected_gas_heat) < 1e-4
     assert abs(second["boiler_gas_reconciled_energy_heating_season_kwh"] - expected_gas_heat) < 1e-4
     assert second["boiler_modulation_energy_heating_season_kwh"] != second["boiler_gas_reconciled_energy_heating_season_kwh"]
+
+
+def test_daily_calibration_rejects_extreme_ratio_without_changing_factor():
+    from datetime import datetime, timezone
+
+    history = {}
+    MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 0, {}, {}, 0,
+        now=datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc))
+    state = history["boiler_energy_experiment"]
+    state["calibration_factor"] = 1.0
+    state["daily_generated_heat_kwh"] = {"2026-11-20": 3.8959}
+    state["daily_modulation_estimated_energy_kwh"] = {"2026-11-20": 0.7783}
+    result = MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 0, {}, {}, 0,
+        now=datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc))
+    assert result["boiler_calibration_factor"] == 1.0
+    assert result["boiler_calibration_daily_status"] == "withheld"
+    assert result["boiler_calibration_daily_reason"] == "daily_ratio_outside_0_25_to_2_5"
+    assert result["boiler_calibration_last_completed_day"] == "2026-11-20"
+
+
+def test_daily_calibration_rejects_too_small_daily_energy():
+    from datetime import datetime, timezone
+
+    history = {}
+    MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 0, {}, {}, 0,
+        now=datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc))
+    state = history["boiler_energy_experiment"]
+    state["daily_generated_heat_kwh"] = {"2026-11-20": 0.2}
+    state["daily_modulation_estimated_energy_kwh"] = {"2026-11-20": 0.3}
+    result = MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 0, {}, {}, 0,
+        now=datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc))
+    assert result["boiler_calibration_factor"] == 1.0
+    assert result["boiler_calibration_daily_reason"] == "gas_reconciled_energy_below_0_5_kwh"
+
+
+def test_daily_calibration_keeps_66_34_smoothing_and_next_day_effective_date():
+    from datetime import datetime, timezone
+
+    history = {}
+    MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 0, {}, {}, 0,
+        now=datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc))
+    state = history["boiler_energy_experiment"]
+    state["calibration_factor"] = 0.9
+    state["daily_generated_heat_kwh"] = {"2026-11-20": 8.0}
+    state["daily_modulation_estimated_energy_kwh"] = {"2026-11-20": 10.0}
+    next_day = MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 0, {}, {}, 0,
+        now=datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc))
+    assert next_day["boiler_calibration_daily_status"] == "accepted_pending_next_day"
+    assert next_day["boiler_calibration_factor"] == 0.9
+    following_day = MODEL.update_boiler_energy_model(history, 1.0, 0.0, False, 0, {}, {}, 0,
+        now=datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc))
+    assert abs(following_day["boiler_calibration_factor"] - (0.66 * 0.9 + 0.34 * 0.8)) < 1e-8

@@ -47,13 +47,16 @@ def build_envelope_conductance(options: dict) -> dict:
             incomplete.append(item.get("name", item.get("id")))
             continue
         room_area = room_areas.get(rid)
+        allocation_scope = str(item.get("allocation_scope") or "room")
         max_ratio = 1.5 if boundary in ("ground", "attic") else 3.0
-        if room_area is not None and area > room_area * max_ratio:
+        if (allocation_scope != "building_level" and room_area is not None
+                and area > room_area * max_ratio):
             suspect_records.append({
                 "id": item.get("id"), "name": item.get("name"), "room_id": rid,
                 "boundary": boundary, "area_m2": area, "room_floor_area_m2": room_area,
+                "allocation_scope": allocation_scope,
                 "status": "likely_building_level_surface_assigned_to_room",
-                "reason": f"Surface area exceeds {max_ratio:g} times the assigned room floor area.",
+                "reason": f"Surface area exceeds {max_ratio:g} times the assigned room floor area. Mark as building-level only when the full allocation is intentional.",
             })
             continue
         ua = area * u_value
@@ -61,7 +64,8 @@ def build_envelope_conductance(options: dict) -> dict:
         counts[rid][boundary] += 1
         opaque_counts[rid][boundary] += 1
         records.append({"id": item.get("id"), "name": item.get("name"), "room_id": rid,
-                        "boundary": boundary, "area_m2": area, "u_value_w_m2k": u_value,
+                        "boundary": boundary, "allocation_scope": allocation_scope,
+                        "area_m2": area, "u_value_w_m2k": u_value,
                         "conductance_w_per_k": round(ua, 4)})
     window_records = []
     for item in windows:

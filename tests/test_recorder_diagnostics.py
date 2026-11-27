@@ -58,7 +58,7 @@ def test_legacy_successful_history_pass_is_invalidated():
 
 
 def test_v0239_room_coupling_cache_is_invalidated():
-    assert MODULE.RECORDER_HISTORY_ANALYSIS_VERSION == 5
+    assert MODULE.RECORDER_HISTORY_ANALYSIS_VERSION == 6
     previous = {"status": "ok", "analysis_schema_version": 4}
     assert MODULE.recorder_history_cache_ttl(previous) == 0
 

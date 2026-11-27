@@ -139,7 +139,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                     surface_id = f"{base}_{suffix}"
                     suffix += 1
             record = {"id": surface_id, "name": name, "room_id": user_input["room_id"],
-                      "boundary": user_input["boundary"], "area_m2": float(user_input["area_m2"]),
+                      "boundary": user_input["boundary"],
+                      "allocation_scope": user_input.get("allocation_scope", "room"),
+                      "area_m2": float(user_input["area_m2"]),
                       "u_value_w_m2k": float(user_input["u_value_w_m2k"])}
             data = dict(self.config_entry.options)
             data["envelope_surfaces"] = [x for x in surfaces if x.get("id") != surface_id] + [record]
@@ -153,6 +155,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             vol.Required("name", default=existing.get("name", "")): str,
             vol.Required("room_id", default=existing.get("room_id", rooms[0]["id"])): vol.In({x["id"]: x[CONF_NAME] for x in rooms}),
             vol.Required("boundary", default=existing.get("boundary", "outdoor")): vol.In({"outdoor": "Outdoors", "ground": "Ground", "attic": "Unheated attic", "adjacent_heated": "Adjacent heated space"}),
+            vol.Optional("allocation_scope", default=existing.get("allocation_scope", "room")): vol.In({
+                "room": "Surface belongs to this room",
+                "building_level": "Building-level surface intentionally allocated to this room",
+            }),
             area_marker: area_selector,
             u_marker: u_selector,
         }

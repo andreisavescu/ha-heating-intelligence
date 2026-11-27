@@ -1,4 +1,29 @@
-## v0.25.1 — Stage 3 Anchor Isolation and Building Profile Corrections
+## v0.26.0 — Physical Model Quality and Independent Simulation States
+
+### Fixed
+- Add explicit room-vs-building-level allocation scope to envelope surfaces. Building-level ceiling/floor areas intentionally assigned to a room can now be included in that room's UA without being rejected solely because area exceeds room floor area. Existing records retain room-level safety checks until explicitly marked building-level.
+- Report one-step prediction evaluation, experimental forecast availability, provisional parameter identification, validated physical model and live simulation execution independently. A one-step score is no longer labelled as physical-model validation.
+- Count generated forecast points and live-sensor initial states rather than comparing incompatible status strings; this fixes the false zero simulated-room count and spurious forecast-not-generated blocker for coupled forecasts.
+- Add Stage 6 solar endpoint diagnostics for valid, missing/stale and unsupported solar readings; normalize W/m² and kW/m² and use both interval endpoints.
+- Label the what-if simulator as single-room envelope-only and explicitly state that its baseline is not directly comparable to the coupled multi-zone forecast.
+
+### Model-quality safeguards
+- Experimental forecasts remain separate from validated model claims. Physical-model validation remains false unless an explicit independent validation result is supplied.
+- Provisional parameter status is preserved; absolute-identification, bootstrap, excitation and parameter-promotion gates are not relaxed.
+- Recorder analysis schema is bumped to 6 so cached summaries are rebuilt.
+- No heating controls, pump calculations, circuit flows, existing room IDs or entity IDs are changed.
+
+### Home Assistant follow-up
+- Edit the Baie Cada hallway/staircase attic ceiling surface and set Allocation scope to Building-level surface intentionally allocated to this room. Keep the entire surface allocated to Baie Cada.
+- Review Birou's wood/parquet finish zone. The audit showed a ceramic-tile name and 1.5 W/m·K conductivity despite the wood/parquet material label; check the custom conductivity rather than assuming it is correct.
+- Enable AC heating in House Assessment (Yes), as AC is occasionally used for heating.
+- Recheck Stage 6 solar endpoint diagnostics after the Recorder analysis refresh.
+
+### Validation
+- Regression tests cover explicit building-level surface allocation, independent simulation states and solar endpoint/unit handling.
+- GitHub Actions CI must pass before installation.
+
+## v0.25.6 — Fix Coupled Forecast Recursion and Room Slab Mapping
 
 - Fix Stage 3 outdoor-anchor diagnostics so every room reports its own surface-derived outdoor UA, opaque-surface count, window count, selected anchor and withholding reason. Metadata from one room can no longer leak into another room's audit.
 - Determine surface-inventory presence per room rather than from the global inventory. Rooms with no records retain the documented legacy fallback; rooms with an explicit but window-only inventory remain withheld from absolute outdoor anchoring.

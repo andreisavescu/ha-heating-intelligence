@@ -97,7 +97,7 @@ def build_stage3_thermal_capacity(
         )
         anchored = absolute.get("rooms", {}).get(rid, {})
         finish_zones = []
-        finish_resistance_area = 0.0
+        finish_conductance_area = 0.0
         finish_capacity = 0.0
         for zone in (room.get("floor_finish_zones") or []):
             zone_area = _positive(zone.get("area_m2"))
@@ -109,7 +109,7 @@ def build_stage3_thermal_capacity(
             resistance = thickness_mm / 1000.0 / conductivity if valid else None
             capacity = zone_area * thickness_mm / 1000.0 * density * specific_heat / 3600.0 if valid else None
             if valid:
-                finish_resistance_area += resistance * zone_area
+                finish_conductance_area += zone_area / resistance
                 finish_capacity += capacity
             finish_zones.append({
                 "id": zone.get("id"), "name": zone.get("name", zone.get("id")),
@@ -150,7 +150,7 @@ def build_stage3_thermal_capacity(
             "floor_finish": {
                 "status": "configured" if finish_zones else "not_configured",
                 "zones": finish_zones, "configured_area_m2": round(finish_area, 3),
-                "area_weighted_resistance_m2k_w": round(finish_resistance_area / finish_area, 5) if finish_area > 0 else None,
+                "equivalent_parallel_resistance_m2k_w": round(finish_area / finish_conductance_area, 5) if finish_conductance_area > 0 else None,
                 "total_finish_capacity_wh_per_k": round(finish_capacity, 3) if finish_zones else None,
                 "interpretation": "Per-zone finish resistance is in series between the UFH screed and room air; finish heat capacity is separate from screed capacity. These estimates do not imply an identified slab-to-room conductance.",
             },

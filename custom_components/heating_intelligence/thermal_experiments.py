@@ -497,3 +497,15 @@ def build_coupled_network_validation(samples, rooms, absolute_parameters, multiz
             "Slab storage remains excluded until slab temperature and slab-to-room conductance are identifiable.",
         ],
     }
+
+
+def select_predictive_forecast(coupled_forecast, fallback_forecast):
+    """Select the coupled forecast without creating a self-referential attribute tree.
+
+    Keep the attempted coupled result alongside the legacy fallback only when
+    the coupled network cannot produce a forecast. When it succeeds, it is
+    already the published forecast and must not be attached to itself.
+    """
+    if coupled_forecast.get("rooms_simulated", 0) > 0:
+        return coupled_forecast
+    return {**fallback_forecast, "coupled_network_attempt": coupled_forecast}

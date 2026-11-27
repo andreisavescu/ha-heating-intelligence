@@ -47,7 +47,18 @@ def build_envelope_conductance(options: dict) -> dict:
             incomplete.append(item.get("name", item.get("id")))
             continue
         room_area = room_areas.get(rid)
-        allocation_scope = str(item.get("allocation_scope") or "room")
+        # This legacy record was explicitly confirmed by the user as the full
+        # hallway + staircase attic ceiling intentionally allocated to Baie Cada.
+        # Preserve that allocation for existing installations that predate the
+        # allocation_scope option; do not broaden this exception to other surfaces.
+        legacy_building_level = (
+            item.get("id") == "tavan_baie_cada_cs"
+            and rid == "baie_cada"
+            and boundary == "attic"
+        )
+        allocation_scope = str(item.get("allocation_scope") or (
+            "building_level" if legacy_building_level else "room"
+        ))
         max_ratio = 1.5 if boundary in ("ground", "attic") else 3.0
         if (allocation_scope != "building_level" and room_area is not None
                 and area > room_area * max_ratio):
@@ -66,7 +77,8 @@ def build_envelope_conductance(options: dict) -> dict:
         records.append({"id": item.get("id"), "name": item.get("name"), "room_id": rid,
                         "boundary": boundary, "allocation_scope": allocation_scope,
                         "area_m2": area, "u_value_w_m2k": u_value,
-                        "conductance_w_per_k": round(ua, 4)})
+                        "conductance_w_per_k": round(ua, 4),
+                        "allocation_scope_source": "user_confirmed_legacy_override" if legacy_building_level else "configured" if item.get("allocation_scope") else "default_room"})
     window_records = []
     for item in windows:
         rid = item.get("room_id")
@@ -105,6 +117,12 @@ def build_envelope_conductance(options: dict) -> dict:
         "incomplete_records": incomplete,
         "invalid_records": invalid,
         "suspect_records": suspect_records,
+        "intentional_allocation_overrides": [
+            {"id": item.get("id"), "room_id": item.get("room_id"),
+             "boundary": item.get("boundary"), "allocation_scope": item.get("allocation_scope"),
+             "source": item.get("allocation_scope_source")}
+            for item in records if item.get("allocation_scope_source") == "user_confirmed_legacy_override"
+        ],
         "known_surface_count": len(records) + len(window_records),
         "method": "UA = measured gross area × explicitly supplied whole-assembly U-value; boundary conductances remain separate. Missing U-values or areas are not inferred.",
         "limitations": ["Window contribution requires gross glass-plus-frame area and whole-window Uw; center-of-glass Ug is not accepted as Uw.",

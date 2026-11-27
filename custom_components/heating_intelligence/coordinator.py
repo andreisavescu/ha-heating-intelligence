@@ -22,6 +22,7 @@ from .advanced_heating import update_advanced_history
 from .house_assessment import build_house_assessment
 from .building_audits import build_house_audit, build_thermal_readiness_audit, build_measurement_audit
 from .envelope_conductance import build_envelope_conductance
+from .room_heat_loss import update_ground_temperature_model, build_room_boundary_heat_loss
 from .indoor_air_quality import build_indoor_air_analysis
 from .thermal_learning import build_room_thermal_model, build_house_thermal_model
 from .attic_thermal import build_attic_thermal_analysis
@@ -37,7 +38,7 @@ from .system_history import record_system_sample
 from .pump_countdown import start_deadline, timer_snapshot
 from .absolute_thermal_identification import identify_absolute_room_parameters
 from .stage3_thermal_capacity import build_stage3_thermal_capacity
-from .stage5_ufh_slab_model import build_stage5_ufh_slab_model
+from .stage5_ufh_slab_model import build_stage5_ufh_slab_model, build_estimated_water_return_temperature
 from .stage6_gain_model import build_stage6_gain_model
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator, build_simulation_audit, build_coupled_network_forecast, build_coupled_network_validation, select_predictive_forecast
 from .recorder_diagnostics import (
@@ -1178,6 +1179,20 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "measured_performance_status": result["house_assessment"].get("performance_status"),
         }
         result["envelope_conductance"] = build_envelope_conductance(self.entry.options)
+        ground_state, ground_model = update_ground_temperature_model(
+            outdoor_temperature,
+            self._history.get("ground_temperature_model"),
+            elapsed,
+        )
+        self._history["ground_temperature_model"] = ground_state
+        result["ground_temperature_model"] = ground_model
+        result["room_heat_loss"] = build_room_boundary_heat_loss(
+            result.get("rooms", {}),
+            result["envelope_conductance"],
+            outdoor_temperature,
+            result.get("attic_thermal", {}).get("attic_temperature"),
+            ground_model,
+        )
         result["house_audit"] = build_house_audit(
             self.entry.options, result.get("rooms", {}),
             self.entry.options.get(CONF_WINDOWS, []),
@@ -1284,6 +1299,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             self._history.get("boiler_energy_experiment", {}),
             result.get("water_temperature"),
         )
+        result["estimated_water_return_temperature"] = build_estimated_water_return_temperature(result["stage5_ufh_slab_model"])
         # Rebuild the observation network after Stage 5 is available so its
         # room-level slab nodes and finish priors reach the physical model.
         live_house_profile = dict(self.entry.options.get("house_assessment", {}))

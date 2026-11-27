@@ -102,7 +102,8 @@ def build_room_boundary_heat_loss(
         if "baie matr" in room_name_key or "baie matr" in room_id_key or room_id_key in {"baie_matr", "baie matr"}:
             room_temp = 22.0
             reference_temperature_source = "fixed_reference_temperature"
-        elif "baie parter" in room_name_key or "baie parter" in room_id_key or room_id_key in {"baie_parter", "baie parter"}:
+        elif ("baie parter" in room_name_key or "baie parter" in room_id_key
+              or room_id_key in {"baie_parter", "baie parter", "baie_cada"}):
             room_temp = 20.5
             reference_temperature_source = "fixed_reference_temperature"
         else:

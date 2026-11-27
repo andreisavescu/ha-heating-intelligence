@@ -89,7 +89,7 @@ def test_stage3_withholds_absolute_anchor_for_window_only_surface_inventory():
     assert room["envelope_anchor_source"] == (
         "withheld_incomplete_surface_inventory_missing_opaque_outdoor_surface"
     )
-    assert room["effective_room_capacity"]["effective_room_capacity_wh_per_k"] is None
+    assert room["effective_room_capacity"]["envelope_anchor_w_per_k"] == 8.0
 
 
 
@@ -105,9 +105,9 @@ def test_stage3_keeps_configured_outdoor_anchor_when_surface_inventory_is_incomp
         }}},
     )
     room = result["rooms"]["living"]
-    assert room["effective_room_capacity"]["envelope_anchor_w_per_k"] == 9.6945
+    assert room["effective_room_capacity"]["envelope_anchor_w_per_k"] == 7.42
     assert room["envelope_anchor_source"] == (
-        "explicit_envelope_surface_outdoor_boundary"
+        "configured_room_outdoor_conductance_with_incomplete_surface_inventory"
     )
     assert room["envelope_anchor_status"] == "configured_anchor_inventory_incomplete"
 

@@ -134,3 +134,25 @@ def test_stage5_creates_independent_room_level_slab_nodes_and_keeps_finish_stora
     assert result["floors"]["upstairs"]["slab_node"] == "room_level_nodes_aggregated_for_floor_reporting"
     assert result["floors"]["upstairs"]["finish_capacity_wh_per_k"] > 0
     assert result["rooms"]["bedroom"]["slab_temperature_c"] is None
+
+
+def test_house_return_estimate_is_flow_weighted_and_separate_from_measured_input():
+    estimate = MODULE.build_estimated_water_return_temperature({
+        "floors": {
+            "ground_floor": {"estimated_return_temperature_c": 30.0, "active_total_flow_l_min": 10.0, "allocated_useful_heat_power_w": 1000.0},
+            "upstairs": {"estimated_return_temperature_c": 34.0, "active_total_flow_l_min": 5.0, "allocated_useful_heat_power_w": 500.0},
+            "inactive": {"estimated_return_temperature_c": None, "active_total_flow_l_min": 0.0},
+        }
+    })
+    assert estimate["value_c"] == 31.33
+    assert estimate["active_flow_l_min"] == 15.0
+    assert estimate["status"] == "estimated_from_modulation_power_and_configured_active_flow"
+    assert "measured return temperature" in estimate["limitations"][2]
+
+
+def test_house_return_estimate_withholds_value_when_no_floor_is_active():
+    estimate = MODULE.build_estimated_water_return_temperature({"floors": {
+        "ground_floor": {"estimated_return_temperature_c": 30.0, "active_total_flow_l_min": 0.0}
+    }})
+    assert estimate["value_c"] is None
+    assert estimate["active_flow_l_min"] is None

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import math
 from typing import Any
 
 DEFAULT_GAS_KWH_PER_M3 = 10.55
@@ -90,6 +91,51 @@ def update_boiler_energy_model(
         "last_modulation_interval_output_kw": None,
     })
     # Backfill defaults when restoring history written by an earlier version.
+    # Normalize persisted room-energy ledgers before using them. Older or
+    # interrupted writes may contain nested mappings where a numeric room
+    # allocation is expected; discard only malformed entries, preserving all
+    # valid historical values and the calibration state.
+    daily_modulation_rooms = state.get("daily_modulation_room_energy_kwh")
+    if not isinstance(daily_modulation_rooms, dict):
+        daily_modulation_rooms = {}
+        state["daily_modulation_room_energy_kwh"] = daily_modulation_rooms
+    for day, room_values in list(daily_modulation_rooms.items()):
+        if not isinstance(room_values, dict):
+            daily_modulation_rooms.pop(day, None)
+            continue
+        daily_modulation_rooms[day] = {
+            str(room_id): float(value)
+            for room_id, value in room_values.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(float(value)) and float(value) >= 0
+        }
+
+    lifetime_modulation_rooms = state.get("modulation_room_energy_kwh")
+    if not isinstance(lifetime_modulation_rooms, dict):
+        lifetime_modulation_rooms = {}
+        state["modulation_room_energy_kwh"] = lifetime_modulation_rooms
+    state["modulation_room_energy_kwh"] = {
+        str(room_id): float(value)
+        for room_id, value in lifetime_modulation_rooms.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+        and math.isfinite(float(value)) and float(value) >= 0
+    }
+
+    season_modulation_rooms = state.get("heating_season_modulation_room_energy_kwh")
+    if not isinstance(season_modulation_rooms, dict):
+        season_modulation_rooms = {}
+        state["heating_season_modulation_room_energy_kwh"] = season_modulation_rooms
+    for season, room_values in list(season_modulation_rooms.items()):
+        if not isinstance(room_values, dict):
+            season_modulation_rooms.pop(season, None)
+            continue
+        season_modulation_rooms[season] = {
+            str(room_id): float(value)
+            for room_id, value in room_values.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(float(value)) and float(value) >= 0
+        }
+
     for key, default in {
         "modulation_estimated_energy_kwh": 0.0,
         "calibration_reference_heat_kwh": 0.0,

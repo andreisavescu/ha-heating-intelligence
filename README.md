@@ -1,3 +1,27 @@
+## v0.24.1 — Provisional Room Capacity and Floor-Finish Thermal Properties
+
+### Added
+- Separate physical room-capacity estimation from chronological model validation. Rooms that meet the physical anchor, bootstrap uncertainty and data-coverage requirements can now receive a provisional effective-capacity estimate even when the persistence benchmark is not beaten.
+- Keep validation and promotion distinct from estimation: a provisional estimate is available to experimental simulation but is not labelled validated unless chronological holdout performance passes.
+- Add an options-flow editor for per-room UFH floor-finish zones. Multiple finish zones can be assigned to one room, allowing mixed surfaces such as ceramic tile and parquet without creating artificial room boundaries.
+- Add editable material properties for each zone: area, thickness, thermal conductivity, density and specific heat capacity. Ceramic-tile and wood/parquet presets are starting estimates and can be overridden.
+- Calculate per-zone finish thermal resistance and material heat capacity in Stage 3, and expose finish storage separately from UFH screed storage in Stage 5 diagnostics.
+- Wire configured finish zones into the physical-model and UFH audit inputs.
+
+### Fixed
+- Do not use legacy room-level envelope conductance as a fallback when a populated opaque-surface inventory is incomplete. Rooms missing required opaque outdoor surface records remain explicitly withheld; completed upstairs room inventories can still be used independently.
+- Preserve explicit withheld status in the capacity audit for incomplete surface inventories.
+
+### Model scope and limitations
+- Finish-layer resistance and heat capacity are material-property estimates, not measured values.
+- Finish storage is reported separately from screed storage. It is not yet dynamically coupled into a calibrated screed-to-room heat-transfer path; the corresponding slab-to-room conductance remains withheld until identified.
+- Provisional room capacity is not equivalent to validated capacity. Chronological holdout validation remains a separate promotion requirement.
+- Downstairs rooms with incomplete opaque surface records remain excluded from absolute envelope anchoring until those records are completed.
+
+### Upgrade
+- Update to v0.24.1 through HACS and restart Home Assistant or reload the integration.
+- Existing room, envelope-surface and UFH circuit configuration is preserved. Configure floor-finish zones in the integration options under **Configure per-room UFH floor finishes** if you want the new finish-layer diagnostics.
+
 ## v0.21.1 — Solar and internal-gain diagnostic foundation
 
 - Add a diagnostic-only solar and internal-gain report using the existing Recorder-aligned historical dataset.

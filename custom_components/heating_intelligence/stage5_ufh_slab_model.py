@@ -274,3 +274,37 @@ def build_stage5_ufh_slab_model(
             "Room slab-to-room and slab-to-lower-boundary conductances remain unidentified until independently constrained.",
         ],
     }
+
+
+def build_estimated_water_return_temperature(stage5_model: dict[str, Any] | None) -> dict[str, Any]:
+    """Flow-weight floor return estimates; keep this distinct from measured return input."""
+    floors = (stage5_model or {}).get("floors") or {}
+    valid = [
+        floor for floor in floors.values()
+        if _positive(floor.get("estimated_return_temperature_c")) is not None
+        and _positive(floor.get("active_total_flow_l_min")) is not None
+    ]
+    total_flow = sum(float(floor["active_total_flow_l_min"]) for floor in valid)
+    value = (
+        sum(float(floor["estimated_return_temperature_c"]) * float(floor["active_total_flow_l_min"]) for floor in valid) / total_flow
+        if total_flow > 0 else None
+    )
+    return {
+        "value_c": round(value, 2) if value is not None else None,
+        "status": "estimated_from_modulation_power_and_configured_active_flow" if value is not None else "unavailable_insufficient_active_heat_or_flow",
+        "active_flow_l_min": round(total_flow, 3) if total_flow > 0 else None,
+        "floor_estimates": {
+            floor_id: {
+                "estimated_return_temperature_c": floor.get("estimated_return_temperature_c"),
+                "active_total_flow_l_min": floor.get("active_total_flow_l_min"),
+                "allocated_useful_heat_power_w": floor.get("allocated_useful_heat_power_w"),
+                "status": floor.get("status"),
+            } for floor_id, floor in floors.items()
+        },
+        "method": "flow_weighted_mean_of_floor_return_estimates",
+        "limitations": [
+            "Estimated from calibrated boiler modulation heat allocation and configured circuit flow values while each manifold is active.",
+            "Circuit flow values are manually configured calibrated values, not live flow-meter readings.",
+            "This estimate is not a measured return temperature and is never substituted for the configured return-temperature sensor.",
+        ],
+    }

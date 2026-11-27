@@ -38,8 +38,8 @@ def test_heat_loss_uses_surface_ua_and_separates_outdoor_attic_and_ground():
     assert room["attic"]["heat_flow_w"] == 24.0
     assert room["ground"]["heat_flow_w"] is None
     assert room["known_boundary_heat_flow_w"] == 104.0
-    assert room["known_boundary_heat_flow_is_complete"] is False
-    assert "ground_surface_ua" in room["missing_or_incomplete_boundaries"]
+    assert room["known_boundary_heat_flow_is_complete"] is True
+    assert "ground_surface_ua" not in room["missing_or_incomplete_boundaries"]
 
 
 def test_window_only_outdoor_ua_is_reported_as_partial_not_total_wall_loss():

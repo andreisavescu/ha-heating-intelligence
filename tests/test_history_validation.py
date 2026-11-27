@@ -2793,3 +2793,59 @@ def test_event_interval_audit_separates_short_long_and_timestamp_rejections():
     assert exclusions["too_long_intervals"] >= 1
     assert exclusions["short_intervals_unusable_tail"] >= 1
     assert room["interval_audit"]["timestamp_errors"]["invalid_temperature_timestamps"] == 1
+
+
+def test_native_event_fit_uses_only_configured_room_links_and_rejects_short_ac_boosts():
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    samples = []
+    living, bedroom, kitchen = 21.0, 20.0, 19.0
+    for index in range(40):
+        stamp = start + timedelta(minutes=30 * index)
+        samples.append({
+            "timestamp": stamp.isoformat(),
+            "channels": {
+                "outdoor_temperature": 5.0 + math.sin(index / 4),
+                "solar_radiation": 0.0,
+                "ac_power": 0.0,
+                "ac_power_unit": "W",
+            },
+            "rooms": {
+                "living": {"temperature": living, "temperature_timestamp": stamp.isoformat(),
+                           "temperature_is_event": True, "demand": "off", "window": "off"},
+                "bedroom": {"temperature": bedroom, "temperature_timestamp": stamp.isoformat(),
+                            "temperature_is_event": True, "demand": "off", "window": "off"},
+                "kitchen": {"temperature": kitchen, "temperature_timestamp": stamp.isoformat(),
+                            "temperature_is_event": True, "demand": "off", "window": "off"},
+            },
+        })
+        if index == 0:
+            boost_stamp = stamp + timedelta(minutes=8)
+            samples.append({
+                "timestamp": boost_stamp.isoformat(),
+                "channels": {"outdoor_temperature": 5.0, "solar_radiation": 0.0,
+                             "ac_power": 850.0, "ac_power_unit": "W"},
+                "rooms": {
+                    "living": {"temperature": living, "temperature_timestamp": stamp.isoformat(),
+                               "temperature_is_event": False, "demand": "off", "window": "off"},
+                    "bedroom": {"temperature": bedroom, "temperature_timestamp": stamp.isoformat(),
+                                "temperature_is_event": False, "demand": "off", "window": "off"},
+                    "kitchen": {"temperature": kitchen, "temperature_timestamp": stamp.isoformat(),
+                                "temperature_is_event": False, "demand": "off", "window": "off"},
+                },
+            })
+        if index < 39:
+            living += 0.01 * (5.0 - living) + 0.02 * (bedroom - living)
+            bedroom += 0.01 * (5.0 - bedroom) + 0.02 * (living - bedroom)
+            kitchen += 0.01 * (5.0 - kitchen)
+
+    result = MODULE.build_multizone_response_identification(
+        samples,
+        [{"id": "living"}, {"id": "bedroom"}, {"id": "kitchen"}],
+        room_connections=[{"from_room": "living", "to_room": "bedroom",
+                           "conductance_w_per_k": 10.0}],
+        minimum_train_intervals=10,
+        minimum_holdout_intervals=3,
+    )
+    living_fit = result["rooms"]["living"]
+    assert living_fit["predictors"] == ["envelope", "bedroom"]
+    assert living_fit["excluded_intervals"]["ac_heating_active_or_unavailable"] >= 1

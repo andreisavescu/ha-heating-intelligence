@@ -126,9 +126,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             RoomConductanceSensor(coordinator, room["id"], room["name"], metric)
             for metric in ("envelope_conductance_w_per_k", "attic_floor_conductance_w_per_k")
         )
+        room_floor = str(room.get("floor") or "").strip().casefold()
+        room_name = str(room.get("name") or "").strip().casefold()
+        room_id = str(room.get("id") or "").strip().casefold()
+        is_kitchen = room_name in {"bucătărie", "bucatarie", "kitchen"} or room_id in {"bucatarie", "bucătărie", "kitchen"}
+        if room_floor == "upstairs":
+            boundary_metrics = ("outdoor", "attic")
+        elif is_kitchen:
+            boundary_metrics = ("outdoor", "ground", "attic")
+        else:
+            boundary_metrics = ("outdoor", "ground")
         entities.extend(
             RoomBoundaryHeatLossSensor(coordinator, room["id"], room["name"], metric)
-            for metric in ("outdoor", "attic", "ground", "known_boundary_heat_flow_w")
+            for metric in (*boundary_metrics, "known_boundary_heat_flow_w")
         )
         if room.get("humidity_entity"):
             entities.append(RoomAirQualitySensor(coordinator, room["id"], room["name"], "humidity"))

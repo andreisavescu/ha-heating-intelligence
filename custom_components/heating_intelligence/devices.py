@@ -32,7 +32,7 @@ def audit_device_info(coordinator) -> dr.DeviceInfo:
         name="Heating Intelligence — Audits",
         manufacturer="Heating Intelligence",
         model="Diagnostics and audits",
-        via_device=_house_identifier(coordinator),
+        via_device_id=_house_identifier(coordinator),
     )
 
 
@@ -43,7 +43,7 @@ def room_device_info(coordinator, room_id: str, room_name: str) -> dr.DeviceInfo
         name=room_name,
         manufacturer="Heating Intelligence",
         model="Heating room",
-        via_device=_house_identifier(coordinator),
+        via_device_id=_house_identifier(coordinator),
     )
 
 
@@ -54,7 +54,7 @@ def pump_device_info(coordinator, pump_id: str, pump_name: str) -> dr.DeviceInfo
         name=pump_name,
         manufacturer="Heating Intelligence",
         model="Manifold pump",
-        via_device=_house_identifier(coordinator),
+        via_device_id=_house_identifier(coordinator),
     )
 
 
@@ -118,7 +118,7 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
             name=room["name"],
             manufacturer="Heating Intelligence",
             model="Heating room",
-            via_device=_house_identifier(coordinator),
+            via_device_id=_house_identifier(coordinator),
         )
 
     pump_devices = {}
@@ -130,7 +130,7 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
             name=pump["name"],
             manufacturer="Heating Intelligence",
             model="Manifold pump",
-            via_device=_house_identifier(coordinator),
+            via_device_id=_house_identifier(coordinator),
         )
 
     # Remove obsolete electrical-stage diagnostics from the earlier manifold
@@ -164,7 +164,7 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
         name="Heating Intelligence — Audits",
         manufacturer="Heating Intelligence",
         model="Diagnostics and audits",
-        via_device=_house_identifier(coordinator),
+        via_device_id=_house_identifier(coordinator),
     )
     audit_unique_ids = {
         f"{DOMAIN}_ufh_hydraulic_audit",

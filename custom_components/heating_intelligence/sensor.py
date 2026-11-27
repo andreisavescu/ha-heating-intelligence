@@ -1390,7 +1390,7 @@ class PhysicalModelExperimentsMultizoneSensor(AuditDeviceMixin, CoordinatorEntit
             "status", "method", "interval_minutes", "interval_policy",
             "sampling_mode", "train_fraction", "configured_rooms",
             "observed_rooms", "excluded_unobserved_rooms",
-            "house_level_holdout_validation", "input_dataset",
+            "house_level_holdout_validation",
             "physical_parameter_identification_status",
             "identifiability_note",
         )
@@ -1485,9 +1485,6 @@ class PhysicalModelExperimentsDiagnosticsSensor(AuditDeviceMixin, CoordinatorEnt
         return {
             "physical_model_simulation_audit": self.coordinator.data.get("physical_model_simulation_audit", {}),
             "recorder_diagnostics": self.coordinator.data.get("recorder_diagnostics", {}),
-            "stage3_thermal_capacity": self.coordinator.data.get("stage3_thermal_capacity", {}),
-            "stage5_ufh_slab_model": self.coordinator.data.get("stage5_ufh_slab_model", {}),
-            "stage6_gain_model": self.coordinator.data.get("stage6_gain_model", {}),
             "heat_delivery_calibration": self.coordinator.data.get("heat_delivery_calibration", {}),
         }
 

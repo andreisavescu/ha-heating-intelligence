@@ -39,7 +39,7 @@ from .absolute_thermal_identification import identify_absolute_room_parameters
 from .stage3_thermal_capacity import build_stage3_thermal_capacity
 from .stage5_ufh_slab_model import build_stage5_ufh_slab_model
 from .stage6_gain_model import build_stage6_gain_model
-from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator, build_simulation_audit
+from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator, build_simulation_audit, build_coupled_network_forecast, build_coupled_network_validation
 from .recorder_diagnostics import (
     RECORDER_HISTORY_ANALYSIS_VERSION,
     build_recorder_failure_summary,
@@ -519,9 +519,35 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         snapshot["recorder_diagnostics"] = {
             key: validation[key] for key in diagnostic_keys if key in validation
         }
-        snapshot["predictive_forecast"] = build_predictive_forecast(
-            current_room_snapshot, configured_rooms, absolute_parameters, outdoor,
+        multi_zone = (
+            (snapshot.get("thermal_model") or {}).get("multi_zone") or {}
         )
+        room_heat_inputs_w = {}
+        for floor in ((snapshot.get("stage5_ufh_slab_model") or {}).get("floors") or {}).values():
+            room_heat_inputs_w.update(floor.get("allocated_room_power_w") or {})
+        coupled_validation = build_coupled_network_validation(
+            self._calibration_dataset_samples or [],
+            configured_rooms,
+            absolute_parameters,
+            multi_zone,
+        )
+        if coupled_validation.get("rooms_scored", 0) > 0:
+            physical_validation = coupled_validation
+            snapshot["physical_model_validation"] = physical_validation
+        coupled_forecast = build_coupled_network_forecast(
+            current_room_snapshot, configured_rooms, absolute_parameters, outdoor,
+            multi_zone, room_heat_inputs_w,
+        )
+        # Retain the legacy forecast as a fallback only when the coupled
+        # network cannot yet run; the published method makes the distinction.
+        snapshot["predictive_forecast"] = (
+            coupled_forecast
+            if coupled_forecast.get("rooms_simulated", 0) > 0
+            else build_predictive_forecast(
+                current_room_snapshot, configured_rooms, absolute_parameters, outdoor,
+            )
+        )
+        snapshot["predictive_forecast"]["coupled_network_attempt"] = coupled_forecast
         snapshot["what_if_simulator"] = build_what_if_simulator(
             current_room_snapshot, configured_rooms, absolute_parameters, outdoor,
         )

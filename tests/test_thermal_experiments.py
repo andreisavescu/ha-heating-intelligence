@@ -103,3 +103,67 @@ def test_simulation_audit_counts_native_event_dataset_samples():
     )
     assert audit["dataset_status"] == "event_dataset_available"
     assert audit["dataset_samples"] == 29132
+
+
+def test_coupled_forecast_uses_inter_room_and_ventilation_paths_and_reports_unobserved_rooms():
+    rooms = [
+        {"id": "living", "floor": "ground_floor", "envelope_conductance_w_per_k": 5.0},
+        {"id": "birou", "floor": "ground_floor", "envelope_conductance_w_per_k": 4.0},
+        {"id": "baie_matr", "floor": "upstairs", "envelope_conductance_w_per_k": 2.0},
+    ]
+    params = {"rooms": {
+        "living": {"effective_room_capacity_wh_per_k": 1200},
+        "birou": {"effective_room_capacity_wh_per_k": 900},
+        "baie_matr": {"effective_room_capacity_wh_per_k": 700},
+    }}
+    network = {
+        "configured_connections": [
+            {"from": "room:living", "to": "room:birou",
+             "conductance_w_per_k": 8.0, "path": "inter_room"},
+            {"from": "room:living", "to": "boundary:outdoors",
+             "conductance_w_per_k": 5.0, "path": "room_envelope"},
+            {"from": "room:birou", "to": "boundary:outdoors",
+             "conductance_w_per_k": 4.0, "path": "room_envelope"},
+        ],
+        "ventilation_paths": [
+            {"from": "room:living", "conductance_w_per_k": 1.0},
+        ],
+    }
+    result = MODULE.build_coupled_network_forecast(
+        {"living": {"temperature": 21.0}, "birou": {"temperature": 19.0}},
+        rooms, params, 5.0, network, {"living": 100.0}, horizons_hours=(1,),
+    )
+    assert result["rooms_simulated"] == 2
+    assert result["method"] == "coupled_multi_zone_rc_with_calibrated_room_heat_inputs"
+    assert result["rooms"]["living"]["heat_input_w"] == 100.0
+    assert result["rooms"]["baie_matr"]["status"] == "withheld_missing_live_room_temperature"
+    assert result["network_paths_used"] == 4
+    assert result["energy_balance_checks"][0]["status"] == "balanced_within_numerical_precision"
+
+
+def test_coupled_validation_scores_measured_rooms_and_reports_missing_sensor_reason():
+    rooms = [
+        {"id": "living", "envelope_conductance_w_per_k": 5.0},
+        {"id": "baie_matr", "envelope_conductance_w_per_k": 2.0},
+    ]
+    params = {"rooms": {
+        "living": {"effective_room_capacity_wh_per_k": 1000},
+        "baie_matr": {"effective_room_capacity_wh_per_k": 800},
+    }}
+    samples = [
+        {"timestamp": "2026-11-01T00:00:00+00:00",
+         "channels": {"outdoor_temperature": 5.0},
+         "rooms": {"living": {"temperature": 21.0}}},
+        {"timestamp": "2026-11-01T01:00:00+00:00",
+         "channels": {"outdoor_temperature": 5.0},
+         "rooms": {"living": {"temperature": 20.9}}},
+    ]
+    network = {"configured_connections": [
+        {"from": "room:living", "to": "boundary:outdoors",
+         "conductance_w_per_k": 5.0, "path": "room_envelope"},
+    ]}
+    result = MODULE.build_coupled_network_validation(samples, rooms, params, network)
+    assert result["rooms_scored"] == 1
+    assert result["rooms"]["living"]["status"] == "scored_coupled_multizone_one_step"
+    assert result["rooms"]["baie_matr"]["valid_intervals"] == 0
+    assert result["rooms"]["baie_matr"]["rejected_intervals"]["room_temperature_unobserved"] == 1

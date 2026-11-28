@@ -1,3 +1,26 @@
+## v0.26.5 — Room Diagnostics and Directional Heat Flow
+
+### Changed
+- Move room-specific diagnostic entities from the global **Heating Intelligence — Audits** device to their corresponding room devices.
+- Group each room's external-envelope and attic-floor conductances, plus outdoor, attic, ground and known-boundary heat-flow sensors, with that room's existing sensors.
+- Keep house-wide audits and diagnostic payload entities on **Heating Intelligence — Audits**.
+- Repair existing entity-to-device associations during integration setup without changing entity IDs, unique IDs or Recorder history.
+- Fix room-card lookup of the known-boundary heat-flow sensor so the final room row can display its calculated value.
+- Display **Heat loss: XX W** in dark blue when the combined signed boundary heat flow is outward, and **Heat gain: XX W** in red when it is inward.
+- Show a neutral unavailable placeholder when the required heat-flow value is missing.
+
+### Validation and limitations
+- GitHub Actions CI passed on PR #140.
+- Heat-flow direction is based on the signed sum of applicable configured outdoor, attic and ground boundary estimates, using measured room and boundary temperatures.
+- These are conductive boundary estimates, not a complete whole-room heat balance. Ventilation, inter-room transfer, solar/internal gains and UFH slab storage are not included.
+- No boiler, pump, thermostat, UFH control or heating-cycle behaviour is changed.
+
+### Upgrade
+- Update through HACS and restart Home Assistant (or reload the integration).
+- Existing room diagnostic entities will be reassigned to their room devices during integration setup.
+
+---
+
 ## v0.26.4 — Combined Room Heat Loss and Gain
 
 ### Changed

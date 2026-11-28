@@ -141,3 +141,21 @@ def test_device_repair_clears_only_config_entry_disabled_devices():
     assert "async_update_device" in helper_source
     assert "device.disabled_by" in helper_source
     assert "for device in (house, *room_devices.values(), *pump_devices.values(), audit_device)" in source
+
+
+
+def test_room_boundary_audits_are_assigned_to_their_room_devices():
+    devices_path = (
+        Path(__file__).parents[1]
+        / "custom_components"
+        / "heating_intelligence"
+        / "devices.py"
+    )
+    source = devices_path.read_text()
+
+    # Room boundary metrics are explicitly routed to the matching room device;
+    # only global audit entities and payload parts remain on the Audits device.
+    assert "if is_room_audit:" in source
+    assert 'unique_id.startswith(f"{DOMAIN}_{room_id}_")' in source
+    assert "target = device" in source
+    assert "or is_room_audit" not in source

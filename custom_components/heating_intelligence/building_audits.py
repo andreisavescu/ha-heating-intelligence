@@ -11,6 +11,7 @@ CONF_WINDOWS = "windows"
 CONF_OUTDOOR_TEMPERATURE_ENTITY = "outdoor_temperature_entity"
 CONF_SOLAR_RADIATION_ENTITY = "solar_radiation_entity"
 CONF_ATTIC_TEMPERATURE_ENTITY = "attic_temperature_entity"
+CONF_GROUND_TEMPERATURE_ENTITY = "ground_temperature_entity"
 CONF_ATTIC_HUMIDITY_ENTITY = "attic_humidity_entity"
 CONF_WATER_TEMPERATURE_ENTITY = "water_temperature_entity"
 CONF_RETURN_WATER_TEMPERATURE_ENTITY = "return_water_temperature_entity"
@@ -237,6 +238,7 @@ def build_measurement_audit(options: dict, rooms: dict, data: dict) -> dict:
         "outdoor_temperature": options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY),
         "solar_radiation": options.get(CONF_SOLAR_RADIATION_ENTITY),
         "attic_temperature": options.get(CONF_ATTIC_TEMPERATURE_ENTITY),
+        "ground_temperature": options.get(CONF_GROUND_TEMPERATURE_ENTITY),
         "attic_humidity": options.get(CONF_ATTIC_HUMIDITY_ENTITY),
         "water_supply_temperature": options.get(CONF_WATER_TEMPERATURE_ENTITY),
         "water_return_temperature": options.get(CONF_RETURN_WATER_TEMPERATURE_ENTITY),

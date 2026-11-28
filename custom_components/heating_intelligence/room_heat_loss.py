@@ -1,15 +1,12 @@
 """Room-level transmission heat-flow estimates from explicit envelope surfaces.
 
-Ground temperature is a provisional lagged-outdoor proxy. Ground heat flow is
-only calculated when an explicit ground-boundary UA surface is configured.
+Ground heat flow uses only a user-selected ground-temperature sensor. It never
+substitutes outdoor temperature for a missing ground measurement.
 """
 from __future__ import annotations
 
 import math
 from typing import Any
-
-GROUND_TEMPERATURE_TIME_CONSTANT_DAYS = 30.0
-
 
 def _number(value: Any) -> float | None:
     try:
@@ -20,48 +17,31 @@ def _number(value: Any) -> float | None:
 
 
 def update_ground_temperature_model(
-    outdoor_temperature_c: float | None,
-    previous_state: dict | None,
-    elapsed_seconds: float,
+    ground_temperature_c: float | None,
+    previous_state: dict | None = None,
+    elapsed_seconds: float = 0.0,
+    *,
+    entity_id: str | None = None,
 ) -> tuple[dict, dict]:
-    """Update a provisional 30-day low-pass outdoor proxy.
-
-    This is not a soil-temperature measurement or a validated ISO 13370 model.
-    It provides a lagged boundary estimate only; the UA of the ground assembly
-    must still be explicitly configured before any ground heat flow is reported.
-    """
-    outside = _number(outdoor_temperature_c)
+    """Expose the configured measured ground-boundary temperature, if valid."""
+    temperature = _number(ground_temperature_c)
     state = dict(previous_state or {})
-    previous = _number(state.get("filtered_outdoor_temperature_c"))
-    accumulated = max(0.0, _number(state.get("observed_seconds")) or 0.0)
-    dt = max(0.0, min(_number(elapsed_seconds) or 0.0, 3600.0))
-    if outside is not None:
-        if previous is None:
-            filtered = outside
-        else:
-            tau_seconds = GROUND_TEMPERATURE_TIME_CONSTANT_DAYS * 86400.0
-            alpha = 1.0 - math.exp(-dt / tau_seconds) if dt > 0 else 0.0
-            filtered = previous + alpha * (outside - previous)
-        accumulated += dt
-        state = {
-            "filtered_outdoor_temperature_c": round(filtered, 4),
-            "observed_seconds": round(accumulated, 1),
-            "time_constant_days": GROUND_TEMPERATURE_TIME_CONSTANT_DAYS,
-            "last_outdoor_temperature_c": outside,
+    if temperature is None:
+        return state, {
+            "ground_temperature_c": None,
+            "estimated_ground_boundary_temperature_c": None,
+            "temperature_entity": entity_id,
+            "status": "unavailable_missing_ground_temperature_sensor" if not entity_id else "unavailable_ground_temperature_sensor",
+            "method": "direct user-selected Home Assistant ground-temperature entity; no outdoor-temperature proxy",
         }
-    else:
-        filtered = previous
-    warmed = accumulated >= GROUND_TEMPERATURE_TIME_CONSTANT_DAYS * 86400.0
-    model = {
-        "estimated_ground_boundary_temperature_c": round(filtered, 2) if filtered is not None else None,
-        "status": "provisional_lagged_outdoor_proxy" if warmed else
-            "warming_up_lagged_outdoor_proxy" if filtered is not None else
-            "unavailable_missing_outdoor_temperature",
-        "observed_duration_days": round(accumulated / 86400.0, 2),
-        "time_constant_days": GROUND_TEMPERATURE_TIME_CONSTANT_DAYS,
-        "method": "30-day first-order low-pass of measured outdoor temperature; provisional boundary proxy, not a measured soil temperature or validated ground heat-transfer standard",
+    state = {"last_ground_temperature_c": temperature, "temperature_entity": entity_id}
+    return state, {
+        "ground_temperature_c": temperature,
+        "estimated_ground_boundary_temperature_c": temperature,
+        "temperature_entity": entity_id,
+        "status": "observed_ground_temperature_sensor",
+        "method": "direct user-selected Home Assistant ground-temperature entity; no outdoor-temperature proxy",
     }
-    return state, model
 
 
 def build_room_boundary_heat_loss(
@@ -80,7 +60,7 @@ def build_room_boundary_heat_loss(
     audited_rooms = (envelope_audit or {}).get("rooms") or {}
     ground_temperature = (
         _number((ground_temperature_model or {}).get("estimated_ground_boundary_temperature_c"))
-        if (ground_temperature_model or {}).get("status") == "provisional_lagged_outdoor_proxy"
+        if (ground_temperature_model or {}).get("status") == "observed_ground_temperature_sensor"
         else None
     )
     outside = _number(outdoor_temperature_c)
@@ -161,7 +141,7 @@ def build_room_boundary_heat_loss(
                 "heat_flow_w": ground_flow,
                 "status": "calculated" if ground_flow is not None
                     else "unavailable_missing_explicit_ground_ua" if ground_ua is None
-                    else "unavailable_ground_temperature_model_warming_up" if ground_temperature is None
+                    else "unavailable_ground_temperature_sensor" if ground_temperature is None
                     else "unavailable_missing_room_temperature",
                 "temperature_model_status": (ground_temperature_model or {}).get("status"),
             },
@@ -185,7 +165,7 @@ def build_room_boundary_heat_loss(
         "limitations": [
             "Conductances come only from explicit accepted surface records and whole-window Uw records.",
             "The Baie Cada hallway/staircase attic ceiling is included through its user-confirmed legacy allocation.",
-            "The ground boundary temperature is a provisional lagged-outdoor proxy, not a soil sensor or a validated ground-coupling model.",
+            "Ground heat flow uses only the configured ground-temperature sensor; outdoor temperature is never substituted.",
             "No ground heat flow is calculated until an explicit ground-boundary surface UA is configured.",
             "Outdoor heat flow is marked partial where opaque exterior surfaces are missing, even if window UA is known.",
         ],

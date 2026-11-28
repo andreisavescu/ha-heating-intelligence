@@ -370,6 +370,20 @@ def test_per_room_attic_surface_replaces_legacy_attic_share():
     assert path["source"] == "per_room_surface_inventory"
 
 
+def test_legacy_attic_share_is_ignored_without_attic_surface_record():
+    result = MODEL.build_multizone_observation_model(
+        {"bedroom": {"floor": "upstairs", "temperature": 21.0}},
+        attic={"attic_temperature": 10.0},
+        profile={"attic_floor_room_conductances_w_per_k": {"bedroom": 0.88}},
+        envelope_audit={"rooms": {"bedroom": {
+            "conductance_by_boundary_w_per_k": {"outdoor": None, "attic": None},
+            "opaque_surface_counts": {"outdoor": 0, "ground": 0, "attic": 0, "adjacent_heated": 0},
+        }}},
+    )
+    assert result["attic_floor_paths"] == []
+    assert result["attic_thermal_diagnostics"]["rooms_missing_attic_conductance"] == ["bedroom"]
+
+
 def test_per_room_ground_surface_creates_separate_ground_boundary_path():
     result = MODEL.build_multizone_observation_model(
         {"living": {"floor": "ground_floor", "temperature": 21.0}},

@@ -276,6 +276,64 @@ def build_stage5_ufh_slab_model(
     }
 
 
+RETURN_TEMPERATURE_COOLDOWN_SECONDS = 180
+
+def update_global_return_temperature_estimate(history, active_estimate, modulation_percent, supply_temperature_c, now):
+    """Apply one system-wide 180-second return-temperature cooldown.
+
+    The timer starts on the positive-to-zero modulation transition and does
+    not depend on either manifold pump state.
+    """
+    modulation = _positive(modulation_percent)
+    previous_modulation = history.get("return_temperature_last_modulation_percent")
+    active_value = _positive(active_estimate.get("value_c"))
+    supply = _positive(supply_temperature_c)
+
+    if modulation is not None:
+        if active_value is not None and supply is not None:
+            history["return_temperature_last_delta_c"] = max(0.0, supply - active_value)
+        history["return_temperature_cooldown_started_at"] = None
+        history["return_temperature_cooldown_delta_c"] = None
+        history["return_temperature_last_modulation_percent"] = modulation
+        if active_value is not None:
+            return {**active_estimate, "status": "active_modulation_estimate", "countdown_seconds_remaining": 0}
+        return {**active_estimate, "value_c": None, "status": "active_estimate_unavailable_insufficient_flow", "countdown_seconds_remaining": 0}
+
+    if modulation_percent is not None:
+        if previous_modulation is not None and float(previous_modulation) > 0:
+            history["return_temperature_cooldown_started_at"] = now.isoformat()
+            history["return_temperature_cooldown_delta_c"] = max(0.0, float(history.get("return_temperature_last_delta_c") or 0.0))
+        history["return_temperature_last_modulation_percent"] = 0.0
+
+    started_value = history.get("return_temperature_cooldown_started_at")
+    started_at = dt_util.parse_datetime(started_value) if started_value else None
+    if started_at is not None:
+        elapsed = max(0.0, (now - started_at).total_seconds())
+        remaining = max(0, int(RETURN_TEMPERATURE_COOLDOWN_SECONDS - elapsed + 0.999))
+        delta = max(0.0, float(history.get("return_temperature_cooldown_delta_c") or 0.0))
+        if elapsed >= RETURN_TEMPERATURE_COOLDOWN_SECONDS:
+            return {
+                "value_c": round(supply, 2) if supply is not None else None,
+                "status": "settled_assumption",
+                "active_flow_l_min": None,
+                "floor_estimates": active_estimate.get("floor_estimates", {}),
+                "method": "assumed_supply_return_equal_after_180s_from_zero_modulation",
+                "countdown_seconds_remaining": 0,
+                "limitations": ["Estimated, not measured.", "After 180 seconds at zero modulation, return is assumed equal to supply.", "Manifold pump states are ignored."],
+            }
+        progress = min(1.0, elapsed / RETURN_TEMPERATURE_COOLDOWN_SECONDS)
+        value = supply - delta * (1.0 - progress) if supply is not None else None
+        return {
+            "value_c": round(value, 2) if value is not None else None,
+            "status": "modulation_off_cooldown",
+            "active_flow_l_min": None,
+            "floor_estimates": active_estimate.get("floor_estimates", {}),
+            "method": "linear_180s_ramp_from_last_active_delta_after_modulation_reaches_zero",
+            "countdown_seconds_remaining": remaining,
+            "limitations": ["Estimated, not measured.", "The 180-second timer starts when modulation reaches zero.", "Manifold pump states are ignored; one global timer is used."],
+        }
+    return {**active_estimate, "value_c": None, "status": "idle_no_recent_modulation", "countdown_seconds_remaining": 0}
+
 def build_estimated_water_return_temperature(stage5_model: dict[str, Any] | None) -> dict[str, Any]:
     """Flow-weight floor return estimates; keep this distinct from measured return input."""
     floors = (stage5_model or {}).get("floors") or {}

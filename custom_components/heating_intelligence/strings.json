@@ -21,7 +21,7 @@
           "pump_settings": "Pump settings",
           "edit_room": "Change a room's floor",
           "room_area": "Configure room areas, ACH and window contacts",
-          "room_air_quality": "Configure room air quality",
+          "room_air_quality": "Configure room temperature and air quality",
           "house_assessment": "House assessment",
           "edit_rooms": "Edit rooms",
           "ufh_circuits": "Configure UFH circuits",
@@ -80,12 +80,13 @@
       },
       "room_air_quality": {
         "title": "Select room",
-        "description": "Choose the room whose humidity and CO2 sensors you want to configure."
+        "description": "Choose the room whose temperature, humidity and CO2 sensors you want to configure."
       },
       "room_air_quality_config": {
         "title": "Room air quality",
-        "description": "Configure humidity and optional CO2 sensors for {room_name}. Disable CO2 to remove its sensor.",
+        "description": "Configure the temperature sensor, humidity sensor and optional CO2 sensor for {room_name}. Leave the temperature or humidity sensor empty to clear it; disable CO2 to remove its sensor.",
         "data": {
+          "temperature_entity": "Room temperature sensor (°C)",
           "humidity_entity": "Room humidity sensor (%)",
           "enable_co2": "Configure a CO2 sensor for this room"
         }

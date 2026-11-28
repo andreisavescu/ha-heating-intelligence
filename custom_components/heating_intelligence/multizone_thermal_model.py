@@ -512,7 +512,6 @@ def build_multizone_observation_model(
         "upstairs_rooms_configured": len(upstairs_room_ids),
         "upstairs_rooms_with_attic_conductance": len(valid_attic_shares),
         "rooms_missing_attic_conductance": missing_attic_rooms,
-        "attic_floor_area_m2": _finite_or_none(profile.get("attic_floor_area_m2")),
         "attic_floor_u_value_w_m2k": None,
         "attic_floor_total_conductance_w_per_k": round(attic_floor_total_g, 4) if attic_floor_total_g is not None else None,
         "attic_floor_room_conductance_sum_w_per_k": round(attic_share_sum, 4) if attic_share_sum is not None else None,
@@ -521,7 +520,7 @@ def build_multizone_observation_model(
             else "no_upstairs_rooms" if not upstairs_room_ids
             else "room_shares_complete" if not missing_attic_rooms
             else "partial_room_shares" if valid_attic_shares
-            else "awaiting_room_shares"
+            else "awaiting_attic_surface_records"
         ),
         "attic_floor_total_match_status": (
             "not_comparable_without_total_u_and_area" if attic_floor_total_g is None or attic_share_sum is None
@@ -536,7 +535,7 @@ def build_multizone_observation_model(
             else "configured" if roof_connection
             else "awaiting_explicit_roof_u_value_and_area"
         ),
-        "note": "Room-to-attic links use explicit per-room W/K values. Attic-to-outdoor requires explicit roof U-value and area. No roof insulation or geometry is inferred from the floor build-up.",
+        "note": "Room-to-attic links use per-room attic surface records. Attic-to-outdoor requires explicit roof U-value and area. No roof insulation or geometry is inferred from the floor build-up.",
     }
 
     solar_record = weather.get("solar_radiation")

@@ -1,6 +1,8 @@
 """Heating Intelligence sensors."""
 from __future__ import annotations
 
+import json
+
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.config_entries import ConfigEntry
@@ -85,6 +87,17 @@ def _calculation_attributes(metric: str) -> dict:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: HeatingIntelligenceCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [HeatingOverviewSensor(coordinator), UFHHydraulicAuditSensor(coordinator), HouseAuditSensor(coordinator), ThermalReadinessAuditSensor(coordinator), MeasurementAuditSensor(coordinator), PhysicalModelExperimentsSensor(coordinator), PhysicalModelExperimentsMultizoneSensor(coordinator), PhysicalModelExperimentsMultizonePart2Sensor(coordinator), PhysicalModelExperimentsDiagnosticsSensor(coordinator), PhysicalModelExperimentsDatasetSensor(coordinator), PhysicalModelExperimentsExclusionsSensor(coordinator), PhysicalModelSimulationAuditSensor(coordinator), EnvelopeConductanceSensor(coordinator), Stage3ThermalCapacitySensor(coordinator), Stage5UfhSlabModelSensor(coordinator), Stage6GainModelSensor(coordinator)]
+    # Keep detailed physical-model data available without oversized Recorder attributes.
+    entities.extend(
+        DiagnosticPayloadPartSensor(coordinator, source, part)
+        for source in (
+            "physical_model_experiments",
+            "physical_model_experiments_diagnostics",
+            "stage3_thermal_capacity",
+            "stage5_ufh_slab_model",
+        )
+        for part in range(DIAGNOSTIC_PAYLOAD_PARTS)
+    )
     if entry.options.get(CONF_HEATING_GAS_ENTITY):
         entities.extend(BoilerExperimentSensor(coordinator, metric) for metric in (
             "heating_input_energy_kwh", "dhw_input_energy_kwh",
@@ -495,6 +508,96 @@ class UFHHydraulicAuditSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity)
             "heat_delivery_calibration": self.coordinator.data.get("heat_delivery_calibration", {}),
         }
 
+
+
+
+DIAGNOSTIC_PAYLOAD_PART_SIZE = 9000
+DIAGNOSTIC_PAYLOAD_PARTS = 8
+
+
+def _diagnostic_payload(coordinator, source: str) -> dict:
+    data = coordinator.data
+    if source == "physical_model_experiments":
+        return {
+            key: data.get(key, {})
+            for key in (
+                "physical_model_validation",
+                "absolute_parameter_identification",
+                "predictive_forecast",
+                "what_if_simulator",
+            )
+        }
+    if source == "physical_model_experiments_diagnostics":
+        return {
+            key: data.get(key, {})
+            for key in (
+                "physical_model_simulation_audit",
+                "recorder_diagnostics",
+                "stage3_thermal_capacity",
+                "stage5_ufh_slab_model",
+                "stage6_gain_model",
+                "heat_delivery_calibration",
+            )
+        }
+    return data.get(source, {})
+
+
+def _diagnostic_payload_chunk(coordinator, source: str, part: int) -> tuple[str, int, int]:
+    payload = json.dumps(
+        _diagnostic_payload(coordinator, source),
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+        default=str,
+    )
+    chunks = [
+        payload[index:index + DIAGNOSTIC_PAYLOAD_PART_SIZE]
+        for index in range(0, len(payload), DIAGNOSTIC_PAYLOAD_PART_SIZE)
+    ] or ["{}"]
+    return (
+        chunks[part] if part < len(chunks) else "",
+        len(payload),
+        len(chunks),
+    )
+
+
+class DiagnosticPayloadPartSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
+    """One bounded JSON chunk of a detailed physical-model diagnostic payload."""
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:code-json"
+
+    def __init__(self, coordinator, source: str, part: int) -> None:
+        super().__init__(coordinator)
+        self._source = source
+        self._part = part
+        labels = {
+            "physical_model_experiments": "Physical Model Experiments Payload",
+            "physical_model_experiments_diagnostics": "Physical Model Diagnostics Payload",
+            "stage3_thermal_capacity": "Stage 3 Thermal Capacity Payload",
+            "stage5_ufh_slab_model": "Stage 5 UFH Slab Model Payload",
+        }
+        self._attr_name = f"{labels[source]} Part {part + 1}"
+        self._attr_unique_id = f"{DOMAIN}_{source}_payload_part_{part + 1}"
+
+    @property
+    def native_value(self):
+        chunk, _, _ = _diagnostic_payload_chunk(self.coordinator, self._source, self._part)
+        return "populated" if chunk else "empty"
+
+    @property
+    def extra_state_attributes(self):
+        chunk, total_chars, count = _diagnostic_payload_chunk(
+            self.coordinator, self._source, self._part
+        )
+        return {
+            "payload_format": "json_chunk",
+            "part": self._part + 1,
+            "part_count": count,
+            "total_payload_characters": total_chars,
+            "payload_json_chunk": chunk,
+        }
 
 class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     """Master sensor used by the Lovelace overview card."""
@@ -1588,7 +1691,13 @@ class Stage5UfhSlabModelSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data.get("stage5_ufh_slab_model", {})
+        payload = _diagnostic_payload(self.coordinator, "stage5_ufh_slab_model")
+        serialized = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), default=str)
+        return {
+            "payload_parts_entity_prefix": f"{DOMAIN}_stage5_ufh_slab_model_payload_part_",
+            "payload_characters": len(serialized),
+            "payload_part_count": max(1, (len(serialized) + DIAGNOSTIC_PAYLOAD_PART_SIZE - 1) // DIAGNOSTIC_PAYLOAD_PART_SIZE),
+        }
 
 
 class Stage3ThermalCapacitySensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -1612,7 +1721,13 @@ class Stage3ThermalCapacitySensor(AuditDeviceMixin, CoordinatorEntity, SensorEnt
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data.get("stage3_thermal_capacity", {})
+        payload = _diagnostic_payload(self.coordinator, "stage3_thermal_capacity")
+        serialized = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), default=str)
+        return {
+            "payload_parts_entity_prefix": f"{DOMAIN}_stage3_thermal_capacity_payload_part_",
+            "payload_characters": len(serialized),
+            "payload_part_count": max(1, (len(serialized) + DIAGNOSTIC_PAYLOAD_PART_SIZE - 1) // DIAGNOSTIC_PAYLOAD_PART_SIZE),
+        }
 
 
 class PhysicalModelExperimentsSensor(AuditDeviceMixin, CoordinatorEntity, SensorEntity):
@@ -1634,11 +1749,12 @@ class PhysicalModelExperimentsSensor(AuditDeviceMixin, CoordinatorEntity, Sensor
 
     @property
     def extra_state_attributes(self):
+        payload = _diagnostic_payload(self.coordinator, "physical_model_experiments")
+        serialized = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), default=str)
         return {
-            "physical_model_validation": self.coordinator.data.get("physical_model_validation", {}),
-            "absolute_parameter_identification": self.coordinator.data.get("absolute_parameter_identification", {}),
-            "predictive_forecast": self.coordinator.data.get("predictive_forecast", {}),
-            "what_if_simulator": self.coordinator.data.get("what_if_simulator", {}),
+            "payload_parts_entity_prefix": f"{DOMAIN}_physical_model_experiments_payload_part_",
+            "payload_characters": len(serialized),
+            "payload_part_count": max(1, (len(serialized) + DIAGNOSTIC_PAYLOAD_PART_SIZE - 1) // DIAGNOSTIC_PAYLOAD_PART_SIZE),
             "fixed_scenario_temperatures_c": {"baie_matr": 22.0, "baie_parter": 20.5},
             "fixed_temperature_policy": "scenario_initial_conditions_only_never_historical_measurements",
         }
@@ -1761,13 +1877,14 @@ class PhysicalModelExperimentsDiagnosticsSensor(AuditDeviceMixin, CoordinatorEnt
 
     @property
     def extra_state_attributes(self):
+        payload = _diagnostic_payload(self.coordinator, "physical_model_experiments_diagnostics")
+        serialized = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), default=str)
         return {
-            "physical_model_simulation_audit": self.coordinator.data.get("physical_model_simulation_audit", {}),
-            "recorder_diagnostics": self.coordinator.data.get("recorder_diagnostics", {}),
-            "stage3_thermal_capacity": self.coordinator.data.get("stage3_thermal_capacity", {}),
-            "stage5_ufh_slab_model": self.coordinator.data.get("stage5_ufh_slab_model", {}),
-            "stage6_gain_model": self.coordinator.data.get("stage6_gain_model", {}),
-            "heat_delivery_calibration": self.coordinator.data.get("heat_delivery_calibration", {}),
+            "payload_parts_entity_prefix": f"{DOMAIN}_physical_model_experiments_diagnostics_payload_part_",
+            "payload_characters": len(serialized),
+            "payload_part_count": max(1, (len(serialized) + DIAGNOSTIC_PAYLOAD_PART_SIZE - 1) // DIAGNOSTIC_PAYLOAD_PART_SIZE),
+            "stage3_entity": f"{DOMAIN}_stage3_thermal_capacity",
+            "stage5_entity": f"{DOMAIN}_stage5_ufh_slab_model",
         }
 
 

@@ -194,6 +194,7 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
         f"{DOMAIN}_measurement_audit",
         f"{DOMAIN}_physical_model_experiments",
         f"{DOMAIN}_physical_model_experiments_multizone",
+        f"{DOMAIN}_physical_model_experiments_multizone_part_2",
         f"{DOMAIN}_physical_model_experiments_diagnostics",
         f"{DOMAIN}_physical_model_experiments_dataset",
         f"{DOMAIN}_physical_model_experiments_exclusions",
@@ -203,22 +204,48 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
         f"{DOMAIN}_stage5_ufh_slab_model",
         f"{DOMAIN}_stage6_gain_model",
     }
+    audit_unique_id_prefixes = (
+        f"{DOMAIN}_physical_model_experiments_payload_part_",
+        f"{DOMAIN}_physical_model_experiments_diagnostics_payload_part_",
+        f"{DOMAIN}_stage3_thermal_capacity_payload_part_",
+        f"{DOMAIN}_stage5_ufh_slab_model_payload_part_",
+    )
+    audit_room_metrics = {
+        "envelope_conductance_w_per_k",
+        "attic_floor_conductance_w_per_k",
+        "outdoor",
+        "attic",
+        "ground",
+        "known_boundary_heat_flow_w",
+    }
 
     repaired = 0
     for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
         if entity.platform != DOMAIN:
             continue
 
-        target = audit_device if entity.unique_id in audit_unique_ids else house
-        for room_id, device in room_devices.items():
-            if entity.unique_id.startswith(f"{DOMAIN}_{room_id}_"):
-                target = device
-                break
-        else:
-            for pump_id, device in pump_devices.items():
-                if entity.unique_id.startswith(f"{DOMAIN}_{pump_id}_"):
+        unique_id = entity.unique_id
+        is_room_audit = any(
+            unique_id == f"{DOMAIN}_{room_id}_{metric}"
+            for room_id in room_devices
+            for metric in audit_room_metrics
+        )
+        is_audit = (
+            unique_id in audit_unique_ids
+            or unique_id.startswith(audit_unique_id_prefixes)
+            or is_room_audit
+        )
+        target = audit_device if is_audit else house
+        if not is_audit:
+            for room_id, device in room_devices.items():
+                if unique_id.startswith(f"{DOMAIN}_{room_id}_"):
                     target = device
                     break
+            else:
+                for pump_id, device in pump_devices.items():
+                    if unique_id.startswith(f"{DOMAIN}_{pump_id}_"):
+                        target = device
+                        break
 
         if entity.device_id != target.id:
             entity_registry.async_update_entity(entity.entity_id, device_id=target.id)

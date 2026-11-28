@@ -1,3 +1,26 @@
+## v0.26.3 — Live Room Heat Loss and Audit Entity Grouping
+
+### Changed
+- Replace room-card envelope and attic-floor conductance figures (W/K) with live boundary heat-flow estimates in watts.
+- Show outdoor, attic and ground heat-flow contributions separately, together with the known-boundary total.
+- Use signed heat-flow calculations: positive means heat leaving the room; negative means heat entering.
+- Show whether the known-boundary total is complete or partial, including missing or incomplete boundaries.
+- Keep configured conductance values available in the detailed thermal model.
+- Move room-level conductance and boundary heat-flow entities into the dedicated **Heating Intelligence — Audits** device.
+- Group multizone Part 2 and diagnostic payload-part entities with the other audit entities.
+- Repair existing entity-to-device associations during integration setup without changing entity IDs, unique IDs or Recorder history.
+
+### Validation
+- GitHub Actions CI passed on PR #137: unit tests, integration compilation and Lovelace card JavaScript syntax.
+- Room heat-flow values remain estimates based on configured surfaces, U-values and available boundary temperatures.
+- Incomplete boundary data is explicitly labelled; the known-boundary total is not a complete whole-room heat balance.
+
+### Upgrade
+- Update through HACS and restart Home Assistant (or reload the integration).
+- Audit entities will be regrouped automatically during integration setup.
+
+---
+
 ## v0.26.2 — Global UFH Return Temperature Cooldown
 
 ### Changed

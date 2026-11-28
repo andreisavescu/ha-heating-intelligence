@@ -93,22 +93,11 @@ def build_room_boundary_heat_loss(
         attic_ua = _number(conductances.get("attic"))
         ground_ua = _number(conductances.get("ground"))
         measured_room_temp = _number(room.get("temperature"))
-        # Bathrooms use stable design/reference temperatures for the envelope
-        # transmission calculation, rather than a fluctuating room sensor.
-        # These overrides affect heat-flow estimates only; room telemetry and
-        # the physical room-temperature model continue to use measured values.
-        room_name_key = str(room.get("name") or "").strip().casefold().replace("_", " ")
-        room_id_key = str(room_id or "").strip().casefold().replace("_", " ")
-        if "baie matr" in room_name_key or "baie matr" in room_id_key or room_id_key in {"baie_matr", "baie matr"}:
-            room_temp = 22.0
-            reference_temperature_source = "fixed_reference_temperature"
-        elif ("baie parter" in room_name_key or "baie parter" in room_id_key
-              or room_id_key in {"baie_parter", "baie parter", "baie_cada"}):
-            room_temp = 20.5
-            reference_temperature_source = "fixed_reference_temperature"
-        else:
-            room_temp = measured_room_temp
-            reference_temperature_source = "measured_room_temperature"
+        # Heat-flow estimates always use the actual measured room temperature.
+        # If it is unavailable, the boundary flow remains unavailable rather
+        # than substituting a design/reference temperature.
+        room_temp = measured_room_temp
+        reference_temperature_source = "measured_room_temperature"
 
         def flow(ua: float | None, boundary_temp: float | None):
             if ua is None or ua < 0 or room_temp is None or boundary_temp is None:

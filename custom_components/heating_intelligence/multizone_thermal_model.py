@@ -215,7 +215,7 @@ def build_multizone_observation_model(
                 if _finite_or_none(room.get("volume_m3")) is not None
                 and _finite_or_none(room.get("volume_m3")) > 0 else None
             ),
-            "envelope_conductance_w_per_k": _finite_or_none(room.get("envelope_conductance_w_per_k")),
+            "envelope_conductance_w_per_k": _finite_or_none(((calculated_envelope_rooms.get(room_id, {}) or {}).get("conductance_by_boundary_w_per_k") or {}).get("outdoor")),
             "co2_ppm": _finite_or_none(room.get("co2_ppm")),
             "humidity_percent": _finite_or_none(room.get("humidity")),
             "thermal_capacity_wh_per_k": None,
@@ -362,15 +362,9 @@ def build_multizone_observation_model(
         room_id for room_id, room in rooms.items()
         if room.get("floor") == "upstairs"
     ]
-    configured_attic_shares = profile.get("attic_floor_room_conductances_w_per_k") or {}
-    if not isinstance(configured_attic_shares, dict):
-        configured_attic_shares = {}
+    # Attic paths come only from explicit per-room attic boundary surfaces.
+    # Legacy room-level attic conductance entries are intentionally ignored.
     valid_attic_shares = {}
-    for room_id, raw in configured_attic_shares.items():
-        numeric = _finite_or_none(raw)
-        if room_id in upstairs_room_ids and numeric is not None and numeric > 0:
-            valid_attic_shares[room_id] = numeric
-    # Valid per-room attic surface records supersede legacy attic conductance entries.
     for room_id in upstairs_room_ids:
         inventory = calculated_envelope_rooms.get(room_id, {}) or {}
         counts = inventory.get("opaque_surface_counts", {}) or {}
@@ -466,41 +460,26 @@ def build_multizone_observation_model(
     ground_paths = []
     envelope_reconciliation = {}
     for room_id, room in rooms.items():
-        configured = _finite_or_none(room.get("envelope_conductance_w_per_k"))
         calculated = calculated_envelope_rooms.get(room_id, {}) or {}
         calculated_by_boundary = calculated.get("conductance_by_boundary_w_per_k", {}) or {}
         opaque_counts = calculated.get("opaque_surface_counts", {}) or {}
         calculated_outdoor = _finite_or_none(calculated_by_boundary.get("outdoor"))
-        has_room_wall_surfaces = (_finite_or_none(opaque_counts.get("outdoor")) or 0) > 0
-        selected_outdoor = calculated_outdoor if has_room_wall_surfaces else configured
-        difference = (
-            round(configured - calculated_outdoor, 4)
-            if configured is not None and calculated_outdoor is not None else None
+        outdoor_count = (
+            (_finite_or_none(opaque_counts.get("outdoor")) or 0)
+            + (_finite_or_none(calculated.get("window_record_count")) or 0)
         )
         envelope_reconciliation[room_id] = {
-            "configured_room_to_outdoors_w_per_k": configured,
-            "calculated_surface_inventory_outdoor_w_per_k": calculated_outdoor,
-            "difference_configured_minus_inventory_w_per_k": difference,
-            "status": (
-                "surface_inventory_authoritative"
-                if has_room_wall_surfaces and calculated_outdoor is not None
-                else "legacy_configuration_fallback"
-                if configured is not None
-                else "awaiting_room_wall_surfaces"
-            ),
-            "model_source": "per_room_surface_inventory_including_windows" if has_room_wall_surfaces else "legacy_room_configuration",
-            "calculation_policy": (
-                "Once valid opaque outdoor wall surfaces are configured for a room, their "
-                "conductance plus that room's window/door records replace the legacy room "
-                "conductance. The two sources are never added together."
-            ),
+            "surface_inventory_outdoor_w_per_k": calculated_outdoor,
+            "surface_record_count": int(outdoor_count),
+            "status": "surface_inventory_authoritative" if calculated_outdoor is not None else "no_outdoor_surface_records",
+            "model_source": "per_room_surface_inventory_including_windows" if calculated_outdoor is not None else "none",
+            "calculation_policy": "Outdoor conductance is calculated only from configured opaque outdoor surfaces and whole-window records. Legacy room-level conductance is ignored.",
         }
-        if selected_outdoor is not None and selected_outdoor > 0:
+        if calculated_outdoor is not None and calculated_outdoor > 0:
             room_envelope_paths.append({
                 "from": "room:" + room_id, "to": "boundary:outdoors",
-                "path": "room_envelope", "conductance_w_per_k": round(selected_outdoor, 4),
-                "source": "per_room_surface_inventory_including_windows" if has_room_wall_surfaces else "legacy_room_configuration",
-                "status": "configured" if has_room_wall_surfaces else "legacy_fallback",
+                "path": "room_envelope", "conductance_w_per_k": round(calculated_outdoor, 4),
+                "source": "per_room_surface_inventory_including_windows", "status": "configured",
             })
         ground = _finite_or_none(calculated_by_boundary.get("ground"))
         ground_count = _finite_or_none(opaque_counts.get("ground")) or 0
@@ -778,11 +757,11 @@ def build_multizone_observation_model(
         "attic_thermal_diagnostics": attic_thermal_diagnostics,
         "room_path_diagnostics": {
             room_id: {
-                "envelope_w_per_k": room.get("envelope_conductance_w_per_k"),
+                "envelope_w_per_k": _finite_or_none(((calculated_envelope_rooms.get(room_id, {}) or {}).get("conductance_by_boundary_w_per_k") or {}).get("outdoor")),
                 "attic_floor_w_per_k": valid_attic_shares.get(room_id),
                 "ventilation_w_per_k": next((item["conductance_w_per_k"] for item in ventilation_paths if item["from"] == "room:" + room_id), None),
                 "inter_room_links": sum(1 for item in inter_room_paths if item["from"] == "room:" + room_id or item["to"] == "room:" + room_id),
-                "status": "configured" if (_finite_or_none(room.get("envelope_conductance_w_per_k")) or 0) > 0 else "envelope_conductance_missing",
+                "status": "configured" if (_finite_or_none(((calculated_envelope_rooms.get(room_id, {}) or {}).get("conductance_by_boundary_w_per_k") or {}).get("outdoor")) or 0) > 0 else "outdoor_surface_inventory_missing",
             }
             for room_id, room in rooms.items()
         },

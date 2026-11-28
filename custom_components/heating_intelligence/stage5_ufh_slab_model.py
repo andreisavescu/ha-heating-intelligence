@@ -8,8 +8,7 @@ temperatures are estimates only when active flow and calibrated output exist.
 from __future__ import annotations
 
 from typing import Any
-
-from homeassistant.util import dt as dt_util
+from datetime import datetime
 
 WATER_HEAT_CAPACITY_J_KG_K = 4180.0
 WATER_DENSITY_KG_L = 0.997
@@ -308,7 +307,7 @@ def update_global_return_temperature_estimate(history, active_estimate, modulati
         history["return_temperature_last_modulation_percent"] = 0.0
 
     started_value = history.get("return_temperature_cooldown_started_at")
-    started_at = dt_util.parse_datetime(started_value) if started_value else None
+    started_at = datetime.fromisoformat(started_value) if started_value else None
     if started_at is not None:
         elapsed = max(0.0, (now - started_at).total_seconds())
         remaining = max(0, int(RETURN_TEMPERATURE_COOLDOWN_SECONDS - elapsed + 0.999))

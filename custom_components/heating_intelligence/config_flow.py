@@ -557,7 +557,6 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_DEW_POINT_ENTITY,
                 CONF_OUTDOOR_PRESSURE_ENTITY,
                 CONF_ATTIC_TEMPERATURE_ENTITY,
-                CONF_GROUND_TEMPERATURE_ENTITY,
                 CONF_ATTIC_HUMIDITY_ENTITY,
                 CONF_DELTA_T_ENTITY,
                 CONF_GAS_CONSUMPTION_ENTITY,
@@ -569,6 +568,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_BOILER_MODULATION_ENTITY,
             )
         )
+        ground_field = vol.Optional(CONF_GROUND_TEMPERATURE_ENTITY, default=current.get(CONF_GROUND_TEMPERATURE_ENTITY)) if current.get(CONF_GROUND_TEMPERATURE_ENTITY) else vol.Optional(CONF_GROUND_TEMPERATURE_ENTITY)
+        schema_fields[ground_field] = selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "input_number"]))
         burner_field = vol.Optional(CONF_BOILER_BURNER_ENTITY, default=current.get(CONF_BOILER_BURNER_ENTITY)) if current.get(CONF_BOILER_BURNER_ENTITY) else vol.Optional(CONF_BOILER_BURNER_ENTITY)
         schema_fields[burner_field] = selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor"))
         weather_field = vol.Optional(CONF_WEATHER_ENTITY, default=current.get(CONF_WEATHER_ENTITY)) if current.get(CONF_WEATHER_ENTITY) else vol.Optional(CONF_WEATHER_ENTITY)

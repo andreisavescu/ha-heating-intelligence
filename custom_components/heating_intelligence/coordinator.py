@@ -38,7 +38,7 @@ from .system_history import record_system_sample
 from .pump_countdown import start_deadline, timer_snapshot
 from .absolute_thermal_identification import identify_absolute_room_parameters
 from .stage3_thermal_capacity import build_stage3_thermal_capacity
-from .stage5_ufh_slab_model import build_stage5_ufh_slab_model, build_estimated_water_return_temperature
+from .stage5_ufh_slab_model import build_stage5_ufh_slab_model, build_estimated_water_return_temperature, update_global_return_temperature_estimate
 from .stage6_gain_model import build_stage6_gain_model
 from .thermal_experiments import build_physical_model_validation, build_predictive_forecast, build_what_if_simulator, build_simulation_audit, build_coupled_network_forecast, build_coupled_network_validation, select_predictive_forecast
 from .recorder_diagnostics import (
@@ -1299,7 +1299,14 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             self._history.get("boiler_energy_experiment", {}),
             result.get("water_temperature"),
         )
-        result["estimated_water_return_temperature"] = build_estimated_water_return_temperature(result["stage5_ufh_slab_model"])
+        active_return_estimate = build_estimated_water_return_temperature(result["stage5_ufh_slab_model"])
+        result["estimated_water_return_temperature"] = update_global_return_temperature_estimate(
+            self._history,
+            active_return_estimate,
+            _as_float(modulation_state.state) if modulation_state else None,
+            result.get("water_temperature"),
+            now,
+        )
         # Rebuild the observation network after Stage 5 is available so its
         # room-level slab nodes and finish priors reach the physical model.
         live_house_profile = dict(self.entry.options.get("house_assessment", {}))

@@ -986,7 +986,7 @@ class EstimatedWaterReturnTemperatureSensor(HouseDeviceMixin, CoordinatorEntity,
     @property
     def extra_state_attributes(self):
         estimate = self.coordinator.data.get("estimated_water_return_temperature", {})
-        return {"status": estimate.get("status"), "active_flow_l_min": estimate.get("active_flow_l_min"), "method": estimate.get("method"), "floor_estimates": estimate.get("floor_estimates", {}), "limitations": estimate.get("limitations", [])}
+        return {"status": estimate.get("status"), "active_flow_l_min": estimate.get("active_flow_l_min"), "countdown_seconds_remaining": estimate.get("countdown_seconds_remaining", 0), "method": estimate.get("method"), "floor_estimates": estimate.get("floor_estimates", {}), "limitations": estimate.get("limitations", [])}
 
 class WaterTemperatureSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = "°C"

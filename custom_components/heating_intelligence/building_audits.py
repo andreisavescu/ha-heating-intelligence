@@ -198,7 +198,7 @@ def build_thermal_readiness_audit(
     surface_review_required = envelope_audit.get("status") in ("review_required", "incomplete")
     return {
         "status": (
-            "incomplete" if missing_area_or_volume or missing_attic
+            "incomplete" if missing_area_or_volume or missing_attic or not connections
             else "review_required" if surface_review_required
             else "configured"
         ),

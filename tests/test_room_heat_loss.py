@@ -136,7 +136,7 @@ def test_kitchen_requires_outdoor_ground_and_attic():
     assert room["ground"]["status"] == "calculated"
 
 
-def test_bathroom_reference_temperatures_only_override_heat_flow_temperature():
+def test_heat_flow_uses_actual_measured_room_temperature_for_every_room():
     rooms = {
         "baie_matr": {"name": "Baie Matr", "floor": "upstairs", "temperature": 19.0},
         "baie_cada": {"name": "Baie Parter", "floor": "ground_floor", "temperature": 19.0},
@@ -149,9 +149,24 @@ def test_bathroom_reference_temperatures_only_override_heat_flow_temperature():
         } for room_id in rooms
     }}
     result = MODULE.build_room_boundary_heat_loss(rooms, audit, 0.0, 10.0, _model())["rooms"]
-    assert result["baie_matr"]["room_temperature_c"] == 22.0
+    assert result["baie_matr"]["room_temperature_c"] == 19.0
     assert result["baie_matr"]["measured_room_temperature_c"] == 19.0
-    assert result["baie_matr"]["outdoor"]["heat_flow_w"] == 44.0
-    assert result["baie_cada"]["room_temperature_c"] == 20.5
+    assert result["baie_matr"]["outdoor"]["heat_flow_w"] == 38.0
+    assert result["baie_cada"]["room_temperature_c"] == 19.0
     assert result["baie_cada"]["measured_room_temperature_c"] == 19.0
-    assert result["baie_cada"]["outdoor"]["heat_flow_w"] == 41.0
+    assert result["baie_cada"]["outdoor"]["heat_flow_w"] == 38.0
+
+
+def test_heat_flow_is_unavailable_without_a_measured_room_temperature():
+    result = MODULE.build_room_boundary_heat_loss(
+        {"bathroom": {"name": "Bathroom", "floor": "upstairs", "temperature": None}},
+        {"rooms": {"bathroom": {
+            "conductance_by_boundary_w_per_k": {"outdoor": 2.0, "attic": 1.0},
+            "opaque_surface_counts": {"outdoor": 1},
+            "window_record_count": 0,
+        }}},
+        0.0, 10.0, _model(),
+    )["rooms"]["bathroom"]
+    assert result["outdoor"]["heat_flow_w"] is None
+    assert result["attic"]["heat_flow_w"] is None
+    assert result["known_boundary_heat_flow_w"] is None

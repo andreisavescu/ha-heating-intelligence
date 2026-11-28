@@ -1,3 +1,19 @@
+## v0.26.2 — Global UFH Return Temperature Cooldown
+
+### Changed
+- Publish one flow-weighted estimated UFH return temperature across both manifolds instead of separate manifold return estimates.
+- Start a single 180-second linear cooldown when burner modulation transitions from positive to zero.
+- Drive the cooldown from burner modulation only; manifold pump stop times no longer affect the estimate.
+- When the cooldown completes, set the estimated return temperature equal to the current supply temperature and explicitly mark that value as an assumption.
+- Expose the remaining cooldown time in seconds and cancel/reset the cooldown if burner modulation resumes.
+
+### Validation and limitations
+- Added regression tests for the cooldown ramp, completion and restart behaviour.
+- GitHub Actions CI passed on PR #136 (unit tests, integration compilation and Lovelace JavaScript syntax).
+- Return temperature remains an estimate, not a measured water-return temperature. No heating-control or pump-control behaviour is changed.
+
+---
+
 ## v0.26.0 — Physical Model Quality and Independent Simulation States
 
 ### Fixed

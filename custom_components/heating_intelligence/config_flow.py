@@ -428,8 +428,6 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             optional("window_area_west_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_west_m2")),
             optional("roof_area_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=1000, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("roof_area_m2")),
             optional("roof_u_value", selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)), current.get("roof_u_value")),
-            optional("attic_floor_area_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=1000, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("attic_floor_area_m2")),
-            optional("attic_floor_u_value", selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)), current.get("attic_floor_u_value")),
         ])
         return self.async_show_form(step_id="house_assessment", data_schema=vol.Schema(fields))
 

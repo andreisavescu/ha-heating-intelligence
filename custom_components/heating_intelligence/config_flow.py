@@ -397,6 +397,11 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         self._assessment = dict(self.config_entry.options.get(CONF_HOUSE_ASSESSMENT, {}))
         if user_input is not None:
             self._assessment.update(user_input)
+            # Retire duplicate whole-attic floor inputs; per-room attic surfaces
+            # are now the only source for room-to-attic conductance.
+            self._assessment.pop("attic_floor_area_m2", None)
+            self._assessment.pop("attic_floor_u_value", None)
+            self._assessment.pop("attic_floor_room_conductances_w_per_k", None)
             return await self.async_step_assessment_heating()
         current = self._assessment
 

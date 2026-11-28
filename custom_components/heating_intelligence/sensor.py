@@ -621,7 +621,7 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
         rooms = data.get("rooms", {})
         valid_temps = [r["temperature"] for r in rooms.values() if r.get("temperature") is not None]
         pumps = data.get("pumps", {})
-        return {
+        attributes = {
             "rooms": rooms,
             "house_assessment": data.get("house_assessment", {}),
             "indoor_air_quality": data.get("indoor_air_quality", {}),
@@ -654,11 +654,26 @@ class HeatingOverviewSensor(HouseDeviceMixin, CoordinatorEntity, SensorEntity):
             "floor_performance": data.get("floor_performance", {}),
             "efficiency": data.get("efficiency", {}),
             "insights": build_heating_insights(data),
-            "advanced_diagnostics": data.get("advanced_diagnostics", {}),
             "predictions": data.get("predictions", {}),
-            "energy_history": data.get("energy_history", []),
-            "system_history": data.get("system_history", []),
+            "energy_history": data.get("energy_history", [])[-14:],
+            "system_history": data.get("system_history", [])[-14:],
         }
+        attributes["algorithm_daily_comparison"] = data.get("algorithm_daily_comparison", [])[-14:]
+        attributes["advanced_diagnostics_summary"] = {
+            "status": data.get("advanced_diagnostics", {}).get("status"),
+            "checks": data.get("advanced_diagnostics", {}).get("checks", {}),
+        }
+        # The overview is a live card contract, not a diagnostics archive.
+        # Keep histories bounded and remove optional panels only if needed.
+        for optional_key in (
+            "system_history", "energy_history", "algorithm_daily_comparison",
+            "predictions", "advanced_diagnostics_summary", "attic_thermal",
+            "weather", "indoor_air_quality",
+        ):
+            if len(json.dumps(attributes, ensure_ascii=True, separators=(",", ":"), default=str)) <= 12000:
+                break
+            attributes.pop(optional_key, None)
+        return attributes
 
 
 

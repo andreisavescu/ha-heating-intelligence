@@ -41,23 +41,15 @@ class HeatingIntelligenceCard extends HTMLElement {
     )?.[1] || null;
   }
   _roomBoundaryPanel(room) {
-    const signedWatts = (state) => {
-      if (!state || state.state === "unknown" || state.state === "unavailable") return "—";
-      const value = Number(state.state);
-      if (!Number.isFinite(value)) return "—";
-      return (value > 0 ? "+" : value < 0 ? "−" : "") + this._fmt(Math.abs(value), "W", 0);
-    };
-    const metrics = [["Outdoor", "Outdoor Surface Heat Flow"], ["Attic", "Attic Surface Heat Flow"], ["Ground", "Ground Surface Heat Flow"]];
-    const values = metrics.map(([label, suffix]) => {
-      const state = this._entityStateByName(room.name + " " + suffix);
-      if (label !== "Outdoor" && !state) return "";
-      return `<span class="simple-boundary-value"><span>${label}</span> <strong>${signedWatts(state)}</strong></span>`;
-    }).join("");
     const total = this._entityStateByName(room.name + " Known Boundary Heat Flow");
-    const complete = total?.attributes?.is_complete === true;
-    const totalValue = signedWatts(total);
-    const status = total ? (complete ? "Complete known boundaries" : "Partial boundary data") : "Waiting for boundary data";
-    return `<div class="simple-room-boundary"><span class="simple-boundary-label">Heat loss/gain</span><strong class="simple-boundary-total">${totalValue}</strong>${values}<span class="simple-boundary-status">${status}</span></div>`;
+    const raw = total && !["unknown", "unavailable"].includes(total.state) ? Number(total.state) : NaN;
+    if (!Number.isFinite(raw)) {
+      return `<div class="simple-room-boundary"><strong class="simple-boundary-unavailable">Heat loss/gain: —</strong></div>`;
+    }
+    const isLoss = raw >= 0;
+    const label = isLoss ? "Heat loss" : "Heat gain";
+    const value = this._fmt(Math.abs(raw), "W", 0);
+    return `<div class="simple-room-boundary"><strong class="${isLoss ? "simple-heat-loss" : "simple-heat-gain"}">${label}: ${value}</strong></div>`;
   }
   _houseBoundaryPanel(rooms) {
     const definitions = [["Outdoor", "Outdoor Surface Heat Flow"], ["Attic", "Attic Surface Heat Flow"], ["Ground", "Ground Surface Heat Flow"], ["Known boundary total", "Known Boundary Heat Flow"]];
@@ -597,7 +589,7 @@ class HeatingIntelligenceCard extends HTMLElement {
         .simple-stat{padding:9px 10px;border:1px solid var(--divider-color);border-radius:10px;background:var(--secondary-background-color)}
         .simple-stat span{display:block;color:var(--secondary-text-color);font-size:.7rem;margin-bottom:4px}
         .simple-stat strong{font-size:1.12rem;font-weight:750}
-        .simple-floor-sections{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.simple-room-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:12px}.simple-room-grid .simple-room{min-width:0}.simple-room-grid .simple-room-main{align-items:flex-start}.simple-room-grid .simple-room-main strong{font-size:.76rem}.simple-room-grid .simple-room-boundary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:6px;color:var(--secondary-text-color);font-size:.76rem}.simple-boundary-label{font-weight:600}.simple-boundary-total{color:var(--primary-text-color);font-size:.82rem}.simple-boundary-value{white-space:nowrap}.simple-boundary-value strong{color:var(--primary-text-color);font-weight:600}.simple-boundary-status{font-size:.68rem;opacity:.8}.simple-room-meta{display:flex;flex-wrap:wrap;gap:4px;font-size:.68rem}.simple-room-grid .simple-temp{font-size:.76rem}.simple-pump-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-items:start}.pump-floor{min-width:0;padding:8px 8px}.pump-floor .simple-heading{font-size:.72rem}.pump-floor .simple-pump{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;align-items:start}.pump-floor .simple-pump strong{font-size:.72rem}.pump-floor .simple-state{font-size:.68rem}.pump-floor .simple-temp{grid-column:2;font-size:.72rem}
+        .simple-floor-sections{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.simple-room-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:12px}.simple-room-grid .simple-room{min-width:0}.simple-room-grid .simple-room-main{align-items:flex-start}.simple-room-grid .simple-room-main strong{font-size:.76rem}.simple-room-grid .simple-room-boundary{margin-top:6px;font-size:.78rem}.simple-heat-loss{color:#315f9b;font-weight:700}.simple-heat-gain{color:#e05252;font-weight:700}.simple-boundary-unavailable{color:var(--secondary-text-color);font-weight:600}.simple-room-meta{display:flex;flex-wrap:wrap;gap:4px;font-size:.68rem}.simple-room-grid .simple-temp{font-size:.76rem}.simple-pump-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-items:start}.pump-floor{min-width:0;padding:8px 8px}.pump-floor .simple-heading{font-size:.72rem}.pump-floor .simple-pump{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;align-items:start}.pump-floor .simple-pump strong{font-size:.72rem}.pump-floor .simple-state{font-size:.68rem}.pump-floor .simple-temp{grid-column:2;font-size:.72rem}
         .simple-floor-sections .simple-section{min-width:0;padding:8px 10px}
         .simple-section{border:1px solid var(--divider-color);border-radius:10px;padding:8px 10px}
         .simple-heading{font-size:.8rem;font-weight:750;margin-bottom:5px}

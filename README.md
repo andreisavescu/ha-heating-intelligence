@@ -1,3 +1,23 @@
+## v0.26.4 — Combined Room Heat Loss and Gain
+
+### Changed
+- Replace the final room-card envelope/attic conductance row with one combined **Heat loss: XX W** or **Heat gain: XX W** value per room.
+- Sum all applicable known boundary heat-flow contributions for each room (outdoor envelope, attic and/or ground); do not show separate boundary values in the room cards.
+- Display the magnitude as a positive value. Heat leaving the room is labelled **Heat loss** in dark blue; heat entering the room is labelled **Heat gain** in red.
+- Calculate boundary heat flow using the actual measured room temperature and the corresponding outdoor, attic or ground boundary temperature.
+- Keep the existing room temperature, heat-demand/window status and boiler modulation heating-power display unchanged.
+
+### Validation and limitations
+- GitHub Actions CI passed on PR #138.
+- Heat-flow values are estimates derived from configured boundary conductances and available boundary temperatures.
+- The combined value covers the known applicable boundaries; it is not a complete whole-room heat balance and does not include ventilation, inter-room transfer, solar/internal gains or UFH slab storage.
+- If the required measured room temperature or boundary data is unavailable, the heat-flow value is shown as unavailable.
+
+### Upgrade
+- Update through HACS and restart Home Assistant (or reload the integration).
+
+---
+
 ## v0.26.3 — Live Room Heat Loss and Audit Entity Grouping
 
 ### Changed

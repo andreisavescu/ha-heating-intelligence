@@ -210,14 +210,8 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
         f"{DOMAIN}_stage3_thermal_capacity_payload_part_",
         f"{DOMAIN}_stage5_ufh_slab_model_payload_part_",
     )
-    audit_room_metrics = {
-        "envelope_conductance_w_per_k",
-        "attic_floor_conductance_w_per_k",
-        "outdoor",
-        "attic",
-        "ground",
-        "known_boundary_heat_flow_w",
-    }
+    # Room-specific diagnostics are assigned to their room device below,
+    # alongside the room's temperature, demand and heating-power entities.
 
     repaired = 0
     for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
@@ -225,15 +219,9 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
             continue
 
         unique_id = entity.unique_id
-        is_room_audit = any(
-            unique_id == f"{DOMAIN}_{room_id}_{metric}"
-            for room_id in room_devices
-            for metric in audit_room_metrics
-        )
         is_audit = (
             unique_id in audit_unique_ids
             or unique_id.startswith(audit_unique_id_prefixes)
-            or is_room_audit
         )
         target = audit_device if is_audit else house
         if not is_audit:

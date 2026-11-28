@@ -287,7 +287,7 @@ def test_solver_rejects_pathological_substep_count():
         raise AssertionError("pathological integration step count must be rejected")
 
 
-def test_room_outdoor_conductance_uses_configured_total_without_adding_surface_inventory():
+def test_room_outdoor_conductance_ignores_legacy_value_and_uses_surface_inventory():
     result = MODEL.build_multizone_observation_model(
         {
             "bathroom": {
@@ -301,38 +301,29 @@ def test_room_outdoor_conductance_uses_configured_total_without_adding_surface_i
         envelope_audit={
             "rooms": {
                 "bathroom": {
-                    "conductance_by_boundary_w_per_k": {
-                        "outdoor": 1.126,
-                        "attic": None,
-                    }
+                    "conductance_by_boundary_w_per_k": {"outdoor": 1.126, "attic": None},
+                    "opaque_surface_counts": {"outdoor": 1, "ground": 0, "attic": 0, "adjacent_heated": 0},
+                    "window_record_count": 0,
                 }
             }
         },
     )
     path = result["room_envelope_paths"][0]
-    assert path["conductance_w_per_k"] == 1.388
+    assert path["conductance_w_per_k"] == 1.126
     diagnostic = result["envelope_conductance_reconciliation"]["bathroom"]
-    assert diagnostic["configured_room_to_outdoors_w_per_k"] == 1.388
-    assert diagnostic["calculated_surface_inventory_outdoor_w_per_k"] == 1.126
-    assert diagnostic["difference_configured_minus_inventory_w_per_k"] == 0.262
-    assert diagnostic["status"] == "legacy_configuration_fallback"
-    assert diagnostic["model_source"] == "legacy_room_configuration"
+    assert diagnostic["status"] == "surface_inventory_authoritative"
+    assert diagnostic["model_source"] == "per_room_surface_inventory_including_windows"
 
 
-def test_room_outdoor_conductance_reconciliation_is_unavailable_without_complete_inventory():
+def test_room_outdoor_conductance_does_not_fall_back_to_legacy_value():
     result = MODEL.build_multizone_observation_model(
-        {
-            "bedroom": {
-                "temperature": 20.0,
-                "envelope_conductance_w_per_k": 4.5,
-            }
-        },
+        {"bedroom": {"temperature": 20.0, "envelope_conductance_w_per_k": 4.5}},
         envelope_audit={"rooms": {}},
     )
     diagnostic = result["envelope_conductance_reconciliation"]["bedroom"]
-    assert diagnostic["status"] == "legacy_configuration_fallback"
-    assert diagnostic["configured_room_to_outdoors_w_per_k"] == 4.5
-    assert diagnostic["calculated_surface_inventory_outdoor_w_per_k"] is None
+    assert diagnostic["status"] == "no_outdoor_surface_records"
+    assert diagnostic["model_source"] == "none"
+    assert result["room_envelope_paths"] == []
 
 
 def test_room_surface_inventory_replaces_legacy_outdoor_conductance_and_includes_windows_once():

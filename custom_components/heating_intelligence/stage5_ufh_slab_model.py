@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 WATER_HEAT_CAPACITY_J_KG_K = 4180.0
 WATER_DENSITY_KG_L = 0.997
 DEFAULT_SCREED_THICKNESS_CM = 4.5

@@ -37,8 +37,8 @@ def test_house_audit_flags_unknown_room_and_incomplete_geometry():
 def test_thermal_readiness_does_not_invent_conductances():
     options = {"rooms": [{"id": "bedroom", "name": "Bedroom", "floor": "upstairs", "area_m2": 12}]}
     result = build_thermal_readiness_audit(options, {}, {}, {})
-    assert result["rooms_missing_envelope_conductance"] == ["bedroom"]
-    assert result["upstairs_rooms_without_attic_conductance"] == ["bedroom"]
+    assert result["rooms_without_outdoor_surface_records"] == ["bedroom"]
+    assert result["upstairs_rooms_missing_attic_surface_records"] == ["bedroom"]
     assert result["room_parameters"]["bedroom"]["volume_m3"] is None
 
 
@@ -67,7 +67,7 @@ def test_missing_frame_area_is_unknown_not_zero():
 
 
 
-def test_thermal_readiness_reads_attic_conductance_from_house_assessment():
+def test_thermal_readiness_ignores_legacy_room_and_attic_conductances():
     options = {
         "rooms": [
             {"id": "upstairs", "name": "Upstairs", "floor": "upstairs",
@@ -79,9 +79,10 @@ def test_thermal_readiness_reads_attic_conductance_from_house_assessment():
     }
     result = build_thermal_readiness_audit(options, {}, {}, {})
     room = result["room_parameters"]["upstairs"]
-    assert room["attic_floor_conductance_w_per_k"] == 2.1
-    assert room["room_to_attic_configured_w_per_k"] == 2.1
-    assert result["upstairs_rooms_without_attic_conductance"] == []
+    assert room["room_to_outdoors_surface_calculated_w_per_k"] is None
+    assert room["room_to_attic_surface_calculated_w_per_k"] is None
+    assert result["upstairs_rooms_missing_attic_surface_records"] == ["upstairs"]
+    assert "legacy_room_level_conductances" in result["boundary_interpretation"]
 
 
 def test_thermal_readiness_reports_outdoor_and_attic_paths_separately():
@@ -105,9 +106,8 @@ def test_thermal_readiness_reports_outdoor_and_attic_paths_separately():
     }
     result = build_thermal_readiness_audit(options, {}, {}, {}, envelope)
     room = result["room_parameters"]["upstairs"]
-    assert room["room_to_outdoors_configured_w_per_k"] == 4.2
     assert room["room_to_outdoors_surface_calculated_w_per_k"] == 3.8
-    assert room["room_to_attic_configured_w_per_k"] == 2.1
+    assert room["room_to_attic_surface_calculated_w_per_k"] == 2.1
     assert room["surface_conductance_by_boundary_w_per_k"]["attic"] == 2.1
 
 

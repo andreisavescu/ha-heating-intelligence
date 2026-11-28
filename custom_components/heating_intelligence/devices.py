@@ -230,13 +230,19 @@ def async_repair_entity_device_associations(hass, coordinator) -> int:
             for room_id in room_devices
             for metric in audit_room_metrics
         )
+        # Room-level diagnostics belong with the room's other sensors, not
+        # on the shared Audits device. Keep only cross-room/system audits there.
         is_audit = (
             unique_id in audit_unique_ids
             or unique_id.startswith(audit_unique_id_prefixes)
-            or is_room_audit
         )
         target = audit_device if is_audit else house
-        if not is_audit:
+        if is_room_audit:
+            for room_id, device in room_devices.items():
+                if unique_id.startswith(f"{DOMAIN}_{room_id}_"):
+                    target = device
+                    break
+        elif not is_audit:
             for room_id, device in room_devices.items():
                 if unique_id.startswith(f"{DOMAIN}_{room_id}_"):
                     target = device

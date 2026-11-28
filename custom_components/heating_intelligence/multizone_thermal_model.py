@@ -495,10 +495,12 @@ def build_multizone_observation_model(
             "status": "observed" if outdoor_c is not None else "temperature_unavailable",
         }
     if ground_paths:
+        ground_c = _finite_or_none(plant.get("ground", {}).get("ground_temperature_c", plant.get("ground", {}).get("estimated_ground_boundary_temperature_c")))
         nodes["boundary:ground"] = {
             "kind": "fixed_boundary", "name": "Ground",
-            "temperature_c": None,
-            "status": "ground_temperature_not_configured",
+            "temperature_c": ground_c,
+            "temperature_entity": plant.get("ground", {}).get("temperature_entity"),
+            "status": "observed" if ground_c is not None else "ground_temperature_not_configured",
         }
 
     attic_floor_total_g = (

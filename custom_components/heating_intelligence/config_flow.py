@@ -884,6 +884,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_room_air_quality_co2()
             return self._save_room_air_quality(None)
         fields = {
+            vol.Optional(CONF_TEMPERATURE_ENTITY, default=room.get(CONF_TEMPERATURE_ENTITY)) if room.get(CONF_TEMPERATURE_ENTITY) else vol.Optional(CONF_TEMPERATURE_ENTITY):
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_HUMIDITY_ENTITY, default=room.get(CONF_HUMIDITY_ENTITY)) if room.get(CONF_HUMIDITY_ENTITY) else vol.Optional(CONF_HUMIDITY_ENTITY):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_ENABLE_CO2, default=bool(room.get(CONF_CO2_ENTITY))): selector.BooleanSelector(),
@@ -910,6 +912,11 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         for room in rooms:
             if room["id"] == self._air_room_id:
                 room = dict(room)
+                temperature = self._air_room_input.get(CONF_TEMPERATURE_ENTITY)
+                if temperature:
+                    room[CONF_TEMPERATURE_ENTITY] = temperature
+                else:
+                    room.pop(CONF_TEMPERATURE_ENTITY, None)
                 humidity = self._air_room_input.get(CONF_HUMIDITY_ENTITY)
                 if humidity:
                     room[CONF_HUMIDITY_ENTITY] = humidity

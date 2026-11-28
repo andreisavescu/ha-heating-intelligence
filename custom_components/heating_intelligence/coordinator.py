@@ -1033,7 +1033,15 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
         attic_humidity_state = self.hass.states.get(attic_humidity_entity) if attic_humidity_entity else None
         attic_temperature = _as_float(attic_temperature_state.state) if attic_temperature_state else None
         ground_temperature_state = self.hass.states.get(ground_temperature_entity) if ground_temperature_entity else None
-        ground_temperature = _as_float(ground_temperature_state.state) if ground_temperature_state else None
+        ground_temperature = _as_float(ground_temperature_state.state) if ground_temperature_state and ground_temperature_state.state not in ("unknown", "unavailable") else None
+        ground_state, ground_model = update_ground_temperature_model(
+            ground_temperature,
+            self._history.get("ground_temperature_model"),
+            elapsed,
+            entity_id=ground_temperature_entity,
+        )
+        self._history["ground_temperature_model"] = ground_state
+        result["ground_temperature_model"] = ground_model
         attic_humidity = _as_float(attic_humidity_state.state) if attic_humidity_state else None
         if attic_humidity is not None and not 0 <= attic_humidity <= 100:
             attic_humidity = None
@@ -1186,14 +1194,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "measured_performance_status": result["house_assessment"].get("performance_status"),
         }
         result["envelope_conductance"] = build_envelope_conductance(self.entry.options)
-        ground_state, ground_model = update_ground_temperature_model(
-            ground_temperature,
-            self._history.get("ground_temperature_model"),
-            elapsed,
-            entity_id=ground_temperature_entity,
-        )
-        self._history["ground_temperature_model"] = ground_state
-        result["ground_temperature_model"] = ground_model
         result["room_heat_loss"] = build_room_boundary_heat_loss(
             result.get("rooms", {}),
             result["envelope_conductance"],

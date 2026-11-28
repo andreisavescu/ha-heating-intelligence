@@ -64,6 +64,7 @@
           "dew_point_entity": "Outdoor dew point sensor (°C)",
           "outdoor_pressure_entity": "Atmospheric pressure sensor",
           "attic_temperature_entity": "Attic air temperature above insulation (°C)",
+          "ground_temperature_entity": "Ground / soil temperature sensor (°C)",
           "attic_humidity_entity": "Attic relative humidity (%)"
         }
       },

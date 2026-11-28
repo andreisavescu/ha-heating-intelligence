@@ -59,16 +59,16 @@ def test_window_only_outdoor_ua_is_reported_as_partial_not_total_wall_loss():
     assert room["known_boundary_heat_flow_is_complete"] is False
 
 
-def test_ground_temperature_model_is_lagged_and_explicitly_provisional():
-    state, model = MODULE.update_ground_temperature_model(5.0, None, 3600.0)
-    assert model["estimated_ground_boundary_temperature_c"] == 5.0
-    assert model["status"] == "warming_up_lagged_outdoor_proxy"
-    state, model = MODULE.update_ground_temperature_model(15.0, state, 3600.0)
-    assert 5.0 < model["estimated_ground_boundary_temperature_c"] < 15.0
-    assert model["method"].startswith("30-day first-order low-pass")
+def test_ground_temperature_model_uses_direct_sensor_without_outdoor_proxy():
+    state, model = MODULE.update_ground_temperature_model(12.5, None, 3600.0, entity_id="input_number.ground_temperature")
+    assert model["ground_temperature_c"] == 12.5
+    assert model["estimated_ground_boundary_temperature_c"] == 12.5
+    assert model["status"] == "observed_ground_temperature_sensor"
+    assert model["temperature_entity"] == "input_number.ground_temperature"
+    assert "no outdoor-temperature proxy" in model["method"]
 
 
-def test_ground_heat_flow_waits_until_lagged_temperature_proxy_has_warmed_up():
+def test_ground_heat_flow_requires_configured_ground_temperature_sensor():
     result = MODULE.build_room_boundary_heat_loss(
         {"living": {"name": "Living", "floor": "ground_floor", "temperature": 22.0}},
         {"rooms": {"living": {
@@ -77,13 +77,11 @@ def test_ground_heat_flow_waits_until_lagged_temperature_proxy_has_warmed_up():
             "window_record_count": 1,
         }}},
         2.0, None,
-        {"estimated_ground_boundary_temperature_c": 8.0,
-         "status": "warming_up_lagged_outdoor_proxy"},
+        {"estimated_ground_boundary_temperature_c": None,
+         "status": "unavailable_missing_ground_temperature_sensor"},
     )
     assert result["rooms"]["living"]["ground"]["heat_flow_w"] is None
-    assert result["rooms"]["living"]["ground"]["status"] == (
-        "unavailable_ground_temperature_model_warming_up"
-    )
+    assert result["rooms"]["living"]["ground"]["status"] == "unavailable_ground_temperature_sensor"
 
 
 def _room(room_id, name, floor):

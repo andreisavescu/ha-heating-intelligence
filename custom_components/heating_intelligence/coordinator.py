@@ -63,6 +63,7 @@ from .const import (
     CONF_DEW_POINT_ENTITY,
     CONF_OUTDOOR_PRESSURE_ENTITY,
     CONF_ATTIC_TEMPERATURE_ENTITY,
+    CONF_GROUND_TEMPERATURE_ENTITY,
     CONF_ATTIC_HUMIDITY_ENTITY,
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
@@ -274,6 +275,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "outdoor_temperature": self.entry.options.get(CONF_OUTDOOR_TEMPERATURE_ENTITY),
                 "solar_radiation": self.entry.options.get(CONF_SOLAR_RADIATION_ENTITY),
                 "attic_temperature": self.entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY),
+                "ground_temperature": self.entry.options.get(CONF_GROUND_TEMPERATURE_ENTITY),
                 "attic_humidity": self.entry.options.get(CONF_ATTIC_HUMIDITY_ENTITY),
                 "gas_consumption": self.entry.options.get(CONF_GAS_CONSUMPTION_ENTITY),
                 "boiler_power": self.entry.options.get(CONF_ELECTRICITY_BOILER_POWER_ENTITY),
@@ -612,6 +614,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                     "water_return_temperature": current.get("water_return_temperature"),
                     "boiler_context": current.get("boiler_context", {}),
                     "pumps": current.get("pumps", {}),
+                    "ground": current.get("ground_temperature_model", {}),
                     "ufh_slab_observability": validation.get("ufh_slab_observability", {}),
                     "stage5_ufh_slab_model": current.get("stage5_ufh_slab_model", {}),
                     "house_heat_loss_coefficient_w_k": (
@@ -1024,10 +1027,21 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             } if indoor_values else None,
         }
         attic_temperature_entity = self.entry.options.get(CONF_ATTIC_TEMPERATURE_ENTITY)
+        ground_temperature_entity = self.entry.options.get(CONF_GROUND_TEMPERATURE_ENTITY)
         attic_humidity_entity = self.entry.options.get(CONF_ATTIC_HUMIDITY_ENTITY)
         attic_temperature_state = self.hass.states.get(attic_temperature_entity) if attic_temperature_entity else None
         attic_humidity_state = self.hass.states.get(attic_humidity_entity) if attic_humidity_entity else None
         attic_temperature = _as_float(attic_temperature_state.state) if attic_temperature_state else None
+        ground_temperature_state = self.hass.states.get(ground_temperature_entity) if ground_temperature_entity else None
+        ground_temperature = _as_float(ground_temperature_state.state) if ground_temperature_state and ground_temperature_state.state not in ("unknown", "unavailable") else None
+        ground_state, ground_model = update_ground_temperature_model(
+            ground_temperature,
+            self._history.get("ground_temperature_model"),
+            elapsed,
+            entity_id=ground_temperature_entity,
+        )
+        self._history["ground_temperature_model"] = ground_state
+        result["ground_temperature_model"] = ground_model
         attic_humidity = _as_float(attic_humidity_state.state) if attic_humidity_state else None
         if attic_humidity is not None and not 0 <= attic_humidity <= 100:
             attic_humidity = None
@@ -1144,6 +1158,7 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
                 "water_return_temperature": result.get("water_return_temperature"),
                 "boiler_context": result.get("boiler_context", {}),
                 "pumps": result.get("pumps", {}),
+                "ground": result.get("ground_temperature_model", {}),
                 "ufh_slab_observability": (
                     result["thermal_model"]["historical_validation"].get("ufh_slab_observability", {})
                 ),
@@ -1179,13 +1194,6 @@ class HeatingIntelligenceCoordinator(DataUpdateCoordinator):
             "measured_performance_status": result["house_assessment"].get("performance_status"),
         }
         result["envelope_conductance"] = build_envelope_conductance(self.entry.options)
-        ground_state, ground_model = update_ground_temperature_model(
-            outdoor_temperature,
-            self._history.get("ground_temperature_model"),
-            elapsed,
-        )
-        self._history["ground_temperature_model"] = ground_state
-        result["ground_temperature_model"] = ground_model
         result["room_heat_loss"] = build_room_boundary_heat_loss(
             result.get("rooms", {}),
             result["envelope_conductance"],

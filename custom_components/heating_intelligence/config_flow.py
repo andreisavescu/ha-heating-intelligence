@@ -28,6 +28,7 @@ from .const import (
     CONF_DEW_POINT_ENTITY,
     CONF_OUTDOOR_PRESSURE_ENTITY,
     CONF_ATTIC_TEMPERATURE_ENTITY,
+    CONF_GROUND_TEMPERATURE_ENTITY,
     CONF_ATTIC_HUMIDITY_ENTITY,
     CONF_DELTA_T_ENTITY,
     CONF_GAS_CONSUMPTION_ENTITY,
@@ -344,19 +345,10 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             data = dict(self.config_entry.options)
             updated_rooms = [dict(item) for item in rooms]
-            envelope_room = user_input.get("envelope_room")
-            envelope_value = user_input.get("room_envelope_conductance")
-            if envelope_room and envelope_value is not None:
-                value = float(envelope_value)
-                if value <= 0:
-                    return self.async_show_form(
-                        step_id="thermal_topology",
-                        data_schema=self._thermal_topology_schema(room_options, data),
-                        errors={"room_envelope_conductance": "must_be_positive"},
-                    )
-                for room in updated_rooms:
-                    if room["id"] == envelope_room:
-                        room["envelope_conductance_w_per_k"] = value
+            # External heat-loss paths are derived exclusively from envelope surface records.
+            # Remove obsolete room-level conductances from saved room options.
+            for room in updated_rooms:
+                room.pop("envelope_conductance_w_per_k", None)
             data[CONF_ROOMS] = updated_rooms
 
             source = user_input.get("from_room")
@@ -377,22 +369,11 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 assessment["room_connections"] = links
                 data[CONF_HOUSE_ASSESSMENT] = assessment
 
-            attic_room = user_input.get("attic_floor_room")
-            attic_value = user_input.get("attic_floor_conductance")
-            if attic_room and attic_value is not None:
-                value = float(attic_value)
-                room = next((item for item in updated_rooms if item["id"] == attic_room), None)
-                if room is None or room.get(CONF_FLOOR) != "upstairs" or value <= 0:
-                    return self.async_show_form(
-                        step_id="thermal_topology",
-                        data_schema=self._thermal_topology_schema(room_options, data),
-                        errors={"attic_floor_conductance": "invalid_upstairs_conductance"},
-                    )
-                assessment = dict(data.get(CONF_HOUSE_ASSESSMENT, {}))
-                shares = dict(assessment.get("attic_floor_room_conductances_w_per_k", {}))
-                shares[attic_room] = value
-                assessment["attic_floor_room_conductances_w_per_k"] = shares
-                data[CONF_HOUSE_ASSESSMENT] = assessment
+            # Discard obsolete per-room attic conductances. Attic paths come from
+            # explicit attic boundary surfaces in the envelope inventory.
+            assessment = dict(data.get(CONF_HOUSE_ASSESSMENT, {}))
+            assessment.pop("attic_floor_room_conductances_w_per_k", None)
+            data[CONF_HOUSE_ASSESSMENT] = assessment
             return self.async_create_entry(title="", data=data)
 
         return self.async_show_form(
@@ -405,20 +386,9 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         """Build optional conductance fields without supplying physical defaults."""
         assessment = options.get(CONF_HOUSE_ASSESSMENT, {})
         return vol.Schema({
-            vol.Optional("envelope_room"): vol.In(room_options),
-            vol.Optional("room_envelope_conductance"): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0.01, max=10000, step=0.1, unit_of_measurement="W/K", mode=selector.NumberSelectorMode.BOX)
-            ),
             vol.Optional("from_room"): vol.In(room_options),
             vol.Optional("to_room"): vol.In(room_options),
             vol.Optional("inter_room_conductance"): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0.01, max=10000, step=0.1, unit_of_measurement="W/K", mode=selector.NumberSelectorMode.BOX)
-            ),
-            vol.Optional("attic_floor_room"): vol.In({
-                item["id"]: item[CONF_NAME] for item in options.get(CONF_ROOMS, [])
-                if item.get(CONF_FLOOR) == "upstairs"
-            }),
-            vol.Optional("attic_floor_conductance"): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=0.01, max=10000, step=0.1, unit_of_measurement="W/K", mode=selector.NumberSelectorMode.BOX)
             ),
         })
@@ -428,6 +398,11 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
         self._assessment = dict(self.config_entry.options.get(CONF_HOUSE_ASSESSMENT, {}))
         if user_input is not None:
             self._assessment.update(user_input)
+            # Retire duplicate whole-attic floor inputs; per-room attic surfaces
+            # are now the only source for room-to-attic conductance.
+            self._assessment.pop("attic_floor_area_m2", None)
+            self._assessment.pop("attic_floor_u_value", None)
+            self._assessment.pop("attic_floor_room_conductances_w_per_k", None)
             return await self.async_step_assessment_heating()
         current = self._assessment
 
@@ -459,8 +434,6 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             optional("window_area_west_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("window_area_west_m2")),
             optional("roof_area_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=1000, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("roof_area_m2")),
             optional("roof_u_value", selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)), current.get("roof_u_value")),
-            optional("attic_floor_area_m2", selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=1000, step=0.5, unit_of_measurement="m²", mode=selector.NumberSelectorMode.BOX)), current.get("attic_floor_area_m2")),
-            optional("attic_floor_u_value", selector.NumberSelector(selector.NumberSelectorConfig(min=0.05, max=5, step=0.01, unit_of_measurement="W/m²K", mode=selector.NumberSelectorMode.BOX)), current.get("attic_floor_u_value")),
         ])
         return self.async_show_form(step_id="house_assessment", data_schema=vol.Schema(fields))
 
@@ -517,6 +490,7 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
             CONF_DEW_POINT_ENTITY,
             CONF_OUTDOOR_PRESSURE_ENTITY,
             CONF_ATTIC_TEMPERATURE_ENTITY,
+            CONF_GROUND_TEMPERATURE_ENTITY,
             CONF_ATTIC_HUMIDITY_ENTITY,
             CONF_WEATHER_ENTITY,
             CONF_DELTA_T_ENTITY,
@@ -594,6 +568,8 @@ class HeatingIntelligenceOptionsFlow(config_entries.OptionsFlow):
                 CONF_BOILER_MODULATION_ENTITY,
             )
         )
+        ground_field = vol.Optional(CONF_GROUND_TEMPERATURE_ENTITY, default=current.get(CONF_GROUND_TEMPERATURE_ENTITY)) if current.get(CONF_GROUND_TEMPERATURE_ENTITY) else vol.Optional(CONF_GROUND_TEMPERATURE_ENTITY)
+        schema_fields[ground_field] = selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "input_number"]))
         burner_field = vol.Optional(CONF_BOILER_BURNER_ENTITY, default=current.get(CONF_BOILER_BURNER_ENTITY)) if current.get(CONF_BOILER_BURNER_ENTITY) else vol.Optional(CONF_BOILER_BURNER_ENTITY)
         schema_fields[burner_field] = selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor"))
         weather_field = vol.Optional(CONF_WEATHER_ENTITY, default=current.get(CONF_WEATHER_ENTITY)) if current.get(CONF_WEATHER_ENTITY) else vol.Optional(CONF_WEATHER_ENTITY)

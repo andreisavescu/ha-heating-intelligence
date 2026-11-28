@@ -55,7 +55,7 @@ class HeatingIntelligenceCard extends HTMLElement {
     const total = this._entityStateByName(room.name + " Known Boundary Heat Flow");
     const raw = total && !["unknown", "unavailable"].includes(total.state) ? Number(total.state) : NaN;
     if (!Number.isFinite(raw)) {
-      return `<div class="simple-room-boundary"><strong class="simple-boundary-unavailable">Heat loss/gain: —</strong></div>`;
+      return `<div class="simple-room-boundary"><strong class="simple-boundary-unavailable">Heat flow: —</strong></div>`;
     }
     const isLoss = raw >= 0;
     const label = isLoss ? "Heat loss" : "Heat gain";

@@ -382,7 +382,6 @@ def build_multizone_observation_model(
         }
     for node_id, u_key, area_key, label in (
         ("attic:air", "roof_u_value", "roof_area_m2", "roof"),
-        ("attic:air", "attic_floor_u_value", "attic_floor_area_m2", "attic_floor"),
     ):
         if node_id not in nodes:
             continue
@@ -403,8 +402,7 @@ def build_multizone_observation_model(
             })
             continue
 
-        # Explicit room-level attic shares are valid topology even when the
-        # optional whole-attic U-value/area pair has not been configured.
+        # Per-room attic paths come exclusively from attic surface records.
         valid_shares = list(valid_attic_shares.items())
         if valid_shares:
             for room_id, room_conductance in valid_shares:
@@ -415,8 +413,8 @@ def build_multizone_observation_model(
                     "to": "room:" + room_id,
                     "path": "attic_floor",
                     "conductance_w_per_k": round(room_conductance, 4),
-                    "source": "per_room_surface_inventory" if attic_surface_count > 0 else "legacy_room_level_attic_floor_conductance",
-                    "status": "configured" if attic_surface_count > 0 else "legacy_fallback",
+                    "source": "per_room_surface_inventory",
+                    "status": "configured",
                 })
             if has_total and abs(sum(value for _, value in valid_shares) - u_value * area) > max(0.1, u_value * area * 0.05):
                 pending_paths.append({
@@ -431,7 +429,7 @@ def build_multizone_observation_model(
                 "conductance_w_per_k": round(u_value * area, 4),
                 "source": "configured_u_value_times_area",
                 "status": "awaiting_upstairs_zone_coupling",
-                "detail": "Room-level allocation requires explicit attic_floor_room_conductances_w_per_k entries.",
+                "detail": "Configure per-room attic boundary surfaces in the envelope inventory.",
             })
 
     # Only explicit conductances create room-to-room or room-to-outdoor links.
@@ -504,13 +502,7 @@ def build_multizone_observation_model(
         }
 
     attic_floor_total_g = (
-        _finite_or_none(profile.get("attic_floor_u_value"))
-        * _finite_or_none(profile.get("attic_floor_area_m2"))
-        if _finite_or_none(profile.get("attic_floor_u_value")) is not None
-        and _finite_or_none(profile.get("attic_floor_area_m2")) is not None
-        and _finite_or_none(profile.get("attic_floor_u_value")) > 0
-        and _finite_or_none(profile.get("attic_floor_area_m2")) > 0
-        else None
+        None
     )
     attic_share_sum = sum(valid_attic_shares.values()) if valid_attic_shares else None
     missing_attic_rooms = [room_id for room_id in upstairs_room_ids if room_id not in valid_attic_shares]
@@ -521,7 +513,7 @@ def build_multizone_observation_model(
         "upstairs_rooms_with_attic_conductance": len(valid_attic_shares),
         "rooms_missing_attic_conductance": missing_attic_rooms,
         "attic_floor_area_m2": _finite_or_none(profile.get("attic_floor_area_m2")),
-        "attic_floor_u_value_w_m2k": _finite_or_none(profile.get("attic_floor_u_value")),
+        "attic_floor_u_value_w_m2k": None,
         "attic_floor_total_conductance_w_per_k": round(attic_floor_total_g, 4) if attic_floor_total_g is not None else None,
         "attic_floor_room_conductance_sum_w_per_k": round(attic_share_sum, 4) if attic_share_sum is not None else None,
         "attic_floor_status": (

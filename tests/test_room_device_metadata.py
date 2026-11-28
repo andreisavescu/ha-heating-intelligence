@@ -141,3 +141,33 @@ def test_device_repair_clears_only_config_entry_disabled_devices():
     assert "async_update_device" in helper_source
     assert "device.disabled_by" in helper_source
     assert "for device in (house, *room_devices.values(), *pump_devices.values(), audit_device)" in source
+
+
+
+def test_room_diagnostic_entities_are_not_forced_onto_audit_device():
+    devices_path = (
+        Path(__file__).parents[1]
+        / "custom_components"
+        / "heating_intelligence"
+        / "devices.py"
+    )
+    source = devices_path.read_text()
+
+    # Room-prefixed unique IDs must reach the room-device routing below.
+    assert "audit_room_metrics" not in source
+    assert "or is_room_audit" not in source
+    assert 'unique_id.startswith(f"{DOMAIN}_{room_id}_")' in source
+
+
+def test_room_heat_flow_card_lookup_falls_back_to_entity_id():
+    card_path = (
+        Path(__file__).parents[1]
+        / "custom_components"
+        / "heating_intelligence"
+        / "www"
+        / "heating-intelligence-card.js"
+    )
+    source = card_path.read_text()
+
+    assert "idName.endsWith(\" \" + target)" in source
+    assert "friendlyMatch" in source

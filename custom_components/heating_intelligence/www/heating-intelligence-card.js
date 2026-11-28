@@ -36,15 +36,26 @@ class HeatingIntelligenceCard extends HTMLElement {
   }
   _entityStateByName(friendlyName) {
     const target = this._normalizeEntityName(friendlyName);
-    return Object.entries(this._hass?.states || {}).find(([, state]) =>
+    const entries = Object.entries(this._hass?.states || {});
+    // Prefer the displayed friendly name, then fall back to the entity ID.
+    // HA may prefix entity IDs with the integration name even when the
+    // friendly name is room-scoped.
+    const friendlyMatch = entries.find(([, state]) =>
       this._normalizeEntityName(state?.attributes?.friendly_name) === target
-    )?.[1] || null;
+    );
+    if (friendlyMatch) return friendlyMatch[1];
+    return entries.find(([entityId, state]) => {
+      const idName = this._normalizeEntityName(entityId.split(".").slice(1).join(" "));
+      const friendly = this._normalizeEntityName(state?.attributes?.friendly_name);
+      return idName === target || idName.endsWith(" " + target)
+        || friendly.endsWith(" " + target);
+    })?.[1] || null;
   }
   _roomBoundaryPanel(room) {
     const total = this._entityStateByName(room.name + " Known Boundary Heat Flow");
     const raw = total && !["unknown", "unavailable"].includes(total.state) ? Number(total.state) : NaN;
     if (!Number.isFinite(raw)) {
-      return `<div class="simple-room-boundary"><strong class="simple-boundary-unavailable">Heat loss/gain: —</strong></div>`;
+      return `<div class="simple-room-boundary"><strong class="simple-boundary-unavailable">Heat flow: —</strong></div>`;
     }
     const isLoss = raw >= 0;
     const label = isLoss ? "Heat loss" : "Heat gain";

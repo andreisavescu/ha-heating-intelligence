@@ -23,6 +23,7 @@ from .const import (
 from .coordinator import HeatingIntelligenceCoordinator
 from .devices import AuditDeviceMixin, HouseDeviceMixin, RoomDeviceMixin, PumpDeviceMixin
 from .insights import build_heating_insights
+from .recorder_payloads import serialize_payload_chunks
 
 
 # Human-readable calculation metadata surfaced in Home Assistant entity details.
@@ -543,20 +544,13 @@ def _diagnostic_payload(coordinator, source: str) -> dict:
 
 
 def _diagnostic_payload_chunk(coordinator, source: str, part: int) -> tuple[str, int, int]:
-    payload = json.dumps(
+    chunks, total_chars = serialize_payload_chunks(
         _diagnostic_payload(coordinator, source),
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-        default=str,
+        DIAGNOSTIC_PAYLOAD_PART_SIZE,
     )
-    chunks = [
-        payload[index:index + DIAGNOSTIC_PAYLOAD_PART_SIZE]
-        for index in range(0, len(payload), DIAGNOSTIC_PAYLOAD_PART_SIZE)
-    ] or ["{}"]
     return (
         chunks[part] if part < len(chunks) else "",
-        len(payload),
+        total_chars,
         len(chunks),
     )
 
